@@ -65,6 +65,9 @@ lease's absolute handshake deadline. The proxy requires one canonical visible
 SNI hostname equal to the canonical CONNECT hostname before forwarding any
 ClientHello bytes upstream. Forwarding the approved ClientHello is part of the
 same absolute deadline; upstream backpressure cannot hold this phase forever.
+When TLS authority inspection is disabled, any tunnel bytes coalesced with the
+CONNECT header are also forwarded within that deadline before the connection
+enters ordinary bidirectional tunnelling.
 
 Strict TLS authority mode rejects an ECH extension because the inner authority
 is encrypted. `AllowOuterSni` is an explicit compatibility tradeoff: it checks

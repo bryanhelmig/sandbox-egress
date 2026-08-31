@@ -703,3 +703,38 @@ The clean Linux image then passed the same factory on exact Rust 1.88. Its
 threads, returned to four descriptors and two threads after shutdown, and
 finished at 3,928 KiB RSS. Running the resulting image passed the serialized
 hostile conformance lane.
+
+## 2026-08-31 — absolute deadline through uninspected forwarding
+
+### Finding
+
+The absolute handshake deadline covered headers, DNS, dialing, and the
+inspected ClientHello path, but the TLS-disabled path wrote tunnel bytes that
+arrived with the CONNECT header without a deadline. An upstream that stopped
+reading could therefore hold that pre-tunnel phase until lease revocation.
+
+### Result
+
+Accepted one shared deadline around the buffered upstream write. Bytes already
+read from the guest are accounted before forwarding, so a timed-out partial
+write cannot disappear from usage. The rejection closes the tunnel and records
+a denial rather than returning an unclassified I/O error.
+
+A deterministic test fills a one-byte in-memory upstream, attempts the
+buffered write, and proves the original 20 millisecond deadline cancels it
+while preserving all 21 accepted upload bytes. It passed 25 consecutive runs,
+then the complete factory passed 31 unit and 17 integration tests plus the
+serialized hostile lane.
+
+The first implementation pushed `serve_connect` over the 100-line Clippy
+ceiling. No lint exception was retained. Extracting named approved-address dial
+and uninspected-forward phases held whole-tree structural complexity at 328 and
+reduced cognitive complexity from 970 to 966. Criterion reported no change for
+allowed CONNECT (106.59 microseconds) or hostname denial (75.91 microseconds).
+An unrelated attach/close sample initially read 1.86% slower immediately after
+a cold container build; the isolated rerun moved back 1.09% and Criterion
+classified it within the noise threshold.
+
+The exact Rust 1.88 Linux image passed the same factory and hostile lane. Its
+500-lease smoke again held eight descriptors and five threads while live,
+returned to four descriptors and two threads, and finished at 3,916 KiB RSS.

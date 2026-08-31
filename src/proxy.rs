@@ -672,18 +672,9 @@ async fn serve_connect(
             Err(denial) => return deny(&mut client, state, denial.status, denial.reason).await,
         };
 
-    let mut upstream = None;
-    for address in addresses {
-        match timeout_at(handshake_deadline, connector.connect(address)).await {
-            Ok(Ok(stream)) => {
-                upstream = Some(stream);
-                break;
-            }
-            Ok(Err(_)) => {}
-            Err(_) => break,
-        }
-    }
-    let Some(mut upstream) = upstream else {
+    let Some(mut upstream) =
+        dial_approved_addresses(addresses, connector, handshake_deadline).await
+    else {
         return deny(&mut client, state, 502, "dial-failed").await;
     };
 
@@ -691,13 +682,17 @@ async fn serve_connect(
         .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
         .await?;
     let buffered_upload = match state.policy.tls_authority {
-        TlsAuthority::Disabled => {
-            if buffered_upload > 0 {
-                upstream.write_all(&header.bytes[header.end..]).await?;
-                state.counters.record_upload(buffered_upload as u64);
-            }
-            buffered_upload
-        }
+        TlsAuthority::Disabled => match forward_uninspected_upload(
+            &mut upstream,
+            state,
+            &header.bytes[header.end..],
+            handshake_deadline,
+        )
+        .await
+        {
+            Ok(bytes) => bytes,
+            Err(reason) => return reject_tunnel(&mut client, state, reason).await,
+        },
         TlsAuthority::RequireVisibleSni { ech } => {
             let inspection_and_forward = async {
                 let hello = inspect_tls_tunnel(
@@ -740,6 +735,38 @@ async fn serve_connect(
     );
     tokio::io::copy_bidirectional(&mut client, &mut upstream).await?;
     Ok(ConnectionDisposition::Completed)
+}
+
+async fn dial_approved_addresses(
+    addresses: Vec<SocketAddr>,
+    connector: &ConnectorBackend,
+    handshake_deadline: TokioInstant,
+) -> Option<TcpStream> {
+    for address in addresses {
+        match timeout_at(handshake_deadline, connector.connect(address)).await {
+            Ok(Ok(stream)) => return Some(stream),
+            Ok(Err(_)) => {}
+            Err(_) => break,
+        }
+    }
+    None
+}
+
+async fn forward_uninspected_upload<W>(
+    upstream: &mut W,
+    state: &LeaseState,
+    bytes: &[u8],
+    handshake_deadline: TokioInstant,
+) -> Result<usize, &'static str>
+where
+    W: AsyncWrite + Unpin,
+{
+    state.counters.record_upload(bytes.len() as u64);
+    match timeout_at(handshake_deadline, upstream.write_all(bytes)).await {
+        Ok(Ok(())) => Ok(bytes.len()),
+        Ok(Err(_)) => Err("upstream-write-failed"),
+        Err(_) => Err("initial-upload-timeout"),
+    }
 }
 
 async fn inspect_tls_tunnel(
@@ -1326,6 +1353,34 @@ mod tests {
         proxy
             .shutdown(Instant::now() + Duration::from_secs(1))
             .expect("proxy shutdown");
+    }
+
+    #[test]
+    fn absolute_handshake_deadline_cancels_buffered_upload_forwarding() {
+        let runtime = RuntimeBuilder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("test runtime");
+        runtime.block_on(async {
+            let (mut upstream, _blocked_reader) = tokio::io::duplex(1);
+            upstream.write_all(b"x").await.expect("fill upstream");
+            let state = LeaseState::new(
+                1,
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                Policy::builder().build().expect("valid policy"),
+            );
+
+            let result = forward_uninspected_upload(
+                &mut upstream,
+                &state,
+                b"buffered tunnel bytes",
+                TokioInstant::now() + Duration::from_millis(20),
+            )
+            .await;
+
+            assert_eq!(result, Err("initial-upload-timeout"));
+            assert_eq!(state.counters.snapshot().uploaded_bytes, 21);
+        });
     }
 
     #[test]

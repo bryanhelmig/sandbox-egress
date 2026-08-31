@@ -63,6 +63,11 @@ upstream write, send less than the full hello, record one denial, and finish
 with no active connection. This distinguishes a real forwarding barrier from
 a parser-only timeout.
 
+The uninspected path separately fills a bounded in-memory upstream to force
+backpressure before tunnelling. Its original absolute handshake deadline must
+cancel the buffered upload write and retain accounting for bytes already read
+from the guest.
+
 `docker build -t sandbox-egress:dev .` runs the standard factory and a small
 Linux `/proc` resource smoke on the declared Rust 1.88 MSRV. Running the image
 executes the serialized hostile conformance lane. The container is a clean-room
