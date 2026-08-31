@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Add hostile tunnel conformance for download ceilings and certified shutdown
+  with idle, nonreading, and flooding peers.
 - Enforce upload ceilings on bytes coalesced with a CONNECT header before DNS
   or dialing, and keep each tunnel's byte ceiling independent while retaining
   lease-wide accounting.

@@ -275,3 +275,32 @@ Evidence:
 Complexity impact: one early integer comparison and one per-direction `u64`
 inside each live tunnel wrapper. No public type, task, allocation, or dependency
 was added.
+
+## 2026-08-31 — bidirectional tunnel shutdown conformance
+
+### Question
+
+Does certified close actually finish when a tunnel peer refuses to cooperate,
+and do download ceilings mirror the corrected per-tunnel upload semantics?
+An assertion that accepts any socket error is insufficient because a read
+timeout also means the connection may still be live.
+
+### Result
+
+The existing cancellation path passed five new real-socket conformance cases:
+
+- a zero-byte download ceiling counts six upstream bytes but forwards none;
+- two sequential tunnels each receive an independent exact one-byte download
+  allowance and aggregate usage reports two bytes;
+- an idle tunnel reaches EOF or a terminal reset on both guest and upstream
+  sides after close;
+- close finishes in under 500 milliseconds while an uploader is active and
+  its upstream deliberately never reads;
+- close finishes in under 500 milliseconds while an upstream floods data and
+  the guest deliberately never reads.
+
+The active writer in each backpressure case receives a terminal socket error.
+Timeout and `WouldBlock` are explicitly rejected as proof of closure. All five
+tests passed 20 consecutive focused runs. This cycle required no production
+change; the evidence is kept because it closes a named conformance gap and is
+now part of `scripts/test-conformance.sh`.

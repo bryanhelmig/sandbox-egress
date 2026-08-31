@@ -29,3 +29,9 @@ The initial opt-in resource harness runs identity churn with the proxy still
 alive and samples each batch. On Linux it reads `/proc`; on macOS it uses `ps`
 and `lsof`; other targets compile and report unsupported counters as absent.
 Run `./scripts/measure-resources.sh [runs-per-batch] [batches]`.
+
+The committed tunnel conformance lane currently checks zero and exact download
+ceilings, independent per-tunnel budgets, idle tunnel shutdown, an uploader
+whose upstream never reads, and a downloader whose guest never reads. Terminal
+socket assertions reject timeouts: a peer that merely remains blocked is not
+accepted as evidence of revocation.
