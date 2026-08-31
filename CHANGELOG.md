@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Add a pinned structural and cognitive complexity report with an initial
+  evidence baseline and CI output.
 - Add a pinned Rust 1.88 Linux container factory with conformance and resource
   smoke entry points.
 - Add a controlled dial phase and prove both lease revocation and the absolute

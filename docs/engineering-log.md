@@ -409,3 +409,24 @@ test implementation. CI now builds and runs it on Ubuntu. The first build also
 documented why the explicit compiler assertion is load-bearing; removing it
 would allow a future toolchain-file update to invalidate the MSRV claim while
 the image still appeared green.
+
+## 2026-08-31 — complexity measurement without score gaming
+
+Selected SCC 4.0.0 after comparing a parser-based Mozilla metrics tool with a
+small, current, cross-platform counter. SCC explicitly characterizes its
+structural score as a same-language branch/loop approximation; version 4 also
+provides a nesting-weighted cognitive mode. Those limitations make it useful
+as a trend and hotspot prompt, not as a universal quality number.
+
+Initial `src + tests + benches` baseline:
+
+- fourteen Rust files, 3,178 physical lines, and 2,778 code lines;
+- structural complexity estimate 292;
+- cognitive complexity estimate 869;
+- largest structural file estimates: `policy.rs` 117 and `proxy.rs` 102.
+
+The policy score is mostly the flat forbidden-address table, while the proxy
+file includes test-only phase seams. Neither should be split solely to improve
+the aggregate. The report is pinned in CI but has no failure threshold; Clippy
+continues to enforce function-level warnings. A future gate needs evidence that
+its chosen scope predicts review difficulty or defects.

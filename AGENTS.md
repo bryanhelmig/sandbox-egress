@@ -67,3 +67,5 @@ Run `./scripts/check.sh`. Security-sensitive changes also run
 
 A passing attractive-path test is not enough. Add the corresponding denial,
 cancellation, timeout, identity-reuse, and resource-bound case where relevant.
+Structural changes should run `./scripts/measure-complexity.sh` and explain a
+material increase or decrease rather than optimizing blindly for the score.

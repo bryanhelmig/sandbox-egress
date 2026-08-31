@@ -153,6 +153,7 @@ scripts:
 ./scripts/test-conformance.sh   hostile lifecycle and concurrency cases
 ./scripts/bench.sh              Criterion performance baseline
 ./scripts/measure-resources.sh  opt-in RSS, thread, and descriptor soak
+./scripts/measure-complexity.sh source size and complexity trend report
 cargo run --bin sandbox-egress -- example.com
 ```
 
@@ -175,6 +176,7 @@ Start with [AGENTS.md](AGENTS.md). The deeper project record is split into:
 - [architecture](docs/architecture.md) — internal ownership and data flow;
 - [testing strategy](docs/testing.md) — conformance and resource evidence;
 - [performance evidence](docs/performance.md) — reproducible measurements;
+- [complexity evidence](docs/complexity.md) — source and decision-shape trends;
 - [engineering log](docs/engineering-log.md) — experiments and negative results;
 - [hardening backlog](docs/hardening-backlog.md) — attack and measurement matrix;
 - [prior art](docs/prior-art.md) — reviewed projects and pinned revisions;
