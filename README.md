@@ -155,6 +155,7 @@ scripts:
 ./scripts/measure-resources.sh  opt-in RSS, thread, and descriptor soak
 ./scripts/measure-complexity.sh source size and complexity trend report
 ./scripts/measure-load.sh       concurrent CONNECT capacity and tail latency
+./scripts/measure-throughput.sh concurrent upload/download tunnel throughput
 cargo run --bin sandbox-egress -- example.com
 ```
 

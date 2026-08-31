@@ -472,3 +472,28 @@ the local two-vCPU arm64 container VM at 27,421–31,592 connections/second
 (median 29,989). Its p50 range was 984–1,077 microseconds and p99 was
 2,229–3,339 microseconds. The harness adds 15 structural and 54 cognitive SCC
 points, all in `tests/load.rs`; production complexity is unchanged.
+
+### Rejected runtime tuning
+
+With the harness stable, five 20,000-connection runs compared the owned Tokio
+runtime at one, two, and four workers on native macOS. Median rates were about
+20,307/sec, 18,863/sec, and 18,400/sec respectively. One worker appears to
+reduce scheduling overhead for short setup-and-reset cycles.
+
+The change was not retained. A new barrier-synchronized data-plane harness then
+moved 1 GiB per direction through eight established tunnels. Five-run medians:
+
+- one worker: 2,352 MiB/sec upload and 2,508 MiB/sec download;
+- two workers: 3,335 MiB/sec upload and 3,464 MiB/sec download;
+- four workers: 3,071 MiB/sec upload and 3,104 MiB/sec download.
+
+One worker lost about 29% upload and 28% download versus two; four workers lost
+about 8% and 10%. Three final control runs after restoring two workers returned
+to 3,323–3,372 MiB/sec upload after one colder outlier and 3,402–3,481 MiB/sec
+download. The fixture also verifies exact final byte accounting and zero active
+connections after close. The two-worker implementation is retained; no
+production change survived this cycle.
+
+The harness passed unchanged under Rust 1.88 in the Linux container. It adds
+15 structural and 43 cognitive SCC points in `tests/throughput.rs`; production
+source and complexity are unchanged.

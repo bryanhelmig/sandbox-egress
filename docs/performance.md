@@ -90,6 +90,28 @@ p50 984–1,077 microseconds, p95 1,598–1,856 microseconds, and p99
 2,229–3,339 microseconds. These numbers establish a second reproducible
 environment; they are not directly comparable to native macOS results.
 
+## Initial local tunnel-throughput baseline
+
+Recorded 2026-08-31 on the same Apple M1 with Rust 1.97.1:
+
+```text
+command: ./scripts/measure-throughput.sh 128 8 both
+runs: 5
+upload:   2,486 .. 3,389 MiB/sec (median 3,335)
+download: 3,395 .. 3,518 MiB/sec (median 3,464)
+```
+
+Each direction moves 1 GiB through eight established loopback tunnels using
+16 KiB application chunks. Setup is outside the timed interval. The final
+lease snapshot must report exactly 1 GiB in the measured direction and one
+teardown or acknowledgement byte per tunnel in the opposite direction.
+
+This harness resolved an apparent setup optimization: one runtime worker
+improved short CONNECT cycles but reduced median upload and download throughput
+to 2,352 and 2,508 MiB/sec. Four workers measured 3,071 and 3,104 MiB/sec. The
+existing two-worker runtime was retained because it won the data-plane test and
+its result reproduced after the comparison.
+
 ## Required next measurements
 
 The next resource harnesses add live connections, slow peers, admitted/denied

@@ -63,3 +63,11 @@ and resets that completed tunnel, preventing rapid repetitions from exhausting
 the host's ephemeral ports with `TIME_WAIT` sockets. Dials are distributed
 across several upstream destination ports as a second guard against per-tuple
 limits. Sustained capacity still remains host-specific evidence.
+
+`./scripts/measure-throughput.sh [MiB per tunnel] [concurrency]
+[upload|download|both]` opens every CONNECT tunnel before releasing a shared
+start barrier. Controlled peers then move bounded chunks in one direction and
+perform an explicit teardown exchange. The test checks aggregate byte counters
+exactly after certified close, including one marker byte per tunnel in the
+opposite direction. This is a same-host regression measure, not a network
+bandwidth claim.

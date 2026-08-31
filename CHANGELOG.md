@@ -7,6 +7,8 @@ Changelog and versions follow Semantic Versioning.
 
 - Add an opt-in sustained local CONNECT harness with concurrency, throughput,
   and p50/p95/p99 setup latency.
+- Add an opt-in concurrent tunnel throughput harness with exact directional
+  accounting checks.
 - Add a pinned structural and cognitive complexity report with an initial
   evidence baseline and CI output.
 - Add a pinned Rust 1.88 Linux container factory with conformance and resource
