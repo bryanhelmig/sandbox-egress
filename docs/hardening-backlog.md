@@ -91,7 +91,7 @@ services may supplement research but must not become test dependencies.
 
 - Phase barriers for deterministic lifecycle races.
 - Local controllable DNS and upstream fault servers.
-- Parser fuzz targets with committed regression seeds.
+- Deterministic malformed-input corpora for protocol parsers.
 - Loom or state-machine tests for small ownership transitions where useful.
 - Criterion microbenchmarks for attach/close, policy matching, accounting, and
   admission contention.

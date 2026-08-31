@@ -11,7 +11,6 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use hickory_resolver::TokioResolver;
-use http::uri::Authority;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Builder as RuntimeBuilder;
@@ -21,6 +20,7 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tokio_util::task::task_tracker::TaskTrackerToken;
 
+use crate::connect::{ConnectRequest, parse_connect};
 use crate::policy::canonical_hostname;
 use crate::tls::{ClientHelloError, read_client_hello};
 use crate::usage::Counters;
@@ -900,43 +900,6 @@ fn find_header_end(bytes: &[u8]) -> Option<usize> {
         .map(|index| index + 4)
 }
 
-#[derive(Debug)]
-struct ConnectRequest {
-    host: String,
-    port: u16,
-}
-
-fn parse_connect(bytes: &[u8]) -> Result<ConnectRequest, &'static str> {
-    let mut headers = [httparse::EMPTY_HEADER; 64];
-    let mut request = httparse::Request::new(&mut headers);
-    match request.parse(bytes) {
-        Ok(httparse::Status::Complete(_)) => {}
-        Ok(httparse::Status::Partial) => return Err("incomplete-header"),
-        Err(_) => return Err("malformed-header"),
-    }
-    if request.method != Some("CONNECT") {
-        return Err("connect-required");
-    }
-    if !matches!(request.version, Some(0 | 1)) {
-        return Err("unsupported-http-version");
-    }
-    let target = request.path.ok_or("missing-authority")?;
-    if target.contains('@') {
-        return Err("userinfo-not-allowed");
-    }
-    let authority: Authority = target.parse().map_err(|_| "invalid-authority")?;
-    let port = authority.port_u16().ok_or("missing-port")?;
-    let host = authority.host();
-    let host = host
-        .strip_prefix('[')
-        .and_then(|host| host.strip_suffix(']'))
-        .unwrap_or(host);
-    Ok(ConnectRequest {
-        host: host.to_owned(),
-        port,
-    })
-}
-
 async fn deny(
     client: &mut TcpStream,
     state: &LeaseState,
@@ -1137,39 +1100,6 @@ mod tests {
             .handshake_timeout(handshake_timeout)
             .build()
             .expect("valid policy")
-    }
-
-    #[test]
-    fn parser_accepts_connect_authority() {
-        let request =
-            parse_connect(b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\n\r\n")
-                .expect("valid CONNECT");
-        assert_eq!(request.host, "example.com");
-        assert_eq!(request.port, 443);
-    }
-
-    #[test]
-    fn parser_rejects_plain_http() {
-        assert_eq!(
-            parse_connect(b"GET http://example.com/ HTTP/1.1\r\n\r\n").unwrap_err(),
-            "connect-required"
-        );
-    }
-
-    #[test]
-    fn parser_rejects_userinfo_in_connect_authority() {
-        assert_eq!(
-            parse_connect(b"CONNECT user@example.com:443 HTTP/1.1\r\n\r\n").unwrap_err(),
-            "userinfo-not-allowed"
-        );
-    }
-
-    #[test]
-    fn parser_normalizes_bracketed_ipv6() {
-        let request = parse_connect(b"CONNECT [2001:db8::1]:443 HTTP/1.1\r\n\r\n")
-            .expect("valid IPv6 CONNECT");
-        assert_eq!(request.host, "2001:db8::1");
-        assert_eq!(request.port, 443);
     }
 
     #[test]

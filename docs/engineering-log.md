@@ -667,3 +667,39 @@ test builds a valid padded ClientHello of roughly 64 KiB, fragments it into
 reads until the proxy closes. The client sends the entire hello, the upstream
 receives only a prefix, the 250 millisecond deadline records one denial, and
 final usage has zero active connections. The case passed 25 consecutive runs.
+
+## 2026-08-31 — deterministic protocol parser matrices
+
+### Finding
+
+The CONNECT parser accepted an empty host and port zero because the generic
+HTTP authority type considers both syntactically representable. Neither is a
+usable outbound destination, and accepting them moves rejection into later
+policy or dial phases with less precise diagnostics.
+
+### Result
+
+Accepted a small internal CONNECT module with fixed, reviewable cases:
+
+- empty hosts and port zero now fail in the parser;
+- missing, negative, overflowing, and duplicated ports fail;
+- userinfo, paths, queries, fragments, and malformed bracketed IPv6 fail;
+- ordinary hostname and bracketed IPv6 authorities remain accepted.
+
+The ClientHello suite now checks every prefix of a representative hello fails
+closed, every valid TLS-record split is accepted, and corrupt record and
+handshake lengths fail. These are deterministic ordinary tests: they use the
+stable toolchain, perform no generated-input exploration, and require no
+separate test harness.
+
+`./scripts/check.sh` passed 30 unit tests, 17 integration tests, Clippy with
+denied warnings, docs, examples, benches, and packaging. The serialized hostile
+conformance lane also passed. The measured tree is 4,170 Rust code lines with a
+328 structural and 970 cognitive complexity estimate; the new isolated
+CONNECT module accounts for 98 code lines and 12/25 of those estimates.
+
+The clean Linux image then passed the same factory on exact Rust 1.88. Its
+500-lease resource smoke held the live proxy at eight descriptors and five
+threads, returned to four descriptors and two threads after shutdown, and
+finished at 3,928 KiB RSS. Running the resulting image passed the serialized
+hostile conformance lane.

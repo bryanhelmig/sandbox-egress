@@ -14,8 +14,8 @@ The suite is organized by claimed invariant rather than by source module.
 - Resource soak: repeated abuse with sampled RSS, thread count, and descriptor
   count. Platform-specific collectors report unsupported rather than silently
   passing.
-- Fuzzing: parsers and policy normalization, added once their internal seams
-  stabilize. Seed regressions remain ordinary tests.
+- Parser robustness: deterministic malformed-input matrices and ordinary
+  regression tests for every discovered defect.
 
 No test may depend on the public internet. DNS and upstream behavior must be
 locally controlled so failures are reproducible.

@@ -23,7 +23,8 @@
 - [x] Opt-in CONNECT authority plus visible-SNI equality policy.
 - [x] Strict ECH rejection and explicit outer-SNI compatibility mode.
 - [x] Revocation and absolute-deadline conformance during partial ClientHello.
-- [ ] Broader malformed/GREASE corpus and parser fuzz seeds.
+- [x] Deterministic malformed CONNECT and ClientHello cases.
+- [ ] Broader GREASE and real-client ClientHello corpus.
 - [ ] Application-authority research and tests without overstating what is
   enforceable without TLS termination.
 
@@ -37,6 +38,6 @@
 
 ## Release gates
 
-Before a public `0.1.0`: API review, threat-model review, fuzz seeds, MSRV CI,
-dependency/license audit, package dry-run inspection, benchmark baseline, and
-at least one external sandbox integration.
+Before a public `0.1.0`: API review, threat-model review, deterministic
+malformed-input corpora, MSRV CI, dependency/license audit, package dry-run
+inspection, benchmark baseline, and at least one external sandbox integration.

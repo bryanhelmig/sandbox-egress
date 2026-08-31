@@ -307,4 +307,36 @@ mod tests {
         assert_eq!(inspected.wire_bytes, hello);
         assert_eq!(inspected.server_name.as_deref(), Some("large.example"));
     }
+
+    #[test]
+    fn every_client_hello_truncation_fails_closed() {
+        let hello = client_hello(Some("truncated.example"), true);
+        for end in 0..hello.len() {
+            assert!(
+                inspect(&hello[..end]).is_err(),
+                "accepted prefix at byte {end}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_client_hello_record_split_is_accepted() {
+        let hello = client_hello(Some("fragmented.example"), false);
+        for split in 1..hello.len() - 5 {
+            let fragmented = fragment_record(&hello, split);
+            let inspected = inspect(&fragmented)
+                .unwrap_or_else(|error| panic!("rejected split at byte {split}: {error:?}"));
+            assert_eq!(inspected.server_name.as_deref(), Some("fragmented.example"));
+        }
+    }
+
+    #[test]
+    fn corrupt_record_and_handshake_lengths_fail_closed() {
+        let hello = client_hello(Some("length.example"), false);
+        for range in [3..5, 6..9] {
+            let mut corrupt = hello.clone();
+            corrupt[range].fill(0xff);
+            assert!(inspect(&corrupt).is_err());
+        }
+    }
 }
