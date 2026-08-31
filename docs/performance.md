@@ -60,9 +60,38 @@ repeated runs close with RST rather than exhaust the macOS 16,384-port ephemeral
 range with `TIME_WAIT` sockets. That socket option is part of the measured
 harness overhead and must remain consistent in comparisons.
 
+## Initial sustained CONNECT baseline
+
+Recorded 2026-08-31 on the same Apple M1 with Rust 1.97.1:
+
+```text
+command: ./scripts/measure-load.sh 10000 64 16
+runs: 5
+connections/second: 16,925 .. 20,994 (median 19,079)
+p50 setup latency: 1,794 .. 1,900 us
+p95 setup latency: 2,114 .. 2,990 us
+p99 setup latency: 2,356 .. 5,408 us
+```
+
+This opens a real client socket, parses CONNECT, checks policy, dials one of
+sixteen controlled loopback destinations, and observes the 200 response. The
+reported latency stops there. Aggregate throughput also includes a one-byte
+tunnel teardown exchange and remote reset, so every iteration releases its
+admission before the worker proceeds.
+
+A one-run concurrency sweep over 10,000 connections measured 6,642/sec at one
+worker, 19,078/sec at eight, 15,411/sec at 32, 20,822/sec at 64, and 17,747/sec
+at 128. The non-monotonic results are a warning against selecting runtime
+settings from one sweep. No production tuning was retained from this baseline.
+
+The same five-run command in the pinned Rust 1.88 Linux container on the local
+two-vCPU arm64 VM measured 27,421–31,592 connections/second (median 29,989),
+p50 984–1,077 microseconds, p95 1,598–1,856 microseconds, and p99
+2,229–3,339 microseconds. These numbers establish a second reproducible
+environment; they are not directly comparable to native macOS results.
+
 ## Required next measurements
 
 The next resource harnesses add live connections, slow peers, admitted/denied
-counters, and cleanup state. Later macrobenchmarks add connections per second,
-tunnel throughput, and p50/p95/p99 setup latency. See
+counters, cleanup state, and bulk tunnel throughput. See
 [`testing.md`](testing.md) and [`roadmap.md`](roadmap.md).

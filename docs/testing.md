@@ -51,3 +51,15 @@ avoiding platform-dependent assumptions about unroutable addresses.
 Linux `/proc` resource smoke on the declared Rust 1.88 MSRV. Running the image
 executes the serialized hostile conformance lane. The container is a clean-room
 reproducer, not a substitute for the native OS matrix.
+
+`./scripts/measure-load.sh [connections] [concurrency] [destinations]` drives
+one lease through many concurrent real loopback CONNECTs in release mode. It
+reports aggregate connections per second and p50/p95/p99 client-observed setup
+latency. Setup latency ends at the `200 Connection Established` response;
+aggregate time also includes deterministic tunnel teardown.
+
+Each client sends a marker after setup. The controlled upstream consumes it
+and resets that completed tunnel, preventing rapid repetitions from exhausting
+the host's ephemeral ports with `TIME_WAIT` sockets. Dials are distributed
+across several upstream destination ports as a second guard against per-tuple
+limits. Sustained capacity still remains host-specific evidence.

@@ -430,3 +430,45 @@ file includes test-only phase seams. Neither should be split solely to improve
 the aggregate. The report is pinned in CI but has no failure threshold; Clippy
 continues to enforce function-level warnings. A future gate needs evidence that
 its chosen scope predicts review difficulty or defects.
+
+## 2026-08-31 — sustained CONNECT harness and teardown traps
+
+### Rejected fixtures
+
+The first local load fixture accepted each upstream dial and immediately
+closed it. Adding zero-duration linger made that close a reset, which raced the
+proxy between successful `connect()` and its 200 response. The resulting 502s
+measured a broken mock server, not proxy capacity.
+
+Keeping upstreams alive fixed that race, but repeated runs still filled all
+16,384 macOS ephemeral ports. Two 5,000-connection runs succeeded; the third
+failed with `EADDRNOTAVAIL`, `TIME_WAIT` reached 16,322 sockets, and `netstat -m`
+showed 65 historical network-memory denials. Client linger alone did not make
+the full bidirectional tunnel teardown deterministic. Both fixture variants
+were discarded.
+
+### Result
+
+Accepted an opt-in release-mode harness with an explicit lifecycle. A client
+measures through the 200 response, sends one teardown byte, and waits for the
+controlled upstream to consume it and reset the established tunnel. Sixteen
+destination listeners spread upstream tuples. Five consecutive 10,000-request
+runs at concurrency 64 then completed with only eight `TIME_WAIT` sockets:
+
+- 16,925–20,994 connections/second, median 19,079;
+- p50 setup latency 1,794–1,900 microseconds;
+- p95 2,114–2,990 microseconds and p99 2,356–5,408 microseconds;
+- exactly 10,000 accepted connections and zero active connections after
+  certified close on every run.
+
+A single concurrency sweep was visibly non-monotonic, ranging from 6,642/sec
+at one worker to 20,822/sec at 64 before falling to 17,747/sec at 128. That is
+enough to establish a reproducible baseline, but not enough evidence to change
+the proxy runtime. The production implementation and public API remain
+unchanged.
+
+The identical five-run lane also passed in the pinned Rust 1.88 Linux image on
+the local two-vCPU arm64 container VM at 27,421–31,592 connections/second
+(median 29,989). Its p50 range was 984–1,077 microseconds and p99 was
+2,229–3,339 microseconds. The harness adds 15 structural and 54 cognitive SCC
+points, all in `tests/load.rs`; production complexity is unchanged.

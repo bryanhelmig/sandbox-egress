@@ -154,6 +154,7 @@ scripts:
 ./scripts/bench.sh              Criterion performance baseline
 ./scripts/measure-resources.sh  opt-in RSS, thread, and descriptor soak
 ./scripts/measure-complexity.sh source size and complexity trend report
+./scripts/measure-load.sh       concurrent CONNECT capacity and tail latency
 cargo run --bin sandbox-egress -- example.com
 ```
 
