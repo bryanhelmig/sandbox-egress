@@ -197,3 +197,31 @@ to a narrow baseline independently of allocator behavior.
 The test target cross-checked successfully for `x86_64-unknown-linux-gnu`,
 including the `/proc` collector. CI runs a smaller `500 x 2` release-mode smoke;
 the longer local command remains configurable for soak work.
+
+## 2026-08-31 — local connection-setup benchmark
+
+### Rejected first attempt
+
+Criterion's default three-second warmup opened enough short-lived loopback
+connections to exhaust the macOS ephemeral source-port range (`49152–65535`).
+The benchmark failed with `EADDRNOTAVAIL` before producing a repeatable result.
+Reducing warmup and sample duration made one run pass but an immediate repeat
+still exhausted the range, so duration tuning alone was rejected.
+
+### Result
+
+Accepted as an initial latency benchmark. Benchmark clients set zero-duration
+linger after reading the proxy response, producing RST on close and avoiding
+`TIME_WAIT` accumulation. `socket2` is a direct dev dependency only; it was
+already present transitively in the runtime graph.
+
+Four immediate runs completed without port exhaustion:
+
+- allowed local CONNECT point estimates: 110.32, 112.72, 126.19, and
+  116.36 microseconds;
+- hostname denial point estimates: 72.38, 75.10, 72.43, and 73.34
+  microseconds.
+
+The relatively wide allowed-path intervals make this a regression baseline,
+not evidence for small optimizations. A sustained-load harness must separately
+model concurrency, socket lifecycle, and OS tuple limits.

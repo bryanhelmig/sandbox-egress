@@ -5,6 +5,7 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Add repeatable allowed and denied local connection-setup benchmarks.
 - Add an opt-in cross-platform identity-churn resource measurement harness.
 - Reject userinfo in CONNECT authority-form and support checked bracketed IPv6
   literals.

@@ -1010,6 +1010,7 @@ dependencies = [
  "http",
  "httparse",
  "ipnet",
+ "socket2",
  "thiserror",
  "tokio",
  "tokio-util",
