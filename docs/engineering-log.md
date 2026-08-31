@@ -378,3 +378,34 @@ No public connector abstraction, dependency, per-dial allocation, or runtime
 task was added. The proxy holds one process-wide connector `Arc`; in non-test
 builds its backend has only the zero-sized system variant and calls Tokio's
 `TcpStream::connect` directly.
+
+## 2026-08-31 — clean Linux MSRV container factory
+
+### Rejected first attempt
+
+The initial image used `rust:1.88.0-slim-bookworm`, but repository-local
+`rust-toolchain.toml` has higher selection precedence and caused Rustup to
+download and run 1.97.1 inside the container. The build was stopped: a base
+image label is not evidence of the compiler that actually ran.
+
+### Result
+
+Accepted after setting the container's `RUSTUP_TOOLCHAIN=1.88.0` override and
+adding a fail-closed compiler-version assertion to the container script. A
+cold local `linux/arm64` build then passed:
+
+- formatting, check, Clippy with denied warnings, fourteen unit tests,
+  seventeen integration tests, the README doctest, rustdoc, and package
+  construction on Rust 1.88.0;
+- a release-mode Linux `/proc` smoke with 500 distinct leases in two batches;
+- live proxy descriptors held at eight and threads at five across both batches;
+- RSS rose from 3,636 KiB after startup to 3,992 KiB after 500 leases, then the
+  proxy shut down with four descriptors and two threads;
+- `docker run --rm sandbox-egress:dev` reran the serialized conformance lane
+  successfully.
+
+The image uses the same repository scripts rather than maintaining a parallel
+test implementation. CI now builds and runs it on Ubuntu. The first build also
+documented why the explicit compiler assertion is load-bearing; removing it
+would allow a future toolchain-file update to invalidate the MSRV claim while
+the image still appeared green.

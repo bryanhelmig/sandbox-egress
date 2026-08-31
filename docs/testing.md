@@ -46,3 +46,8 @@ The equivalent internal connector seam holds a dial future pending after
 recording the exact checked `SocketAddr`. Tests release it only through lease
 cancellation or the absolute handshake deadline and observe its drop directly,
 avoiding platform-dependent assumptions about unroutable addresses.
+
+`docker build -t sandbox-egress:dev .` runs the standard factory and a small
+Linux `/proc` resource smoke on the declared Rust 1.88 MSRV. Running the image
+executes the serialized hostile conformance lane. The container is a clean-room
+reproducer, not a substitute for the native OS matrix.

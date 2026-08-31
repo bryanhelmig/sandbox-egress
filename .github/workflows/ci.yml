@@ -58,3 +58,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: ./scripts/measure-resources.sh 500 2
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t sandbox-egress:ci .
+      - run: docker run --rm sandbox-egress:ci

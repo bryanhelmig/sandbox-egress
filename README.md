@@ -156,6 +156,17 @@ scripts:
 cargo run --bin sandbox-egress -- example.com
 ```
 
+To reproduce the MSRV factory in a clean Linux environment:
+
+```text
+docker build -t sandbox-egress:dev .
+docker run --rm sandbox-egress:dev
+```
+
+The image is pinned to Rust 1.88, runs the normal factory plus a small Linux
+resource smoke while building, and runs the hostile conformance lane by
+default. Tests remain local and do not call public network services.
+
 Start with [AGENTS.md](AGENTS.md). The deeper project record is split into:
 
 - [founding context](docs/founding-context.md) — product ambition and audience;

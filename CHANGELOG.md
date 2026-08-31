@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Add a pinned Rust 1.88 Linux container factory with conformance and resource
+  smoke entry points.
 - Add a controlled dial phase and prove both lease revocation and the absolute
   handshake deadline cancel in-progress connection attempts.
 - Bound process-wide concurrent DNS work and prove queued lookup cancellation
