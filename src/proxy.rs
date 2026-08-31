@@ -52,6 +52,7 @@ impl Proxy {
     /// be initialized.
     pub fn start(config: ProxyConfig) -> Result<Self, ProxyError> {
         let (commands, receiver) = tokio_mpsc::unbounded_channel();
+        let runtime_commands = commands.clone();
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         let thread = thread::Builder::new()
             .name("sandbox-egress-runtime".to_owned())
@@ -62,7 +63,9 @@ impl Proxy {
                     .enable_all()
                     .build();
                 match runtime {
-                    Ok(runtime) => runtime.block_on(run_proxy(config, receiver, ready_tx)),
+                    Ok(runtime) => {
+                        runtime.block_on(run_proxy(config, receiver, runtime_commands, ready_tx));
+                    }
                     Err(error) => {
                         let _ = ready_tx.send(Err(format!("runtime creation failed: {error}")));
                     }
@@ -217,6 +220,9 @@ impl Lease {
                 // delivery loses the race; a failed close must not release
                 // ownership in that case.
                 state.mark_closed();
+                let _ = self.commands.send(Command::Release {
+                    state: Arc::clone(&state),
+                });
                 self.state.take();
                 Ok(usage)
             }
@@ -253,6 +259,9 @@ enum Command {
         reply: mpsc::SyncSender<Result<FinalUsage, CloseErrorKind>>,
     },
     Reap {
+        state: Arc<LeaseState>,
+    },
+    Release {
         state: Arc<LeaseState>,
     },
     Shutdown {
@@ -355,6 +364,7 @@ impl Drop for Admission {
 async fn run_proxy(
     config: ProxyConfig,
     mut commands: tokio_mpsc::UnboundedReceiver<Command>,
+    command_sender: tokio_mpsc::UnboundedSender<Command>,
     ready: mpsc::SyncSender<Result<Endpoint, String>>,
 ) {
     let resolver =
@@ -407,11 +417,16 @@ async fn run_proxy(
                     }
                     Command::Reap { state } => {
                         state.begin_close();
+                        let command_sender = command_sender.clone();
                         tokio::spawn(async move {
                             state.tracker.wait().await;
                             sleep(config.identity_reuse_quiet_period).await;
                             state.mark_closed();
+                            let _ = command_sender.send(Command::Release { state });
                         });
+                    }
+                    Command::Release { state } => {
+                        release_if_current(&mut leases, &state);
                     }
                     Command::Shutdown { deadline, reply } => {
                         for state in leases.values() {
@@ -465,6 +480,18 @@ async fn run_proxy(
                 });
             }
         }
+    }
+}
+
+fn release_if_current(
+    leases: &mut HashMap<PeerIdentity, Arc<LeaseState>>,
+    state: &Arc<LeaseState>,
+) {
+    let is_current = leases
+        .get(&state.identity)
+        .is_some_and(|current| Arc::ptr_eq(current, state));
+    if is_current {
+        leases.remove(&state.identity);
     }
 }
 
@@ -795,5 +822,78 @@ mod tests {
         assert_eq!(*state.phase.lock().expect("lease phase"), Phase::Revoking);
         state.mark_closed();
         assert!(state.is_closed());
+    }
+
+    #[test]
+    fn successful_close_releases_the_registry_reference() {
+        let proxy =
+            Proxy::start(ProxyConfig::default().with_identity_reuse_quiet_period(Duration::ZERO))
+                .expect("start proxy");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                Policy::builder().build().expect("valid policy"),
+            )
+            .expect("attach lease");
+        let state = Arc::clone(lease.state.as_ref().expect("lease state"));
+
+        lease
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("close lease");
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while Arc::strong_count(&state) > 1 && Instant::now() < deadline {
+            thread::yield_now();
+        }
+
+        assert_eq!(Arc::strong_count(&state), 1);
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
+    }
+
+    #[test]
+    fn dropped_lease_eventually_releases_the_registry_reference() {
+        let proxy =
+            Proxy::start(ProxyConfig::default().with_identity_reuse_quiet_period(Duration::ZERO))
+                .expect("start proxy");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                Policy::builder().build().expect("valid policy"),
+            )
+            .expect("attach lease");
+        let state = Arc::clone(lease.state.as_ref().expect("lease state"));
+
+        drop(lease);
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while Arc::strong_count(&state) > 1 && Instant::now() < deadline {
+            thread::yield_now();
+        }
+
+        assert_eq!(Arc::strong_count(&state), 1);
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
+    }
+
+    #[test]
+    fn delayed_release_cannot_remove_a_replacement_lease() {
+        let identity = PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
+        let old = Arc::new(LeaseState::new(
+            1,
+            identity.clone(),
+            Policy::builder().build().expect("old policy"),
+        ));
+        let replacement = Arc::new(LeaseState::new(
+            2,
+            identity.clone(),
+            Policy::builder().build().expect("replacement policy"),
+        ));
+        let mut leases = HashMap::from([(identity.clone(), Arc::clone(&replacement))]);
+
+        release_if_current(&mut leases, &old);
+
+        let retained = leases.get(&identity).expect("replacement retained");
+        assert!(Arc::ptr_eq(retained, &replacement));
     }
 }

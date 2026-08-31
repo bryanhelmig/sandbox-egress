@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Release closed identity registry entries without allowing delayed cleanup to
+  remove a replacement lease.
 - Keep a timed-out close's identity unavailable even when cleanup readiness
   races reply delivery.
 - Adopt the Sandbox Egress name and package identity.

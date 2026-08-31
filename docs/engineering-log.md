@@ -97,3 +97,38 @@ Evidence:
 
 Complexity impact: one retained `Arc` clone and one explicit commit-point phase
 transition; no new production type, command, task, or dependency.
+
+## 2026-08-31 — closed-identity registry retention
+
+### Finding
+
+The runtime registry held an `Arc<LeaseState>` for every distinct identity that
+had ever closed successfully. Reusing the same address replaced the entry, but
+rotating through source addresses retained each closed policy, tracker,
+cancellation token, semaphore, and counters until the entire proxy stopped.
+
+A deterministic regression test retained one observer `Arc`, closed the lease,
+and waited for runtime work to settle. Before the fix its strong count remained
+two rather than one, proving the registry reference was still live.
+
+### Result
+
+Accepted. Successful close and best-effort drop now enqueue a `Release` command
+after cleanup. The runtime removes the registry entry only when it still points
+to the exact same `Arc`; a delayed release from an old generation therefore
+cannot remove a replacement lease for the same identity.
+
+Evidence:
+
+- The registry-reference test failed before the change (`left: 2`, `right: 1`)
+  and passes afterward.
+- Separate tests cover successful close, dropped-lease reaping, and a delayed
+  old-generation release against a replacement entry.
+- The two registry-release tests passed 25 consecutive focused runs.
+- `./scripts/check.sh` passed with eight unit tests, seven integration tests,
+  and the README doctest.
+- Criterion measured attach plus close at 1.3415–1.3524 ms and reported no
+  statistically detected performance change (`p = 0.29`).
+
+Complexity impact: one internal command variant, one sender clone per reaper,
+and a small pointer-checked removal helper. No public API or dependency changed.
