@@ -151,6 +151,7 @@ scripts:
 ./scripts/check.sh              format, compile, lint, test, docs, package
 ./scripts/test-conformance.sh   hostile lifecycle and concurrency cases
 ./scripts/bench.sh              Criterion performance baseline
+./scripts/measure-resources.sh  opt-in RSS, thread, and descriptor soak
 cargo run --bin sandbox-egress -- example.com
 ```
 

@@ -25,3 +25,7 @@ Benchmarks cover attach/close, policy matching, admission contention, and
 accounting overhead. Macrobenchmarks later report connections/sec, throughput,
 p50/p95/p99 setup latency, peak RSS, threads, and file descriptors.
 
+The initial opt-in resource harness runs identity churn with the proxy still
+alive and samples each batch. On Linux it reads `/proc`; on macOS it uses `ps`
+and `lsof`; other targets compile and report unsupported counters as absent.
+Run `./scripts/measure-resources.sh [runs-per-batch] [batches]`.

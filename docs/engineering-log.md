@@ -171,3 +171,29 @@ Evidence:
 Open question: HTTP/1.1 requires Host-field validation, but policy is derived
 only from CONNECT request-target today. Host absence, duplication, and mismatch
 need a compatibility and request-smuggling review before choosing strictness.
+
+## 2026-08-31 — reproducible identity-churn resource harness
+
+Added an opt-in release-mode harness that rotates distinct source identities
+while one proxy remains alive. It samples RSS, descriptors, and threads after
+each batch, uses `/proc` on Linux and `ps`/`lsof` on macOS, and keeps unsupported
+platforms compilable without inventing measurements.
+
+Initial Apple M1 result for 8,000 leases in four batches:
+
+- final-batch time: 11.124 seconds;
+- RSS: 8,576 KiB after proxy start, 8,864 KiB after the fourth batch;
+- descriptors: 13 at start and after every batch;
+- threads: 5 at start and after every batch;
+- after shutdown: 9 descriptors and 2 threads.
+
+Three repeated 4,000-lease runs showed the same descriptor/thread counts and a
+flat RSS high-water range after the first batch. The harness deliberately does
+not assert a hard RSS threshold yet: allocator high-water behavior is not the
+same as a live-object leak, and a portable absolute limit would be brittle.
+Descriptor and thread growth are asserted because those counts should return
+to a narrow baseline independently of allocator behavior.
+
+The test target cross-checked successfully for `x86_64-unknown-linux-gnu`,
+including the `/proc` collector. CI runs a smaller `500 x 2` release-mode smoke;
+the longer local command remains configurable for soak work.

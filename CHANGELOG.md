@@ -5,6 +5,7 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Add an opt-in cross-platform identity-churn resource measurement harness.
 - Reject userinfo in CONNECT authority-form and support checked bracketed IPv6
   literals.
 - Release closed identity registry entries without allowing delayed cleanup to
