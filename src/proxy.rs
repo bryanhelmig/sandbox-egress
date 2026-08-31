@@ -198,7 +198,7 @@ impl Lease {
         if self
             .commands
             .send(Command::Close {
-                state,
+                state: Arc::clone(&state),
                 deadline,
                 reply: reply_tx,
             })
@@ -212,6 +212,11 @@ impl Lease {
         let remaining = deadline.saturating_duration_since(Instant::now());
         match reply_rx.recv_timeout(remaining) {
             Ok(Ok(usage)) => {
+                // Releasing the identity is the caller's commit point. The
+                // runtime may finish cleanup at the deadline while reply
+                // delivery loses the race; a failed close must not release
+                // ownership in that case.
+                state.mark_closed();
                 self.state.take();
                 Ok(usage)
             }
@@ -473,7 +478,6 @@ fn spawn_close_wait(
         let close = async {
             state.tracker.wait().await;
             sleep(quiet_period).await;
-            state.mark_closed();
             state.counters.final_snapshot()
         };
         let result = timeout_at(TokioInstant::from_std(deadline), close)
@@ -756,5 +760,40 @@ mod tests {
             parse_connect(b"GET http://example.com/ HTTP/1.1\r\n\r\n").unwrap_err(),
             "connect-required"
         );
+    }
+
+    #[test]
+    fn cleanup_readiness_does_not_release_identity_before_success_is_observed() {
+        let state = Arc::new(LeaseState::new(
+            1,
+            PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+            Policy::builder().build().expect("valid policy"),
+        ));
+        state.begin_close();
+
+        let runtime = RuntimeBuilder::new_multi_thread()
+            .worker_threads(1)
+            .enable_time()
+            .build()
+            .expect("test runtime");
+        let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+        {
+            let _runtime_guard = runtime.enter();
+            spawn_close_wait(
+                Arc::clone(&state),
+                Duration::ZERO,
+                Instant::now() + Duration::from_secs(1),
+                reply_tx,
+            );
+        }
+        let usage = reply_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("cleanup reply")
+            .expect("cleanup ready");
+
+        assert_eq!(usage.usage().active_connections, 0);
+        assert_eq!(*state.phase.lock().expect("lease phase"), Phase::Revoking);
+        state.mark_closed();
+        assert!(state.is_closed());
     }
 }

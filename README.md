@@ -162,6 +162,8 @@ Start with [AGENTS.md](AGENTS.md). The deeper project record is split into:
 - [architecture](docs/architecture.md) — internal ownership and data flow;
 - [testing strategy](docs/testing.md) — conformance and resource evidence;
 - [performance evidence](docs/performance.md) — reproducible measurements;
+- [engineering log](docs/engineering-log.md) — experiments and negative results;
+- [hardening backlog](docs/hardening-backlog.md) — attack and measurement matrix;
 - [prior art](docs/prior-art.md) — reviewed projects and pinned revisions;
 - [roadmap](docs/roadmap.md) — known gaps and release gates.
 

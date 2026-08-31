@@ -78,3 +78,28 @@ fn identity_cannot_be_attached_twice() {
         .shutdown(Instant::now() + Duration::from_secs(1))
         .expect("proxy shutdown");
 }
+
+#[test]
+fn successful_close_releases_identity_for_a_new_lease() {
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let identity = PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    let lease = proxy
+        .attach(
+            identity.clone(),
+            Policy::builder().build().expect("valid policy"),
+        )
+        .expect("first attach");
+
+    lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close first lease");
+    let replacement = proxy
+        .attach(identity, Policy::builder().build().expect("valid policy"))
+        .expect("attach replacement");
+    replacement
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close replacement");
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
