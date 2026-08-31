@@ -1,0 +1,47 @@
+# Architecture
+
+The crate is split by responsibility, not protocol fashion:
+
+```text
+synchronous caller
+  Proxy ───────── management channel ───────┐
+  Lease ─ usage atomics / close request ────┤
+                                            v
+                                  one owned Tokio runtime
+                                  listener + resolver
+                                            |
+                       source IP -> immutable LeaseState
+                                            |
+                    admit -> track -> headers -> DNS -> dial -> tunnel
+                                            |
+                                  counters + cancellation
+```
+
+## Core objects
+
+`Proxy` owns the runtime thread. `Proxy::attach` is a synchronous command that
+atomically installs an immutable `Policy` for an unused `PeerIdentity`.
+
+`LeaseState` is shared internally but not exposed. Its lifecycle lock orders
+admission against revocation. A Tokio cancellation token ends async phase work;
+a `TaskTracker` turns task destruction into the close barrier. Counters are
+atomics so `Lease::usage` does not cross the runtime boundary.
+
+`Lease` is intentionally not `Clone`. `close(self, deadline)` either produces
+`FinalUsage` or a `CloseError` containing the still-owning lease.
+
+## Data path
+
+The listener uses the socket peer address as host-supplied identity. Admission
+is reserved before a task is spawned. `httparse` parses a bounded header block.
+The policy checks the CONNECT authority and port. Hickory performs one async
+lookup under a deadline. Every result is filtered, and Tokio dials a selected
+checked IP directly. A bounded bidirectional copy loop accounts bytes.
+
+## Why one package
+
+The library and thin executable begin in one package. Splitting crates now
+would manufacture versioning and dependency boundaries before they are known.
+Introduce a workspace only when a component has an independently useful API or
+dependency graph.
+
