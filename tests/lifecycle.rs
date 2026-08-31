@@ -2,6 +2,7 @@
 
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -38,6 +39,39 @@ fn start_echo_on(address: IpAddr) -> (u16, thread::JoinHandle<()>) {
         }
     });
     (port, handle)
+}
+
+fn start_capture() -> (u16, mpsc::Receiver<Vec<u8>>, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind capture");
+    listener.set_nonblocking(true).expect("nonblocking capture");
+    let port = listener.local_addr().expect("capture address").port();
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let handle = thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_millis(250);
+        let captured = loop {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    stream.set_nonblocking(false).expect("blocking capture");
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(1)))
+                        .expect("capture timeout");
+                    let mut buffer = [0_u8; 128];
+                    let bytes = stream.read(&mut buffer).unwrap_or(0);
+                    break buffer[..bytes].to_vec();
+                }
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::WouldBlock
+                        && Instant::now() < deadline =>
+                {
+                    thread::yield_now();
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break Vec::new(),
+                Err(error) => panic!("capture accept failed: {error}"),
+            }
+        };
+        sender.send(captured).expect("send captured bytes");
+    });
+    (port, receiver, handle)
 }
 
 fn attach_local(proxy: &Proxy, policy: Policy) -> sandbox_egress::Lease {
@@ -199,6 +233,168 @@ fn bracketed_ipv6_literal_is_checked_and_dialed_directly() {
         .expect("close IPv6 lease");
     drop(client);
     echo.join().expect("echo thread");
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
+fn upload_limit_blocks_payload_coalesced_with_connect_header() {
+    let (port, captured, capture_thread) = start_capture();
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let policy = Policy::builder()
+        .allow_network("127.0.0.0/8".parse::<IpNet>().expect("test CIDR"))
+        .allow_port(port)
+        .max_upload_bytes(0)
+        .build()
+        .expect("valid policy");
+    let lease = attach_local(&proxy, policy);
+    let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+    client
+        .write_all(format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\nsecret").as_bytes())
+        .expect("write coalesced payload");
+    let mut response = String::new();
+    client.read_to_string(&mut response).expect("read response");
+
+    assert!(response.starts_with("HTTP/1.1 413"), "{response}");
+    assert_eq!(
+        captured
+            .recv_timeout(Duration::from_secs(1))
+            .expect("captured upstream bytes"),
+        b""
+    );
+    capture_thread.join().expect("capture thread");
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close upload-limited lease")
+        .usage();
+    assert_eq!(final_usage.uploaded_bytes, 6);
+    assert_eq!(final_usage.denied_connections, 1);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
+fn upload_limit_allows_exact_coalesced_boundary() {
+    let (port, captured, capture_thread) = start_capture();
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let policy = Policy::builder()
+        .allow_network("127.0.0.0/8".parse::<IpNet>().expect("test CIDR"))
+        .allow_port(port)
+        .max_upload_bytes(6)
+        .build()
+        .expect("valid policy");
+    let lease = attach_local(&proxy, policy);
+    let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+    client
+        .write_all(format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\nsecret").as_bytes())
+        .expect("write coalesced payload");
+    let mut response = [0_u8; 39];
+    client
+        .read_exact(&mut response)
+        .expect("read CONNECT response");
+    assert_eq!(&response, b"HTTP/1.1 200 Connection Established\r\n\r\n");
+    assert_eq!(
+        captured
+            .recv_timeout(Duration::from_secs(1))
+            .expect("captured upstream bytes"),
+        b"secret"
+    );
+    capture_thread.join().expect("capture thread");
+    client
+        .read_to_end(&mut Vec::new())
+        .expect("read tunnel closure");
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close upload-limited lease")
+        .usage();
+    assert_eq!(final_usage.uploaded_bytes, 6);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
+fn upload_limit_blocks_payload_sent_after_connect_response() {
+    let (port, captured, capture_thread) = start_capture();
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let policy = Policy::builder()
+        .allow_network("127.0.0.0/8".parse::<IpNet>().expect("test CIDR"))
+        .allow_port(port)
+        .max_upload_bytes(0)
+        .build()
+        .expect("valid policy");
+    let lease = attach_local(&proxy, policy);
+    let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+    client
+        .write_all(format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\n").as_bytes())
+        .expect("write CONNECT");
+    let mut response = [0_u8; 39];
+    client
+        .read_exact(&mut response)
+        .expect("read CONNECT response");
+    assert_eq!(&response, b"HTTP/1.1 200 Connection Established\r\n\r\n");
+    client.write_all(b"secret").expect("write limited payload");
+    let mut closed = Vec::new();
+    client
+        .read_to_end(&mut closed)
+        .expect("read tunnel closure");
+
+    assert_eq!(
+        captured
+            .recv_timeout(Duration::from_secs(1))
+            .expect("captured upstream bytes"),
+        b""
+    );
+    capture_thread.join().expect("capture thread");
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close upload-limited lease")
+        .usage();
+    assert!(final_usage.uploaded_bytes <= 6);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
+fn upload_limit_is_independent_for_each_tunnel() {
+    let (first_port, first_echo) = start_echo();
+    let (second_port, second_echo) = start_echo();
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let policy = Policy::builder()
+        .allow_network("127.0.0.0/8".parse::<IpNet>().expect("test CIDR"))
+        .allow_port(first_port)
+        .allow_port(second_port)
+        .max_upload_bytes(1)
+        .build()
+        .expect("valid policy");
+    let lease = attach_local(&proxy, policy);
+
+    for port in [first_port, second_port] {
+        let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+        client
+            .write_all(format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\n").as_bytes())
+            .expect("write CONNECT");
+        let mut response = [0_u8; 39];
+        client
+            .read_exact(&mut response)
+            .expect("read CONNECT response");
+        assert_eq!(&response, b"HTTP/1.1 200 Connection Established\r\n\r\n");
+        client.write_all(b"x").expect("write one allowed byte");
+        let mut echoed = [0_u8; 1];
+        client.read_exact(&mut echoed).expect("read echoed byte");
+        assert_eq!(&echoed, b"x");
+    }
+
+    first_echo.join().expect("first echo thread");
+    second_echo.join().expect("second echo thread");
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close lease")
+        .usage();
+    assert_eq!(final_usage.uploaded_bytes, 2);
     proxy
         .shutdown(Instant::now() + Duration::from_secs(1))
         .expect("proxy shutdown");

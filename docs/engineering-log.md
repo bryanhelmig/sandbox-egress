@@ -225,3 +225,53 @@ Four immediate runs completed without port exhaustion:
 The relatively wide allowed-path intervals make this a regression baseline,
 not evidence for small optimizations. A sustained-load harness must separately
 model concurrency, socket lifecycle, and OS tuple limits.
+
+## 2026-08-31 — CONNECT payload upload-limit bypass
+
+### Finding
+
+The header reader may receive tunnel payload in the same socket read as the
+CONNECT header. Those buffered bytes were written directly upstream after the
+200 response, before the metered tunnel wrapper was installed. A policy with
+`max_upload_bytes(0)` could therefore send `secret` by placing it immediately
+after `\r\n\r\n` in the same write.
+
+The regression test failed against the previous implementation: the proxy
+returned 200 and the controlled upstream received all six forbidden bytes.
+Inspection during the fix exposed a second error. The documented per-tunnel
+ceiling was compared to the lease-wide usage counter, so bytes sent by one
+tunnel reduced the allowance available to later or concurrent tunnels.
+
+### Result
+
+Accepted. Buffered payload is counted and checked before DNS or dialing. An
+over-limit request receives 413 and cannot create an upstream connection. The
+metered copy path now keeps a local per-tunnel byte count initialized with any
+already-forwarded buffered payload; aggregate lease counters remain unchanged
+for usage reporting.
+
+Evidence:
+
+- A controlled upstream proves that a zero-byte policy receives no coalesced
+  payload and no upstream connection is opened.
+- A separate post-handshake test proves the metered copy path also forwards no
+  payload at a zero-byte ceiling.
+- An exact-boundary test proves six allowed coalesced bytes are forwarded and
+  counted exactly once.
+- Two sequential tunnels on one lease each receive their independent one-byte
+  allowance; final lease usage reports two bytes.
+- The four focused upload-limit tests passed 20 consecutive runs. Fixing that
+  loop also hardened the observer: accepted capture sockets are explicitly
+  returned to blocking mode rather than treating a transient `WouldBlock` as
+  an empty read.
+- `./scripts/check.sh` passed with ten unit tests, twelve integration tests,
+  the README doctest, rustdoc, Clippy with denied warnings, and packaging.
+- Three connection-benchmark runs found no repeatable regression. One initial
+  comparison labeled the denial path slower despite a 69.7 microsecond point
+  estimate below the recorded baseline; the next two comparisons detected no
+  change. Allowed-path point estimates were 108.9–119.6 microseconds and the
+  final two denial estimates were 72.7–76.4 microseconds.
+
+Complexity impact: one early integer comparison and one per-direction `u64`
+inside each live tunnel wrapper. No public type, task, allocation, or dependency
+was added.

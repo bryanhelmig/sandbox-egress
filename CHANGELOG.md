@@ -5,6 +5,9 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Enforce upload ceilings on bytes coalesced with a CONNECT header before DNS
+  or dialing, and keep each tunnel's byte ceiling independent while retaining
+  lease-wide accounting.
 - Add repeatable allowed and denied local connection-setup benchmarks.
 - Add an opt-in cross-platform identity-churn resource measurement harness.
 - Reject userinfo in CONNECT authority-form and support checked bracketed IPv6

@@ -545,6 +545,15 @@ async fn serve_connect(
     if !state.policy.allows_port(request.port) {
         return deny(&mut client, state, 403, "port-denied").await;
     }
+    let buffered_upload = header.bytes.len() - header.end;
+    if state
+        .policy
+        .max_upload_bytes
+        .is_some_and(|limit| buffered_upload as u64 > limit)
+    {
+        state.counters.record_upload(buffered_upload as u64);
+        return deny(&mut client, state, 413, "upload-limit").await;
+    }
 
     let addresses = if let Ok(ip) = request.host.parse::<IpAddr>() {
         if !state.policy.allows_ip_literal(ip) {
@@ -595,11 +604,9 @@ async fn serve_connect(
     client
         .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
         .await?;
-    if header.end < header.bytes.len() {
+    if buffered_upload > 0 {
         upstream.write_all(&header.bytes[header.end..]).await?;
-        state
-            .counters
-            .record_upload((header.bytes.len() - header.end) as u64);
+        state.counters.record_upload(buffered_upload as u64);
     }
 
     let mut client = Metered::new(
@@ -607,12 +614,14 @@ async fn serve_connect(
         Arc::clone(&state.counters),
         Direction::Upload,
         state.policy.max_upload_bytes,
+        buffered_upload as u64,
     );
     let mut upstream = Metered::new(
         upstream,
         Arc::clone(&state.counters),
         Direction::Download,
         state.policy.max_download_bytes,
+        0,
     );
     tokio::io::copy_bidirectional(&mut client, &mut upstream).await?;
     Ok(ConnectionDisposition::Completed)
@@ -720,15 +729,23 @@ struct Metered<T> {
     counters: Arc<Counters>,
     direction: Direction,
     limit: Option<u64>,
+    transferred: u64,
 }
 
 impl<T> Metered<T> {
-    fn new(inner: T, counters: Arc<Counters>, direction: Direction, limit: Option<u64>) -> Self {
+    fn new(
+        inner: T,
+        counters: Arc<Counters>,
+        direction: Direction,
+        limit: Option<u64>,
+        transferred: u64,
+    ) -> Self {
         Self {
             inner,
             counters,
             direction,
             limit,
+            transferred,
         }
     }
 }
@@ -743,11 +760,12 @@ impl<T: AsyncRead + Unpin> AsyncRead for Metered<T> {
         let result = Pin::new(&mut self.inner).poll_read(context, buffer);
         if let Poll::Ready(Ok(())) = result {
             let bytes = (buffer.filled().len() - before) as u64;
-            let total = match self.direction {
+            match self.direction {
                 Direction::Upload => self.counters.record_upload(bytes),
                 Direction::Download => self.counters.record_download(bytes),
             };
-            if self.limit.is_some_and(|limit| total > limit) {
+            self.transferred = self.transferred.saturating_add(bytes);
+            if self.limit.is_some_and(|limit| self.transferred > limit) {
                 return Poll::Ready(Err(io::Error::other("transfer byte limit exceeded")));
             }
         }
