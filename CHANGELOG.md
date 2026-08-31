@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Add opt-in bounded TLS ClientHello inspection with visible-SNI equality,
+  explicit ECH policy, and revocation/deadline conformance.
 - Add an opt-in sustained local CONNECT harness with concurrency, throughput,
   and p50/p95/p99 setup latency.
 - Add an opt-in concurrent tunnel throughput harness with exact directional

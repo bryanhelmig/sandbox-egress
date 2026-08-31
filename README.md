@@ -54,6 +54,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .allow_host("api.example.com")?
         .allow_host("*.static.example.com")?
         .allow_port(443)
+        // Optional: require visible TLS SNI to repeat the CONNECT hostname.
+        .require_tls_sni()
         .max_connections(8)?
         .build()?;
 
@@ -116,15 +118,30 @@ The current vertical slice provides:
   granted;
 - global and per-lease connection admission reserved before work is spawned;
 - bounded request headers, backpressure, absolute handshake and DNS deadlines;
+- opt-in, bounded TLS `ClientHello` parsing that requires visible SNI to equal
+  the CONNECT hostname;
+- explicit ECH handling: strict inspection rejects ECH by default, while an
+  `AllowOuterSni` mode is available for integrations that knowingly accept an
+  unverifiable encrypted inner name;
 - upload/download accounting and optional transfer ceilings;
 - explicit lease and proxy shutdown deadlines.
 
-The policy promise today is CONNECT authority plus resolved destination IP.
-Sandbox Egress does not yet inspect TLS `ClientHello`, compare visible SNI, or
-define an ECH enforcement mode. It therefore does not claim to prevent domain
-fronting. Plain HTTP forwarding, transparent interception, configurable
-resolver backends, and rate-limited structured diagnostics are also not yet
-implemented. These gaps are tracked rather than hidden.
+The default policy promise remains CONNECT authority plus resolved destination
+IP. Calling `PolicyBuilder::require_tls_sni` opts a lease into the stricter
+promise: the first tunnel bytes must be a valid, bounded `ClientHello`, its
+visible SNI must equal the CONNECT hostname, and ECH must be absent. IP-literal
+CONNECT requests cannot satisfy this mode. `ProxyConfig` bounds buffered
+`ClientHello` bytes, and the lease's absolute handshake deadline covers the
+entire inspection.
+
+For clients that use ECH, callers can explicitly select
+`TlsAuthority::RequireVisibleSni { ech: EchPolicy::AllowOuterSni }`. That mode
+checks only the visible outer SNI. It cannot know the encrypted inner name.
+Neither mode terminates TLS or checks the application authority inside the
+encrypted tunnel, so Sandbox Egress does not claim to eliminate every form of
+domain fronting. Plain HTTP forwarding, transparent interception,
+configurable resolver backends, and rate-limited structured diagnostics are
+also not yet implemented. These gaps are tracked rather than hidden.
 
 ## Safe integration order
 

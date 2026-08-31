@@ -522,6 +522,13 @@ targets. After the real source copy, an explicit `touch` makes every project
 source newer than those placeholders while retaining dependency artifacts.
 The full exact-Rust-1.88 factory and Linux resource smoke then passed.
 
+A later documentation-only edit exposed that copying the real README with the
+manifest still invalidated this layer. The cache now creates a placeholder
+README beside the copied manifests and removes it with the placeholder targets;
+the real README arrives with the source layer and is checked there.
+The next documentation-only rebuild reported the entire manifest/dependency
+step as cached and reran only source verification.
+
 On the local two-vCPU arm64 container VM, the cached source verification spent
 0.6 seconds in check, 0.7 seconds in Clippy, 12 seconds compiling debug project
 targets, and 18 seconds compiling the release resource target; the complete
@@ -533,3 +540,72 @@ The source package now includes all factory scripts, `.cargo` configuration,
 Docker metadata, the dependency policy, and the pinned toolchain. `cargo
 package --list` reported 50 files, and the built image reran hostile conformance
 successfully.
+
+## 2026-08-31 — precise visible TLS authority
+
+### Parser decision
+
+Selected Rustls 0.23's incremental server `Acceptor` rather than maintaining a
+ClientHello grammar or accepting a best-effort parser. The dependency disables
+default features and enables only `std` and TLS 1.2 compatibility; the normal
+dependency tree contains no Ring or AWS-LC crypto provider because Sandbox
+Egress does not terminate TLS.
+
+Rustls exposes the syntactically accepted visible server name but not the raw
+ECH extension through its public ClientHello view. A small bounded extension
+walk therefore runs only after Rustls has accepted the full message and checks
+for the registered `0xfe0d` extension type. It does not reinterpret SNI or
+decide whether malformed TLS is acceptable.
+
+The retained policy is opt-in. `require_tls_sni()` requires a hostname CONNECT
+authority, an equal visible SNI, and no ECH. An explicit `AllowOuterSni` mode
+accepts ECH only while documenting that the encrypted inner authority is
+unknowable. Neither mode claims to enforce an application authority inside the
+encrypted stream.
+
+### Lifecycle and forwarding evidence
+
+- A ClientHello coalesced with the CONNECT header is accepted incrementally
+  and reaches the controlled upstream byte-for-byte.
+- A visible-SNI mismatch and strict ECH each close the client and upstream with
+  zero tunnel bytes forwarded. The destination TCP socket has already been
+  connected, which is documented rather than obscured.
+- A partial ClientHello held after the 200 response is cancelled by successful
+  lease close. Final usage has zero active connections and the upstream sees
+  zero bytes.
+- A separate partial hello is cancelled by a 50 millisecond absolute handshake
+  deadline and records one denial.
+- Parser unit cases cover fragmented records, missing SNI, ECH detection, and
+  the outer byte bound. The full suite and Clippy with denied warnings pass.
+
+The first test placement made `proxy.rs` 1,758 lines and mixed protocol fixtures
+with lifecycle internals. The end-to-end cases were moved to a dedicated
+crate-internal `tls_tests` module; the production proxy file returned to 1,447
+lines. Its structural score rose from the prior 102 to 115 for the retained
+inspection branch, while the parser is isolated at 46 and the conformance
+module at 8. No production split was introduced solely to improve a score.
+
+Criterion found no default-path regression: allowed CONNECT was 114.28
+microseconds at the point estimate with a -6.55% to +6.16% change interval and
+`p=0.91`; early hostname denial was 71.26 microseconds with `p=0.56`. Both were
+reported as no change. A strict-path concurrent measurement remains future
+work rather than an invented claim.
+
+The exact Rust 1.88 Linux factory caught one older-Clippy documentation lint
+that current Rust did not. After correction it passed 22 unit tests, 17
+integration tests, the README doctest, rustdoc, and a 51-file package. The
+500-lease resource smoke held eight descriptors and five threads while live,
+then returned to four descriptors and two threads after shutdown. Running the
+built image reran the hostile conformance lane successfully.
+
+The first successful test run could not commit its Docker layer because the
+container store was full. Only stopped build containers and untagged or
+project-tagged Sandbox Egress images were removed; unrelated images and volumes
+were left intact. The complete rebuild then succeeded.
+
+The pinned `cargo-deny` 0.20.2 audit reported no advisories or source
+violations, then correctly failed the existing license allowlist on Rustls's
+new ISC (`rustls-webpki`, `untrusted`) and BSD-3-Clause (`subtle`) transitive
+dependencies. Those specific OSI-approved permissive licenses were added to
+the allowlist. The repeated `syn` versions remain a configured warning from
+the Hickory and development dependency graphs.

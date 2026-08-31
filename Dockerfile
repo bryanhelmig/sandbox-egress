@@ -6,8 +6,9 @@ RUN rustup component add clippy rustfmt
 
 WORKDIR /workspace
 
-COPY Cargo.toml Cargo.lock README.md ./
-RUN mkdir -p src benches tests \
+COPY Cargo.toml Cargo.lock ./
+RUN printf '# Sandbox Egress dependency cache\n' > README.md \
+    && mkdir -p src benches tests \
     && printf '//! Container dependency cache placeholder.\n' > src/lib.rs \
     && printf '//! Container dependency cache placeholder.\n' > tests/resource_soak.rs \
     && printf '//! Container dependency cache placeholder.\nfn main() {}\n' > benches/connections.rs \
@@ -17,7 +18,7 @@ RUN mkdir -p src benches tests \
     && cargo test --locked --all-targets --all-features --no-run \
     && RUSTDOCFLAGS='-D warnings' cargo doc --locked --no-deps --all-features \
     && cargo test --locked --release --test resource_soak --no-run \
-    && rm -rf src benches tests
+    && rm -rf src benches tests README.md
 
 COPY . .
 

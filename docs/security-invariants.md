@@ -51,7 +51,21 @@ then immutable because no tracked task remains able to change them.
 
 ## Protocol claims
 
-Current enforcement covers CONNECT authority and resolved destination IP. It
-does not yet inspect ClientHello, enforce visible SNI equality, parse ECH, or
-enforce application `Host` authority inside TLS. Documentation and diagnostics
-must not imply otherwise.
+Every policy enforces CONNECT authority and resolved destination IP. TLS
+authority inspection is opt-in. When enabled, a maintained TLS parser must
+accept a complete ClientHello within both the configured byte bound and the
+lease's absolute handshake deadline. The proxy requires one canonical visible
+SNI hostname equal to the canonical CONNECT hostname before forwarding any
+ClientHello bytes upstream.
+
+Strict TLS authority mode rejects an ECH extension because the inner authority
+is encrypted. `AllowOuterSni` is an explicit compatibility tradeoff: it checks
+the outer SNI but cannot make a claim about the inner name. The proxy does not
+terminate TLS and cannot enforce an application `Host` or `:authority` value
+inside the encrypted tunnel. Documentation and diagnostics must not imply
+otherwise.
+
+ClientHello inspection happens after the CONNECT destination has resolved and
+the checked socket has connected, because a conventional proxy client waits
+for the 200 response before sending TLS. A denied ClientHello sends zero tunnel
+bytes upstream, but the upstream TCP connection has already occurred.

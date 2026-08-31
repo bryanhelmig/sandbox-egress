@@ -12,7 +12,7 @@ synchronous caller
                                             |
                        source IP -> immutable LeaseState
                                             |
-                    admit -> track -> headers -> DNS -> dial -> tunnel
+       admit -> track -> headers -> DNS -> dial -> optional ClientHello -> tunnel
                                             |
                                   counters + cancellation
 ```
@@ -36,7 +36,11 @@ The listener uses the socket peer address as host-supplied identity. Admission
 is reserved before a task is spawned. `httparse` parses a bounded header block.
 The policy checks the CONNECT authority and port. Hickory performs one async
 lookup under a deadline. Every result is filtered, and Tokio dials a selected
-checked IP directly. A bounded bidirectional copy loop accounts bytes.
+checked IP directly. An opt-in TLS authority phase incrementally parses a
+bounded ClientHello, compares visible SNI with CONNECT authority, and applies
+the lease's explicit ECH policy before forwarding those bytes. The ordinary
+path does not instantiate the parser. A bounded bidirectional copy loop
+accounts bytes.
 
 ## Why one package
 
@@ -44,4 +48,3 @@ The library and thin executable begin in one package. Splitting crates now
 would manufacture versioning and dependency boundaries before they are known.
 Introduce a workspace only when a component has an independently useful API or
 dependency graph.
-

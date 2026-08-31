@@ -22,10 +22,11 @@ use tokio_util::task::TaskTracker;
 use tokio_util::task::task_tracker::TaskTrackerToken;
 
 use crate::policy::canonical_hostname;
+use crate::tls::{ClientHelloError, read_client_hello};
 use crate::usage::Counters;
 use crate::{
-    AttachError, CloseError, CloseErrorKind, Endpoint, FinalUsage, PeerIdentity, Policy,
-    ProxyConfig, ProxyError, Usage,
+    AttachError, CloseError, CloseErrorKind, EchPolicy, Endpoint, FinalUsage, PeerIdentity, Policy,
+    ProxyConfig, ProxyError, TlsAuthority, Usage,
 };
 
 /// Shared proxy listener and synchronous management handle.
@@ -103,7 +104,7 @@ impl Proxy {
     }
 
     #[cfg(test)]
-    fn start_with_test_resolver(
+    pub(crate) fn start_with_test_resolver(
         config: ProxyConfig,
         resolver: Arc<dyn TestResolver>,
     ) -> Result<Self, ProxyError> {
@@ -414,7 +415,7 @@ impl ResolverBackend {
 }
 
 #[cfg(test)]
-trait TestResolver: Send + Sync {
+pub(crate) trait TestResolver: Send + Sync {
     fn lookup<'a>(
         &'a self,
         hostname: &'a str,
@@ -676,10 +677,36 @@ async fn serve_connect(
     client
         .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
         .await?;
-    if buffered_upload > 0 {
-        upstream.write_all(&header.bytes[header.end..]).await?;
-        state.counters.record_upload(buffered_upload as u64);
-    }
+    let buffered_upload = match state.policy.tls_authority {
+        TlsAuthority::Disabled => {
+            if buffered_upload > 0 {
+                upstream.write_all(&header.bytes[header.end..]).await?;
+                state.counters.record_upload(buffered_upload as u64);
+            }
+            buffered_upload
+        }
+        TlsAuthority::RequireVisibleSni { ech } => {
+            let inspection = inspect_tls_tunnel(
+                &mut client,
+                state,
+                &request.host,
+                ech,
+                header.bytes[header.end..].to_vec(),
+                config.max_client_hello_bytes,
+            );
+            match timeout_at(handshake_deadline, inspection).await {
+                Ok(Ok(hello)) => {
+                    let bytes = hello.len();
+                    if upstream.write_all(&hello).await.is_err() {
+                        return reject_tunnel(&mut client, state, "upstream-write-failed").await;
+                    }
+                    bytes
+                }
+                Ok(Err(reason)) => return reject_tunnel(&mut client, state, reason).await,
+                Err(_) => return reject_tunnel(&mut client, state, "client-hello-timeout").await,
+            }
+        }
+    };
 
     let mut client = Metered::new(
         client,
@@ -697,6 +724,62 @@ async fn serve_connect(
     );
     tokio::io::copy_bidirectional(&mut client, &mut upstream).await?;
     Ok(ConnectionDisposition::Completed)
+}
+
+async fn inspect_tls_tunnel(
+    client: &mut TcpStream,
+    state: &LeaseState,
+    connect_host: &str,
+    ech_policy: EchPolicy,
+    initial: Vec<u8>,
+    configured_max: usize,
+) -> Result<Vec<u8>, &'static str> {
+    let initial_len = initial.len();
+    state.counters.record_upload(initial_len as u64);
+    let max_bytes = state
+        .policy
+        .max_upload_bytes
+        .map_or(configured_max, |limit| {
+            configured_max.min(usize::try_from(limit).unwrap_or(usize::MAX))
+        });
+    let mut metered = Metered::new(
+        client,
+        Arc::clone(&state.counters),
+        Direction::Upload,
+        state.policy.max_upload_bytes,
+        initial_len as u64,
+    );
+    let hello = read_client_hello(&mut metered, initial, max_bytes)
+        .await
+        .map_err(|error| match error {
+            ClientHelloError::TooLarge if max_bytes < configured_max => "upload-limit",
+            ClientHelloError::TooLarge => "client-hello-too-large",
+            ClientHelloError::Invalid => "client-hello-invalid",
+            ClientHelloError::UnexpectedEof => "client-hello-eof",
+        })?;
+    let server_name = hello
+        .server_name
+        .as_deref()
+        .and_then(canonical_hostname)
+        .ok_or("tls-sni-missing")?;
+    let connect_host = canonical_hostname(connect_host).ok_or("tls-authority-not-hostname")?;
+    if server_name != connect_host {
+        return Err("tls-sni-mismatch");
+    }
+    if hello.ech_present && ech_policy == EchPolicy::Reject {
+        return Err("ech-denied");
+    }
+    Ok(hello.wire_bytes)
+}
+
+async fn reject_tunnel(
+    client: &mut TcpStream,
+    state: &LeaseState,
+    _reason: &'static str,
+) -> io::Result<ConnectionDisposition> {
+    state.counters.deny();
+    let _ = client.shutdown().await;
+    Ok(ConnectionDisposition::Denied)
 }
 
 #[derive(Clone, Copy)]

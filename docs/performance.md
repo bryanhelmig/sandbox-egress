@@ -117,3 +117,21 @@ its result reproduced after the comparison.
 The next resource harnesses add live connections, slow peers, admitted/denied
 counters, cleanup state, and bulk tunnel throughput. See
 [`testing.md`](testing.md) and [`roadmap.md`](roadmap.md).
+
+## TLS authority default-path check
+
+Recorded 2026-08-31 on the same Apple M1 after adding opt-in ClientHello
+inspection:
+
+```text
+command: cargo bench --bench connections
+allowed CONNECT: 109.36 .. 123.22 us (114.28 us point estimate)
+change: -6.55% .. +6.16%, p=0.91; no change detected
+hostname denial: 69.07 .. 73.36 us (71.26 us point estimate)
+change: -3.88% .. +6.06%, p=0.56; no change detected
+```
+
+Both benchmarks use the default `TlsAuthority::Disabled` policy. The result is
+evidence that merely linking the parser does not change connection setup
+measurably; it does not measure the opt-in parse path. A concurrent inspected
+ClientHello benchmark remains a follow-up.

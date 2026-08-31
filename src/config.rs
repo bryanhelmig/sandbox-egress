@@ -9,6 +9,7 @@ pub struct ProxyConfig {
     pub(crate) max_connections: usize,
     pub(crate) max_concurrent_dns: usize,
     pub(crate) max_header_bytes: usize,
+    pub(crate) max_client_hello_bytes: usize,
     pub(crate) header_timeout: Duration,
     pub(crate) identity_reuse_quiet_period: Duration,
 }
@@ -40,6 +41,12 @@ impl ProxyConfig {
         self
     }
 
+    /// Set the maximum buffered TLS `ClientHello` size for inspected tunnels.
+    pub fn with_max_client_hello_bytes(mut self, bytes: usize) -> Self {
+        self.max_client_hello_bytes = bytes.clamp(1_024, 1024 * 1024);
+        self
+    }
+
     /// Set the absolute deadline for receiving a complete CONNECT header.
     pub fn with_header_timeout(mut self, timeout: Duration) -> Self {
         self.header_timeout = timeout;
@@ -61,6 +68,7 @@ impl Default for ProxyConfig {
             max_connections: 1_024,
             max_concurrent_dns: 128,
             max_header_bytes: 32 * 1_024,
+            max_client_hello_bytes: 64 * 1_024,
             header_timeout: Duration::from_secs(10),
             identity_reuse_quiet_period: Duration::from_millis(25),
         }

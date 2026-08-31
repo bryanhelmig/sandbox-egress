@@ -19,11 +19,13 @@
 
 ## M2 — precise TLS authority
 
-- Mature ClientHello parser.
-- CONNECT authority plus visible-SNI policy.
-- Explicit missing-SNI and ECH policy modes.
-- Domain-fronting tests and precise documentation of what is not enforceable
-  without TLS termination.
+- [x] Mature, bounded ClientHello parser.
+- [x] Opt-in CONNECT authority plus visible-SNI equality policy.
+- [x] Strict ECH rejection and explicit outer-SNI compatibility mode.
+- [x] Revocation and absolute-deadline conformance during partial ClientHello.
+- [ ] Broader malformed/GREASE corpus and parser fuzz seeds.
+- [ ] Application-authority research and tests without overstating what is
+  enforceable without TLS termination.
 
 ## M3 — protocol and integration breadth
 

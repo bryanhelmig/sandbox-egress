@@ -6,6 +6,29 @@ use ipnet::IpNet;
 
 use crate::PolicyError;
 
+/// How a visible `ClientHello` is related to CONNECT authority.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum TlsAuthority {
+    /// Do not inspect tunnel bytes after CONNECT.
+    #[default]
+    Disabled,
+    /// Require a valid `ClientHello` whose visible SNI equals CONNECT authority.
+    RequireVisibleSni {
+        /// How an encrypted `ClientHello` extension is handled.
+        ech: EchPolicy,
+    },
+}
+
+/// Handling for TLS Encrypted `ClientHello` (ECH).
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum EchPolicy {
+    /// Reject ECH because its inner authority is not visible to the proxy.
+    #[default]
+    Reject,
+    /// Enforce only the visible outer SNI and allow an unknowable inner name.
+    AllowOuterSni,
+}
+
 /// A canonical hostname pattern accepted by a [`Policy`].
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum HostPattern {
@@ -61,6 +84,7 @@ pub struct Policy {
     pub(crate) handshake_timeout: Duration,
     pub(crate) max_upload_bytes: Option<u64>,
     pub(crate) max_download_bytes: Option<u64>,
+    pub(crate) tls_authority: TlsAuthority,
 }
 
 impl Policy {
@@ -107,6 +131,7 @@ pub struct PolicyBuilder {
     handshake_timeout: Duration,
     max_upload_bytes: Option<u64>,
     max_download_bytes: Option<u64>,
+    tls_authority: TlsAuthority,
 }
 
 impl PolicyBuilder {
@@ -152,7 +177,7 @@ impl PolicyBuilder {
         self
     }
 
-    /// Set the absolute header + DNS + dial deadline.
+    /// Set the absolute header + DNS + dial + optional `ClientHello` deadline.
     pub fn handshake_timeout(mut self, timeout: Duration) -> Self {
         self.handshake_timeout = timeout;
         self
@@ -167,6 +192,21 @@ impl PolicyBuilder {
     /// Set the maximum bytes downloaded over one tunnel.
     pub fn max_download_bytes(mut self, bytes: u64) -> Self {
         self.max_download_bytes = Some(bytes);
+        self
+    }
+
+    /// Require the tunnel to begin with a valid `ClientHello` whose visible SNI
+    /// equals its hostname CONNECT authority, and reject ECH.
+    pub fn require_tls_sni(mut self) -> Self {
+        self.tls_authority = TlsAuthority::RequireVisibleSni {
+            ech: EchPolicy::Reject,
+        };
+        self
+    }
+
+    /// Configure TLS authority inspection explicitly.
+    pub fn tls_authority(mut self, authority: TlsAuthority) -> Self {
+        self.tls_authority = authority;
         self
     }
 
@@ -192,6 +232,7 @@ impl PolicyBuilder {
             handshake_timeout: self.handshake_timeout,
             max_upload_bytes: self.max_upload_bytes,
             max_download_bytes: self.max_download_bytes,
+            tls_authority: self.tls_authority,
         })
     }
 }
@@ -207,6 +248,7 @@ impl Default for PolicyBuilder {
             handshake_timeout: Duration::from_secs(10),
             max_upload_bytes: None,
             max_download_bytes: None,
+            tls_authority: TlsAuthority::Disabled,
         }
     }
 }

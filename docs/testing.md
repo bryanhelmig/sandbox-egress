@@ -47,6 +47,15 @@ recording the exact checked `SocketAddr`. Tests release it only through lease
 cancellation or the absolute handshake deadline and observe its drop directly,
 avoiding platform-dependent assumptions about unroutable addresses.
 
+The TLS conformance module uses Rustls to accept incrementally fragmented
+ClientHello records, plus a focused extension walk only after syntactic
+acceptance to detect ECH. Real proxy tests prove that a matching coalesced
+CONNECT and ClientHello arrives upstream byte-for-byte, while mismatched SNI
+and strict ECH send zero tunnel bytes upstream. Separate phase tests hold a
+partial ClientHello open and prove that both lease close and the absolute
+handshake deadline end the client, upstream socket, parser work, and active
+connection count.
+
 `docker build -t sandbox-egress:dev .` runs the standard factory and a small
 Linux `/proc` resource smoke on the declared Rust 1.88 MSRV. Running the image
 executes the serialized hostile conformance lane. The container is a clean-room

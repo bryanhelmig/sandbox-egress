@@ -17,9 +17,18 @@ remain upstream-owned and are not vendored.
 Also relevant: Rama for composable mature proxy machinery and VEY/G3 for
 production daemon limits, metrics, ACLs, and per-user policy.
 
+## Protocol references
+
+- [Rustls 0.23 server `Acceptor`](https://docs.rs/rustls/0.23.43/rustls/server/struct.Acceptor.html)
+  supplies the incremental, syntactic ClientHello boundary and visible SNI.
+- [RFC 9849](https://www.rfc-editor.org/rfc/rfc9849.html) defines TLS Encrypted
+  ClientHello and the distinction between visible outer and encrypted inner
+  names.
+- The [IANA TLS extension registry](https://www.iana.org/assignments/tls-extensiontype-values)
+  assigns `0xfe0d` to Encrypted ClientHello.
+
 ## Research rule
 
 Copy concepts, tests, and threat-model lessons—not code—unless license and
 provenance are reviewed. Record new sources and exact commits here before a
 design meaningfully depends on them.
-
