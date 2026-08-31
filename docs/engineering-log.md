@@ -497,3 +497,39 @@ production change survived this cycle.
 The harness passed unchanged under Rust 1.88 in the Linux container. It adds
 15 structural and 43 cognitive SCC points in `tests/throughput.rs`; production
 source and complexity are unchanged.
+
+## 2026-08-31 — source-stable container dependency cache
+
+### Rejected attempts
+
+The original Dockerfile copied the entire repository before any Cargo command,
+so every source edit discarded downloaded and compiled dependencies in both
+debug and release profiles. A first split-manifest layer primed only `cargo
+test`; the real source layer still had to rebuild Cargo's separate check
+metadata, so the cache was incomplete.
+
+Priming all factory modes exposed a subtler failure. Cargo considered a dummy
+library artifact newer than copied source timestamps and reused it for the
+release resource test, producing unresolved imports even though debug tests had
+compiled the real library. `cargo clean -p` did not reliably remove that
+release fingerprint. Both variants were rejected.
+
+### Result
+
+The accepted dependency layer runs locked check, Clippy, test compilation,
+rustdoc, and release resource-test compilation against documented placeholder
+targets. After the real source copy, an explicit `touch` makes every project
+source newer than those placeholders while retaining dependency artifacts.
+The full exact-Rust-1.88 factory and Linux resource smoke then passed.
+
+On the local two-vCPU arm64 container VM, the cached source verification spent
+0.6 seconds in check, 0.7 seconds in Clippy, 12 seconds compiling debug project
+targets, and 18 seconds compiling the release resource target; the complete
+source-layer image build finished in about one minute. A comparable prior
+source edit under the unsplit Dockerfile took about 99 seconds. Cache population
+is intentionally more expensive and is amortized over source iterations.
+
+The source package now includes all factory scripts, `.cargo` configuration,
+Docker metadata, the dependency policy, and the pinned toolchain. `cargo
+package --list` reported 50 files, and the built image reran hostile conformance
+successfully.

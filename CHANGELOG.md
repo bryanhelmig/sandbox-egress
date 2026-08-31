@@ -9,6 +9,8 @@ Changelog and versions follow Semantic Versioning.
   and p50/p95/p99 setup latency.
 - Add an opt-in concurrent tunnel throughput harness with exact directional
   accounting checks.
+- Cache debug and release dependency builds separately from source changes in
+  the Linux container factory, and include factory scripts in source packages.
 - Add a pinned structural and cognitive complexity report with an initial
   evidence baseline and CI output.
 - Add a pinned Rust 1.88 Linux container factory with conformance and resource
