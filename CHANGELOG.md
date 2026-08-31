@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Reject userinfo in CONNECT authority-form and support checked bracketed IPv6
+  literals.
 - Release closed identity registry entries without allowing delayed cleanup to
   remove a replacement lease.
 - Keep a timed-out close's identity unavailable even when cleanup readiness

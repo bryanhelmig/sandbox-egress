@@ -1,7 +1,7 @@
 //! End-to-end lease lifecycle and tunnelling tests.
 
 use std::io::{Read, Write};
-use std::net::{IpAddr, Ipv4Addr, Shutdown, TcpListener, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -19,7 +19,11 @@ fn local_policy(port: u16) -> Policy {
 }
 
 fn start_echo() -> (u16, thread::JoinHandle<()>) {
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind echo");
+    start_echo_on(IpAddr::V4(Ipv4Addr::LOCALHOST))
+}
+
+fn start_echo_on(address: IpAddr) -> (u16, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind(SocketAddr::new(address, 0)).expect("bind echo");
     let port = listener.local_addr().expect("echo address").port();
     let handle = thread::spawn(move || {
         let (mut stream, _) = listener.accept().expect("accept echo");
@@ -165,6 +169,36 @@ fn hostname_policy_denies_before_dns() {
     lease
         .close(Instant::now() + Duration::from_secs(1))
         .expect("close lease");
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
+fn bracketed_ipv6_literal_is_checked_and_dialed_directly() {
+    let (port, echo) = start_echo_on(IpAddr::V6(Ipv6Addr::LOCALHOST));
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let policy = Policy::builder()
+        .allow_network("::1/128".parse::<IpNet>().expect("IPv6 test CIDR"))
+        .allow_port(port)
+        .build()
+        .expect("valid policy");
+    let lease = attach_local(&proxy, policy);
+    let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+    client
+        .write_all(format!("CONNECT [::1]:{port} HTTP/1.1\r\n\r\n").as_bytes())
+        .expect("write IPv6 CONNECT");
+    let mut response = [0_u8; 39];
+    client
+        .read_exact(&mut response)
+        .expect("read CONNECT response");
+    assert_eq!(&response, b"HTTP/1.1 200 Connection Established\r\n\r\n");
+
+    lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close IPv6 lease");
+    drop(client);
+    echo.join().expect("echo thread");
     proxy
         .shutdown(Instant::now() + Duration::from_secs(1))
         .expect("proxy shutdown");

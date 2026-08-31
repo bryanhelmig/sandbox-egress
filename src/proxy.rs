@@ -675,14 +675,19 @@ fn parse_connect(bytes: &[u8]) -> Result<ConnectRequest, &'static str> {
     if !matches!(request.version, Some(0 | 1)) {
         return Err("unsupported-http-version");
     }
-    let authority: Authority = request
-        .path
-        .ok_or("missing-authority")?
-        .parse()
-        .map_err(|_| "invalid-authority")?;
+    let target = request.path.ok_or("missing-authority")?;
+    if target.contains('@') {
+        return Err("userinfo-not-allowed");
+    }
+    let authority: Authority = target.parse().map_err(|_| "invalid-authority")?;
     let port = authority.port_u16().ok_or("missing-port")?;
+    let host = authority.host();
+    let host = host
+        .strip_prefix('[')
+        .and_then(|host| host.strip_suffix(']'))
+        .unwrap_or(host);
     Ok(ConnectRequest {
-        host: authority.host().to_owned(),
+        host: host.to_owned(),
         port,
     })
 }
@@ -787,6 +792,22 @@ mod tests {
             parse_connect(b"GET http://example.com/ HTTP/1.1\r\n\r\n").unwrap_err(),
             "connect-required"
         );
+    }
+
+    #[test]
+    fn parser_rejects_userinfo_in_connect_authority() {
+        assert_eq!(
+            parse_connect(b"CONNECT user@example.com:443 HTTP/1.1\r\n\r\n").unwrap_err(),
+            "userinfo-not-allowed"
+        );
+    }
+
+    #[test]
+    fn parser_normalizes_bracketed_ipv6() {
+        let request = parse_connect(b"CONNECT [2001:db8::1]:443 HTTP/1.1\r\n\r\n")
+            .expect("valid IPv6 CONNECT");
+        assert_eq!(request.host, "2001:db8::1");
+        assert_eq!(request.port, 443);
     }
 
     #[test]

@@ -132,3 +132,42 @@ Evidence:
 
 Complexity impact: one internal command variant, one sender clone per reaper,
 and a small pointer-checked removal helper. No public API or dependency changed.
+
+## 2026-08-31 — CONNECT authority semantics
+
+### Finding
+
+RFC 9112 defines CONNECT authority-form as only `uri-host ":" port`. The
+general-purpose `http::uri::Authority` parser is intentionally broader: it
+accepts URI userinfo and returns IPv6 hosts with their square brackets. We were
+using that broader output without narrowing it to CONNECT semantics.
+
+Two regression tests demonstrated the effects before the change:
+
+- `CONNECT user@example.com:443` was accepted and reduced to
+  `example.com:443`, rather than rejected as invalid authority-form.
+- `CONNECT [2001:db8::1]:443` produced host `[2001:db8::1]`; it therefore
+  failed `IpAddr` parsing and could not use explicit IPv6 network policy.
+
+Reference: [RFC 9112 section 3.2.3](https://www.rfc-editor.org/rfc/rfc9112.html#section-3.2.3).
+
+### Result
+
+Accepted. The CONNECT adapter now rejects `@` before general authority parsing
+and removes exactly one validated pair of IPv6 brackets before IP/policy
+handling. The mature parser remains responsible for grammar and port parsing;
+the adapter enforces the narrower protocol meaning.
+
+Evidence:
+
+- Both focused tests failed against the previous implementation and pass after
+  the change.
+- A real IPv6 loopback integration test proves an explicitly allowed `::1/128`
+  target is checked and dialed directly.
+- All four parser tests passed 20 consecutive focused runs.
+- `./scripts/check.sh` passed with ten unit tests, eight integration tests, and
+  the README doctest.
+
+Open question: HTTP/1.1 requires Host-field validation, but policy is derived
+only from CONNECT request-target today. Host absence, duplication, and mismatch
+need a compatibility and request-smuggling review before choosing strictness.
