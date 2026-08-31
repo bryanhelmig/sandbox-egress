@@ -304,3 +304,44 @@ Timeout and `WouldBlock` are explicitly rejected as proof of closure. All five
 tests passed 20 consecutive focused runs. This cycle required no production
 change; the evidence is kept because it closes a named conformance gap and is
 now part of `scripts/test-conformance.sh`.
+
+## 2026-08-31 — bounded and revocable DNS phase
+
+### Finding
+
+The global connection semaphore indirectly capped the number of resolver
+calls, but DNS had no independent process budget despite the design promise.
+A workload could therefore occupy every connection slot with concurrent
+resolver work, and the suite had no deterministic way to observe cancellation
+or late-answer behavior.
+
+### Result
+
+Accepted. `ProxyConfig::with_max_concurrent_dns` now controls a process-wide
+semaphore, defaulting to 128. Connections wait for a permit inside their DNS
+and absolute handshake deadlines. The permit covers only the resolver call and
+is released before address policy checks and dialing.
+
+An internal resolver backend seam keeps the public API small while making the
+real connection path controllable in unit tests:
+
+- Five admitted hostname connections with a DNS ceiling of two enter exactly
+  two pending resolver futures. Three remain queued without starting lookup
+  work.
+- Closing the lease drops both active futures, cancels all queued acquisitions,
+  leaves the resolver's active count at zero, and allows no queued lookup to
+  enter during permit release.
+- A separate lookup is held at a one-shot answer boundary. After successful
+  close, sending a loopback answer fails because the receiver has been dropped,
+  and a real target listener observes no dial.
+- Both focused tests passed 25 consecutive runs. `./scripts/check.sh` passes
+  with twelve unit tests, seventeen integration tests, and the README doctest.
+- The local connection benchmark detected no change: allowed CONNECT measured
+  114.2 microseconds and hostname denial 72.0 microseconds at the point
+  estimates.
+
+Clippy initially rejected a 312-byte resolver enum variant and a connection
+handler that crossed 100 lines. Rather than suppress those signals, the shared
+resolver was boxed once at proxy startup and resolution/policy was extracted
+as one phase function returning a structured internal denial. No per-connection
+resolver allocation or public resolver trait was introduced.

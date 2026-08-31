@@ -7,6 +7,7 @@ use std::time::Duration;
 pub struct ProxyConfig {
     pub(crate) bind_address: SocketAddr,
     pub(crate) max_connections: usize,
+    pub(crate) max_concurrent_dns: usize,
     pub(crate) max_header_bytes: usize,
     pub(crate) header_timeout: Duration,
     pub(crate) identity_reuse_quiet_period: Duration,
@@ -22,6 +23,14 @@ impl ProxyConfig {
     /// Set the process-wide concurrent connection ceiling.
     pub fn with_max_connections(mut self, max: usize) -> Self {
         self.max_connections = max.max(1);
+        self
+    }
+
+    /// Set the process-wide ceiling for DNS lookups executing concurrently.
+    /// Connections waiting for a permit remain subject to their DNS and
+    /// absolute handshake deadlines.
+    pub fn with_max_concurrent_dns(mut self, max: usize) -> Self {
+        self.max_concurrent_dns = max.max(1);
         self
     }
 
@@ -50,6 +59,7 @@ impl Default for ProxyConfig {
         Self {
             bind_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
             max_connections: 1_024,
+            max_concurrent_dns: 128,
             max_header_bytes: 32 * 1_024,
             header_timeout: Duration::from_secs(10),
             identity_reuse_quiet_period: Duration::from_millis(25),

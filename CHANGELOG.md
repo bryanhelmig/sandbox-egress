@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Bound process-wide concurrent DNS work and prove queued lookup cancellation
+  and late-answer safety with a controlled resolver seam.
 - Add hostile tunnel conformance for download ceilings and certified shutdown
   with idle, nonreading, and flooding peers.
 - Enforce upload ceilings on bytes coalesced with a CONNECT header before DNS

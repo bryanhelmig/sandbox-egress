@@ -33,8 +33,10 @@ old lease and close waits for it, or admission sees revoking and is refused.
 
 Hostname policy is checked before DNS. Every resolved address is checked after
 DNS. Only those checked `SocketAddr` values are passed to `TcpStream::connect`;
-the dial path never receives the hostname. A cancelled or late resolver future
-cannot reach dialing because it lives inside the tracked connection future.
+the dial path never receives the hostname. A process-wide semaphore bounds
+lookups executing concurrently; waiting for a permit consumes the same DNS and
+absolute handshake deadlines. A cancelled or late resolver future cannot reach
+dialing because it lives inside the tracked connection future.
 
 ## Shutdown result
 
@@ -49,4 +51,3 @@ Current enforcement covers CONNECT authority and resolved destination IP. It
 does not yet inspect ClientHello, enforce visible SNI equality, parse ECH, or
 enforce application `Host` authority inside TLS. Documentation and diagnostics
 must not imply otherwise.
-

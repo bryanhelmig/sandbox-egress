@@ -110,6 +110,7 @@ The current vertical slice provides:
 - source-IP identity derived from the accepted socket;
 - one DNS resolution followed by checks on every returned address;
 - direct dialing of a checked `SocketAddr`, with no second lookup;
+- an independently bounded process-wide DNS concurrency budget;
 - default rejection of loopback, private, link-local, multicast,
   documentation, and cloud-metadata destinations unless a CIDR is explicitly
   granted;

@@ -11,7 +11,7 @@
 
 ## M1 — prove revocation
 
-- Injectable resolver and dialer phase barriers.
+- Controlled resolver phase barrier; equivalent dialer barrier remains.
 - Revocation conformance for headers, DNS, dial, and tunnel.
 - Active socket/task gauges and final-zero assertions.
 - File-descriptor/thread/RSS soak harness on Linux and macOS.
@@ -38,4 +38,3 @@
 Before a public `0.1.0`: API review, threat-model review, fuzz seeds, MSRV CI,
 dependency/license audit, package dry-run inspection, benchmark baseline, and
 at least one external sandbox integration.
-

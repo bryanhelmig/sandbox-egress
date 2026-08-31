@@ -35,3 +35,9 @@ ceilings, independent per-tunnel budgets, idle tunnel shutdown, an uploader
 whose upstream never reads, and a downloader whose guest never reads. Terminal
 socket assertions reject timeouts: a peer that merely remains blocked is not
 accepted as evidence of revocation.
+
+The resolver seam is internal to tests, so production callers cannot replace
+host-authenticated policy with a guest-selected backend. Controlled resolver
+tests hold lookups pending, measure the exact concurrency ceiling, cancel both
+active and queued work, and deliver an answer after close to prove no dial
+consumer remains.

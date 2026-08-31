@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+#[cfg(test)]
+use std::future::Future;
 use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
@@ -51,6 +53,13 @@ impl Proxy {
     /// Returns an error when the runtime thread, resolver, or listener cannot
     /// be initialized.
     pub fn start(config: ProxyConfig) -> Result<Self, ProxyError> {
+        Self::start_inner(config, None)
+    }
+
+    fn start_inner(
+        config: ProxyConfig,
+        resolver: Option<ResolverBackend>,
+    ) -> Result<Self, ProxyError> {
         let (commands, receiver) = tokio_mpsc::unbounded_channel();
         let runtime_commands = commands.clone();
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
@@ -64,7 +73,13 @@ impl Proxy {
                     .build();
                 match runtime {
                     Ok(runtime) => {
-                        runtime.block_on(run_proxy(config, receiver, runtime_commands, ready_tx));
+                        runtime.block_on(run_proxy(
+                            config,
+                            receiver,
+                            runtime_commands,
+                            ready_tx,
+                            resolver,
+                        ));
                     }
                     Err(error) => {
                         let _ = ready_tx.send(Err(format!("runtime creation failed: {error}")));
@@ -83,6 +98,14 @@ impl Proxy {
             thread: Some(thread),
             next_lease_id: AtomicU64::new(1),
         })
+    }
+
+    #[cfg(test)]
+    fn start_with_test_resolver(
+        config: ProxyConfig,
+        resolver: Arc<dyn TestResolver>,
+    ) -> Result<Self, ProxyError> {
+        Self::start_inner(config, Some(ResolverBackend::Test(resolver)))
     }
 
     /// Return the listener endpoint shared by all leases.
@@ -360,21 +383,54 @@ impl Drop for Admission {
     }
 }
 
+enum ResolverBackend {
+    System(Box<TokioResolver>),
+    #[cfg(test)]
+    Test(Arc<dyn TestResolver>),
+}
+
+impl ResolverBackend {
+    async fn lookup(&self, hostname: &str) -> io::Result<Vec<IpAddr>> {
+        match self {
+            Self::System(resolver) => resolver
+                .lookup_ip(format!("{hostname}."))
+                .await
+                .map(|lookup| lookup.iter().collect())
+                .map_err(io::Error::other),
+            #[cfg(test)]
+            Self::Test(resolver) => resolver.lookup(hostname).await,
+        }
+    }
+}
+
+#[cfg(test)]
+trait TestResolver: Send + Sync {
+    fn lookup<'a>(
+        &'a self,
+        hostname: &'a str,
+    ) -> Pin<Box<dyn Future<Output = io::Result<Vec<IpAddr>>> + Send + 'a>>;
+}
+
 #[allow(clippy::too_many_lines)]
 async fn run_proxy(
     config: ProxyConfig,
     mut commands: tokio_mpsc::UnboundedReceiver<Command>,
     command_sender: tokio_mpsc::UnboundedSender<Command>,
     ready: mpsc::SyncSender<Result<Endpoint, String>>,
+    resolver: Option<ResolverBackend>,
 ) {
-    let resolver =
-        match TokioResolver::builder_tokio().and_then(hickory_resolver::ResolverBuilder::build) {
-            Ok(resolver) => Arc::new(resolver),
+    let resolver = match resolver {
+        Some(resolver) => Arc::new(resolver),
+        None => match TokioResolver::builder_tokio()
+            .and_then(hickory_resolver::ResolverBuilder::build)
+        {
+            Ok(resolver) => Arc::new(ResolverBackend::System(Box::new(resolver))),
             Err(error) => {
                 let _ = ready.send(Err(format!("resolver initialization failed: {error}")));
                 return;
             }
-        };
+        },
+    };
     let listener = match TcpListener::bind(config.bind_address).await {
         Ok(listener) => listener,
         Err(error) => {
@@ -395,6 +451,7 @@ async fn run_proxy(
 
     let mut leases: HashMap<PeerIdentity, Arc<LeaseState>> = HashMap::new();
     let global_permits = Arc::new(Semaphore::new(config.max_connections));
+    let dns_permits = Arc::new(Semaphore::new(config.max_concurrent_dns));
 
     loop {
         tokio::select! {
@@ -463,6 +520,7 @@ async fn run_proxy(
                     continue;
                 };
                 let resolver = Arc::clone(&resolver);
+                let dns_permits = Arc::clone(&dns_permits);
                 let config = config.clone();
                 tokio::spawn(async move {
                     let mut admission = admission;
@@ -471,7 +529,7 @@ async fn run_proxy(
                     let result = tokio::select! {
                         biased;
                         () = cancel.cancelled() => None,
-                        result = serve_connect(stream, &state, &resolver, &config) => Some(result),
+                        result = serve_connect(stream, &state, &resolver, &dns_permits, &config) => Some(result),
                     };
                     if matches!(result, Some(Ok(ConnectionDisposition::Completed))) {
                         admission.mark_completed();
@@ -523,7 +581,8 @@ enum ConnectionDisposition {
 async fn serve_connect(
     mut client: TcpStream,
     state: &Arc<LeaseState>,
-    resolver: &TokioResolver,
+    resolver: &ResolverBackend,
+    dns_permits: &Arc<Semaphore>,
     config: &ProxyConfig,
 ) -> io::Result<ConnectionDisposition> {
     let started = TokioInstant::now();
@@ -555,36 +614,11 @@ async fn serve_connect(
         return deny(&mut client, state, 413, "upload-limit").await;
     }
 
-    let addresses = if let Ok(ip) = request.host.parse::<IpAddr>() {
-        if !state.policy.allows_ip_literal(ip) {
-            return deny(&mut client, state, 403, "ip-literal-denied").await;
-        }
-        vec![SocketAddr::new(ip, request.port)]
-    } else {
-        let Some(hostname) = canonical_hostname(&request.host) else {
-            return deny(&mut client, state, 400, "invalid-hostname").await;
+    let addresses =
+        match resolve_addresses(&request, state, resolver, dns_permits, handshake_deadline).await {
+            Ok(addresses) => addresses,
+            Err(denial) => return deny(&mut client, state, denial.status, denial.reason).await,
         };
-        if !state.policy.allows_hostname(&hostname) {
-            return deny(&mut client, state, 403, "host-denied").await;
-        }
-        let dns_deadline = (TokioInstant::now() + state.policy.dns_timeout).min(handshake_deadline);
-        let Ok(Ok(lookup)) =
-            timeout_at(dns_deadline, resolver.lookup_ip(format!("{hostname}."))).await
-        else {
-            return deny(&mut client, state, 502, "dns-failed").await;
-        };
-        let mut addresses = Vec::new();
-        for ip in lookup.iter() {
-            if !state.policy.allows_ip(ip) {
-                return deny(&mut client, state, 403, "resolved-address-denied").await;
-            }
-            addresses.push(SocketAddr::new(ip, request.port));
-        }
-        if addresses.is_empty() {
-            return deny(&mut client, state, 502, "dns-empty").await;
-        }
-        addresses
-    };
 
     let mut upstream = None;
     for address in addresses {
@@ -625,6 +659,71 @@ async fn serve_connect(
     );
     tokio::io::copy_bidirectional(&mut client, &mut upstream).await?;
     Ok(ConnectionDisposition::Completed)
+}
+
+#[derive(Clone, Copy)]
+struct Denial {
+    status: u16,
+    reason: &'static str,
+}
+
+impl Denial {
+    const DNS_CAPACITY: Self = Self::new(503, "dns-capacity");
+    const DNS_EMPTY: Self = Self::new(502, "dns-empty");
+    const DNS_FAILED: Self = Self::new(502, "dns-failed");
+    const HOST_DENIED: Self = Self::new(403, "host-denied");
+    const INVALID_HOSTNAME: Self = Self::new(400, "invalid-hostname");
+    const IP_LITERAL_DENIED: Self = Self::new(403, "ip-literal-denied");
+    const RESOLVED_ADDRESS_DENIED: Self = Self::new(403, "resolved-address-denied");
+
+    const fn new(status: u16, reason: &'static str) -> Self {
+        Self { status, reason }
+    }
+}
+
+async fn resolve_addresses(
+    request: &ConnectRequest,
+    state: &LeaseState,
+    resolver: &ResolverBackend,
+    dns_permits: &Arc<Semaphore>,
+    handshake_deadline: TokioInstant,
+) -> Result<Vec<SocketAddr>, Denial> {
+    if let Ok(ip) = request.host.parse::<IpAddr>() {
+        return state
+            .policy
+            .allows_ip_literal(ip)
+            .then(|| vec![SocketAddr::new(ip, request.port)])
+            .ok_or(Denial::IP_LITERAL_DENIED);
+    }
+
+    let hostname = canonical_hostname(&request.host).ok_or(Denial::INVALID_HOSTNAME)?;
+    if !state.policy.allows_hostname(&hostname) {
+        return Err(Denial::HOST_DENIED);
+    }
+    let dns_deadline = (TokioInstant::now() + state.policy.dns_timeout).min(handshake_deadline);
+    let dns_permit = timeout_at(dns_deadline, Arc::clone(dns_permits).acquire_owned())
+        .await
+        .map_err(|_| Denial::DNS_CAPACITY)?
+        .map_err(|_| Denial::DNS_CAPACITY)?;
+    let lookup = timeout_at(dns_deadline, resolver.lookup(&hostname)).await;
+    drop(dns_permit);
+    let addresses = lookup
+        .map_err(|_| Denial::DNS_FAILED)?
+        .map_err(|_| Denial::DNS_FAILED)?;
+    if addresses.is_empty() {
+        return Err(Denial::DNS_EMPTY);
+    }
+
+    addresses
+        .into_iter()
+        .map(|ip| {
+            state
+                .policy
+                .allows_ip(ip)
+                .then_some(SocketAddr::new(ip, request.port))
+                .ok_or(Denial::RESOLVED_ADDRESS_DENIED)
+        })
+        .collect()
 }
 
 struct HeaderBlock {
@@ -795,6 +894,66 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for Metered<T> {
 mod tests {
     use super::*;
 
+    struct ActiveLookup(Arc<std::sync::atomic::AtomicUsize>);
+
+    impl Drop for ActiveLookup {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, Ordering::AcqRel);
+        }
+    }
+
+    struct PendingResolver {
+        entered: mpsc::Sender<()>,
+        active: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl TestResolver for PendingResolver {
+        fn lookup<'a>(
+            &'a self,
+            _hostname: &'a str,
+        ) -> Pin<Box<dyn Future<Output = io::Result<Vec<IpAddr>>> + Send + 'a>> {
+            Box::pin(async move {
+                self.active.fetch_add(1, Ordering::AcqRel);
+                let _active = ActiveLookup(Arc::clone(&self.active));
+                self.entered.send(()).expect("report DNS entry");
+                std::future::pending::<io::Result<Vec<IpAddr>>>().await
+            })
+        }
+    }
+
+    struct LateAnswerResolver {
+        started: mpsc::Sender<()>,
+        answer: Mutex<Option<tokio::sync::oneshot::Receiver<Vec<IpAddr>>>>,
+    }
+
+    impl TestResolver for LateAnswerResolver {
+        fn lookup<'a>(
+            &'a self,
+            _hostname: &'a str,
+        ) -> Pin<Box<dyn Future<Output = io::Result<Vec<IpAddr>>> + Send + 'a>> {
+            let answer = self
+                .answer
+                .lock()
+                .expect("answer receiver poisoned")
+                .take()
+                .expect("one lookup expected");
+            self.started.send(()).expect("report DNS entry");
+            Box::pin(async move { answer.await.map_err(io::Error::other) })
+        }
+    }
+
+    fn hostname_policy(hostname: &str, port: u16) -> Policy {
+        Policy::builder()
+            .allow_host(hostname)
+            .expect("valid test hostname")
+            .allow_network("127.0.0.0/8".parse().expect("valid loopback test network"))
+            .allow_port(port)
+            .dns_timeout(Duration::from_secs(2))
+            .handshake_timeout(Duration::from_secs(2))
+            .build()
+            .expect("valid policy")
+    }
+
     #[test]
     fn parser_accepts_connect_authority() {
         let request =
@@ -826,6 +985,115 @@ mod tests {
             .expect("valid IPv6 CONNECT");
         assert_eq!(request.host, "2001:db8::1");
         assert_eq!(request.port, 443);
+    }
+
+    #[test]
+    fn dns_concurrency_is_bounded_and_queued_lookups_cancel_on_close() {
+        const CLIENTS: usize = 5;
+        const DNS_LIMIT: usize = 2;
+
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let resolver = Arc::new(PendingResolver {
+            entered: entered_tx,
+            active: Arc::clone(&active),
+        });
+        let proxy = Proxy::start_with_test_resolver(
+            ProxyConfig::default()
+                .with_max_connections(CLIENTS)
+                .with_max_concurrent_dns(DNS_LIMIT),
+            resolver,
+        )
+        .expect("start proxy");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                hostname_policy("pending.test", 443),
+            )
+            .expect("attach lease");
+
+        let mut clients = Vec::with_capacity(CLIENTS);
+        for _ in 0..CLIENTS {
+            let mut client = std::net::TcpStream::connect(lease.endpoint().socket_addr())
+                .expect("connect proxy");
+            std::io::Write::write_all(&mut client, b"CONNECT pending.test:443 HTTP/1.1\r\n\r\n")
+                .expect("write CONNECT");
+            clients.push(client);
+        }
+        for _ in 0..DNS_LIMIT {
+            entered_rx
+                .recv_timeout(Duration::from_secs(1))
+                .expect("lookup entered");
+        }
+        thread::sleep(Duration::from_millis(20));
+        assert!(matches!(
+            entered_rx.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+        assert_eq!(active.load(Ordering::Acquire), DNS_LIMIT);
+
+        lease
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("close DNS-bound lease");
+        assert_eq!(active.load(Ordering::Acquire), 0);
+        assert!(matches!(
+            entered_rx.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+
+        drop(clients);
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
+    }
+
+    #[test]
+    fn late_dns_answer_cannot_dial_after_lease_close() {
+        let target =
+            std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).expect("bind target");
+        target.set_nonblocking(true).expect("nonblocking target");
+        let port = target.local_addr().expect("target address").port();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (answer_tx, answer_rx) = tokio::sync::oneshot::channel();
+        let resolver = Arc::new(LateAnswerResolver {
+            started: started_tx,
+            answer: Mutex::new(Some(answer_rx)),
+        });
+        let proxy =
+            Proxy::start_with_test_resolver(ProxyConfig::default(), resolver).expect("start proxy");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                hostname_policy("late.test", port),
+            )
+            .expect("attach lease");
+        let mut client =
+            std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+        std::io::Write::write_all(
+            &mut client,
+            format!("CONNECT late.test:{port} HTTP/1.1\r\n\r\n").as_bytes(),
+        )
+        .expect("write CONNECT");
+        started_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("lookup entered");
+
+        lease
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("close resolving lease");
+        assert!(
+            answer_tx
+                .send(vec![IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)])
+                .is_err(),
+            "revocation must drop the late-answer receiver"
+        );
+        assert!(matches!(
+            target.accept(),
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock
+        ));
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
     }
 
     #[test]
