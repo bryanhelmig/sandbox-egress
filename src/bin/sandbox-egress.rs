@@ -4,12 +4,12 @@ use std::io;
 use std::net::{IpAddr, Ipv4Addr};
 use std::time::{Duration, Instant};
 
-use egress_lease::{PeerIdentity, Policy, Proxy, ProxyConfig};
+use sandbox_egress::{PeerIdentity, Policy, Proxy, ProxyConfig};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let hosts: Vec<String> = std::env::args().skip(1).collect();
     if hosts.is_empty() {
-        eprintln!("usage: egress-lease HOST [HOST ...]");
+        eprintln!("usage: sandbox-egress HOST [HOST ...]");
         std::process::exit(2);
     }
 

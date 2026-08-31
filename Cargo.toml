@@ -1,12 +1,12 @@
 [package]
-name = "egress-lease"
+name = "sandbox-egress"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
-description = "Run-scoped, revocable egress proxy leases for Rust sandbox supervisors"
+description = "Embeddable, run-scoped egress proxy for Rust sandbox supervisors"
 license = "MIT"
 readme = "README.md"
-keywords = ["egress", "proxy", "sandbox", "security", "networking"]
+keywords = ["sandbox", "egress", "proxy", "ssrf", "microvm"]
 categories = ["network-programming", "virtualization"]
 include = [
     "src/**",

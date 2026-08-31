@@ -5,8 +5,8 @@ use std::net::{IpAddr, Ipv4Addr, Shutdown, TcpListener, TcpStream};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use egress_lease::{CloseErrorKind, PeerIdentity, Policy, Proxy, ProxyConfig};
 use ipnet::IpNet;
+use sandbox_egress::{CloseErrorKind, PeerIdentity, Policy, Proxy, ProxyConfig};
 
 fn local_policy(port: u16) -> Policy {
     Policy::builder()
@@ -36,7 +36,7 @@ fn start_echo() -> (u16, thread::JoinHandle<()>) {
     (port, handle)
 }
 
-fn attach_local(proxy: &Proxy, policy: Policy) -> egress_lease::Lease {
+fn attach_local(proxy: &Proxy, policy: Policy) -> sandbox_egress::Lease {
     proxy
         .attach(
             PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),

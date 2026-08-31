@@ -1,8 +1,4 @@
-//! Run-scoped, revocable egress proxy leases for sandbox supervisors.
-//!
-//! The crate deliberately exposes a synchronous management surface backed by
-//! one proxy-owned asynchronous runtime. See [`Proxy`], [`Policy`], and
-//! [`Lease`] for the core model.
+#![doc = include_str!("../README.md")]
 
 mod config;
 mod error;

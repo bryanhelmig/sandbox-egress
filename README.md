@@ -1,90 +1,175 @@
-# egress-lease
+# Sandbox Egress
 
-`egress-lease` is a Rust library for giving one sandbox run a bounded,
-revocable path to the network.
+Run-scoped network access for untrusted sandboxes.
 
-The public model has three objects:
+Sandbox Egress is an embeddable Rust proxy that lets a host give each sandbox
+run its own outbound network policy, connection budget, usage counters, and
+explicit shutdown boundary. It is inspired by Stripe Smokescreen and the
+host-side proxies used by microVM, code-execution, and agent sandboxes.
 
-```rust,no_run
-use std::{net::{IpAddr, Ipv4Addr}, time::{Duration, Instant}};
-use egress_lease::{PeerIdentity, Policy, Proxy, ProxyConfig};
+It is a library first. A small executable wraps the same implementation for
+local use and for deployments that later want a separate, resource-capped
+proxy process.
 
-let proxy = Proxy::start(ProxyConfig::default())?;
-let policy = Policy::builder()
-    .allow_host("example.com")?
-    .max_connections(8)?
-    .build()?;
-let lease = proxy.attach(
-    PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-    policy,
-)?;
+## Where it fits
 
-let guest_proxy_url = lease.endpoint().to_string();
-let live_usage = lease.usage();
-let final_usage = lease.close(Instant::now() + Duration::from_secs(2))?;
-# let _ = (guest_proxy_url, live_usage, final_usage);
-# Ok::<(), Box<dyn std::error::Error>>(())
+If you are building a “safe jail” for untrusted code, this handles one specific
+part: controlled access from the jail to the network.
+
+```text
+                         trusted host
+                              |
+                    one shared Proxy process
+                              |
+          source IP ----------+---------- immutable Policy
+                              |
+                            Lease
+                 connections / usage / shutdown
+                              |
+                         allowed network
 ```
 
-- `Proxy` owns one listener, resolver, runtime, and global connection budget.
-- `Policy` is an immutable set of rules for one run.
-- `Lease` owns that run's connections, accounting, cancellation, and shutdown.
+Sandbox Egress is not the whole jail. The host must still isolate processes,
+files, memory, and syscalls, and must use a namespace, firewall, NAT boundary,
+or equivalent mechanism so the guest cannot bypass the proxy with a direct
+socket. Merely setting `HTTP_PROXY` is not a security boundary.
 
-Successful `Lease::close` is intended to be a certificate: the identity refuses
-new connections, tracked header/DNS/dial/tunnel work has ended, sockets have
-been dropped, and the returned counters are final. Dropping a lease initiates
-cancellation but does not certify completion.
+## The three-object model
 
-## Current scope
+- `Proxy` owns the shared listener, resolver, runtime, and global connection
+  budget.
+- `Policy` is an immutable set of outbound rules for exactly one run.
+- `Lease` owns that run’s identity, admitted work, accounting, cancellation,
+  and certified shutdown.
 
-The first slice implements an HTTP/1 CONNECT proxy with:
+```rust,no_run
+use std::net::{IpAddr, Ipv4Addr};
+use std::time::{Duration, Instant};
 
-- source-IP identity supplied by the host-side network boundary;
-- exact and left-wildcard hostname allow rules;
-- explicit allowed destination ports;
-- single-resolution, checked-address, direct-IP dialing;
-- private, loopback, link-local, multicast, documentation, and metadata
-  destination rejection unless an explicit CIDR grant overrides it;
-- global and per-lease connection limits reserved before work is spawned;
-- absolute handshake, header, and DNS deadlines;
-- bounded headers and upload/download accounting;
-- synchronous management handles backed by one owned Tokio runtime;
-- explicit, fallible lease and proxy shutdown.
+use sandbox_egress::{PeerIdentity, Policy, Proxy, ProxyConfig};
 
-Not yet implemented: visible-SNI matching, ECH policy, plain HTTP forwarding,
-transparent interception, rate-limited diagnostics, and configurable resolver
-backends. They are tracked in [the roadmap](docs/roadmap.md), and the crate does
-not claim those protections today.
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let proxy = Proxy::start(ProxyConfig::default())?;
+    let policy = Policy::builder()
+        .allow_host("api.example.com")?
+        .allow_host("*.static.example.com")?
+        .allow_port(443)
+        .max_connections(8)?
+        .build()?;
 
-## Security boundary
+    // The host network boundary, not the guest, establishes this identity.
+    let run_egress_ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+    let lease = proxy.attach(PeerIdentity::SourceIp(run_egress_ip), policy)?;
 
-The guest must be kernel-confined so its only network path is the proxy. A
-guest-controlled header or token is not a run identity. For
-`PeerIdentity::SourceIp`, the supervisor must stop the old namespace/NAT path
-before closing and reusing an address; TCP cannot carry a userspace generation
-number. See [security invariants](docs/security-invariants.md).
+    // Expose this URL inside the guest as its HTTP/HTTPS proxy.
+    let guest_proxy_url = lease.endpoint();
+    let live_usage = lease.usage();
+    println!("proxy={guest_proxy_url} usage={live_usage:?}");
+
+    // First prevent the guest from opening new sockets. Then certify cleanup.
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(2))?
+        .usage();
+    println!("final usage={final_usage:?}");
+
+    proxy.shutdown(Instant::now() + Duration::from_secs(2))?;
+    Ok(())
+}
+```
+
+The management API is synchronous. The proxy owns one Tokio runtime; embedding
+it does not require converting an existing supervisor to async or creating a
+runtime per sandbox run.
+
+## Why a lease?
+
+Starting a connection and ending a run are concurrent events. A connection may
+be reading headers, waiting on DNS, dialing an address, or moving bytes when
+the host decides the run is over. Dropping an ordinary proxy handle does not
+prove that this work is gone.
+
+`Lease::close` consumes the lease and is fallible. A successful close means:
+
+- new connections for the identity are refused;
+- tracked header, DNS, dial, and tunnel work has ended;
+- both socket directions have been stopped without waiting for the remote;
+- no late DNS result can start a connection;
+- the returned usage counters are final.
+
+If the deadline expires, `CloseError::into_lease` returns the still-owning
+lease. The identity remains unavailable, so a supervisor cannot accidentally
+assign a new run to work left behind by the old one. `Drop` starts best-effort
+cancellation, but never certifies cleanup.
+
+## Current enforcement
+
+The current vertical slice provides:
+
+- HTTP/1 CONNECT authority and destination-port allow rules;
+- exact hostnames and left-most wildcard subdomains;
+- source-IP identity derived from the accepted socket;
+- one DNS resolution followed by checks on every returned address;
+- direct dialing of a checked `SocketAddr`, with no second lookup;
+- default rejection of loopback, private, link-local, multicast,
+  documentation, and cloud-metadata destinations unless a CIDR is explicitly
+  granted;
+- global and per-lease connection admission reserved before work is spawned;
+- bounded request headers, backpressure, absolute handshake and DNS deadlines;
+- upload/download accounting and optional transfer ceilings;
+- explicit lease and proxy shutdown deadlines.
+
+The policy promise today is CONNECT authority plus resolved destination IP.
+Sandbox Egress does not yet inspect TLS `ClientHello`, compare visible SNI, or
+define an ECH enforcement mode. It therefore does not claim to prevent domain
+fronting. Plain HTTP forwarding, transparent interception, configurable
+resolver backends, and rate-limited structured diagnostics are also not yet
+implemented. These gaps are tracked rather than hidden.
+
+## Safe integration order
+
+For a source-IP identity, the host should use this lifecycle:
+
+1. Give the run a unique or currently unused source address.
+2. Attach its immutable policy and route its only egress path through the
+   proxy.
+3. Run the untrusted workload.
+4. Fence the old namespace or NAT path so it cannot create more traffic.
+5. Close the lease successfully.
+6. Only then reuse that source address for another run.
+
+TCP does not carry a userspace run generation. The shared listener cannot tell
+a deliberately delayed packet from an old owner after the host reassigns the
+same address. Host-side fencing and ordering are therefore part of the security
+contract.
 
 ## Development
 
-The ordinary factory is intentionally unsurprising:
+The ordinary development loop uses familiar Cargo commands behind small
+scripts:
 
 ```text
-./scripts/check.sh              format, compile, lint, tests, docs
-./scripts/test-conformance.sh   hostile lifecycle/concurrency suite
-./scripts/bench.sh              Criterion microbenchmarks
-cargo run --bin egress-lease    small embedding harness
+./scripts/check.sh              format, compile, lint, test, docs, package
+./scripts/test-conformance.sh   hostile lifecycle and concurrency cases
+./scripts/bench.sh              Criterion performance baseline
+cargo run --bin sandbox-egress -- example.com
 ```
 
-Start with [AGENTS.md](AGENTS.md), then read the
-[founding context](docs/founding-context.md),
-[design brief](docs/design-brief.md), and
-[architecture](docs/architecture.md).
-Recorded benchmark methodology and results live in
-[performance evidence](docs/performance.md).
+Start with [AGENTS.md](AGENTS.md). The deeper project record is split into:
+
+- [founding context](docs/founding-context.md) — product ambition and audience;
+- [design brief](docs/design-brief.md) — the original lifecycle requirements;
+- [security invariants](docs/security-invariants.md) — claims and trust boundary;
+- [architecture](docs/architecture.md) — internal ownership and data flow;
+- [testing strategy](docs/testing.md) — conformance and resource evidence;
+- [performance evidence](docs/performance.md) — reproducible measurements;
+- [prior art](docs/prior-art.md) — reviewed projects and pinned revisions;
+- [roadmap](docs/roadmap.md) — known gaps and release gates.
 
 ## Status
 
-Early, pre-release software. The API is being shaped around explicit security
-invariants; no compatibility promise is made before `0.1.0` is published.
+Sandbox Egress is early, pre-release software. The core lifecycle works and is
+tested, but the hostile conformance matrix and protocol enforcement are not yet
+complete. There is no compatibility promise before the first published
+release.
 
 Licensed under MIT.

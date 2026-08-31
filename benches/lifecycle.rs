@@ -5,7 +5,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::time::{Duration, Instant};
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use egress_lease::{PeerIdentity, Policy, Proxy, ProxyConfig};
+use sandbox_egress::{PeerIdentity, Policy, Proxy, ProxyConfig};
 
 fn attach_and_close(criterion: &mut Criterion) {
     let proxy =

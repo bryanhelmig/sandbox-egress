@@ -54,11 +54,11 @@ impl Proxy {
         let (commands, receiver) = tokio_mpsc::unbounded_channel();
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         let thread = thread::Builder::new()
-            .name("egress-lease-runtime".to_owned())
+            .name("sandbox-egress-runtime".to_owned())
             .spawn(move || {
                 let runtime = RuntimeBuilder::new_multi_thread()
                     .worker_threads(2)
-                    .thread_name("egress-lease-worker")
+                    .thread_name("sandbox-egress-worker")
                     .enable_all()
                     .build();
                 match runtime {
@@ -663,7 +663,7 @@ async fn deny(
     reason: &'static str,
 ) -> io::Result<ConnectionDisposition> {
     state.counters.deny();
-    let body = format!("egress-lease denied: {reason}\n");
+    let body = format!("sandbox-egress denied: {reason}\n");
     let response = format!(
         "HTTP/1.1 {status} Denied\r\ncontent-type: text/plain\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
         body.len()

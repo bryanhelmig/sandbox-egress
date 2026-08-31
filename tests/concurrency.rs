@@ -5,7 +5,7 @@ use std::net::{IpAddr, Ipv4Addr, TcpStream};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use egress_lease::{PeerIdentity, Policy, Proxy, ProxyConfig};
+use sandbox_egress::{PeerIdentity, Policy, Proxy, ProxyConfig};
 
 #[test]
 fn concurrent_slow_headers_are_all_owned_and_revoked() {

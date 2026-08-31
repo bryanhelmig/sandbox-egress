@@ -1,9 +1,9 @@
 # Founding project context
 
-This project is intended to become a public, reusable Rust crate for sandbox
-egress. It begins as a local Git repository under `~/code`; it should not be
-uploaded yet, but its structure, documentation, and development practices
-should be suitable for an eventual public GitHub repository.
+Sandbox Egress is intended to become a public, reusable Rust crate for sandbox
+network access. It begins as a local Git repository under `~/code`; it should
+not be uploaded yet, but its structure, documentation, and development
+practices should be suitable for an eventual public GitHub repository.
 
 The crate should capture the common core of Stripe Smokescreen and the related
 Rust implementations recorded in [`prior-art.md`](prior-art.md), while using
