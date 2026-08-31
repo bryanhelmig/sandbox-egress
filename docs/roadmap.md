@@ -11,7 +11,7 @@
 
 ## M1 — prove revocation
 
-- Controlled resolver phase barrier; equivalent dialer barrier remains.
+- Controlled resolver and dialer phase barriers.
 - Revocation conformance for headers, DNS, dial, and tunnel.
 - Active socket/task gauges and final-zero assertions.
 - File-descriptor/thread/RSS soak harness on Linux and macOS.

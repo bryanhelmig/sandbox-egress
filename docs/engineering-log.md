@@ -345,3 +345,36 @@ handler that crossed 100 lines. Rather than suppress those signals, the shared
 resolver was boxed once at proxy startup and resolution/policy was extracted
 as one phase function returning a structured internal denial. No per-connection
 resolver allocation or public resolver trait was introduced.
+
+## 2026-08-31 — deterministic dial cancellation
+
+### Question
+
+Can the suite prove revocation while a connection attempt is genuinely pending,
+and prove that the advertised absolute handshake deadline includes dialing?
+Tests against unroutable public or private addresses are not reproducible:
+routing tables, firewalls, and kernels may fail immediately or wait for
+different periods.
+
+### Result
+
+Accepted. A test-only connector backend runs through the same address loop and
+deadline logic as the system connector while exposing entry and future drop:
+
+- An IP-literal request reaches the connector as exactly the policy-approved
+  `127.0.0.1:19443` `SocketAddr`. While the connector is pending, successful
+  lease close drops its future and the active-dial count returns to zero.
+- A second connector remains pending under a 50 millisecond absolute handshake
+  deadline. The proxy drops the dial future, returns a structured 502
+  `dial-failed` denial, records the denial, and closes normally afterward.
+- Both cases passed 25 consecutive focused runs and Clippy with denied warnings.
+- `./scripts/check.sh` passed with fourteen unit tests, seventeen integration
+  tests, and the README doctest; the Linux target also passed check and Clippy.
+- Criterion detected no connection-setup change: allowed CONNECT measured
+  112.6 microseconds and hostname denial 75.1 microseconds at the point
+  estimates.
+
+No public connector abstraction, dependency, per-dial allocation, or runtime
+task was added. The proxy holds one process-wide connector `Arc`; in non-test
+builds its backend has only the zero-sized system variant and calls Tokio's
+`TcpStream::connect` directly.

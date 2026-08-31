@@ -53,12 +53,13 @@ impl Proxy {
     /// Returns an error when the runtime thread, resolver, or listener cannot
     /// be initialized.
     pub fn start(config: ProxyConfig) -> Result<Self, ProxyError> {
-        Self::start_inner(config, None)
+        Self::start_inner(config, None, None)
     }
 
     fn start_inner(
         config: ProxyConfig,
         resolver: Option<ResolverBackend>,
+        connector: Option<ConnectorBackend>,
     ) -> Result<Self, ProxyError> {
         let (commands, receiver) = tokio_mpsc::unbounded_channel();
         let runtime_commands = commands.clone();
@@ -79,6 +80,7 @@ impl Proxy {
                             runtime_commands,
                             ready_tx,
                             resolver,
+                            connector,
                         ));
                     }
                     Err(error) => {
@@ -105,7 +107,15 @@ impl Proxy {
         config: ProxyConfig,
         resolver: Arc<dyn TestResolver>,
     ) -> Result<Self, ProxyError> {
-        Self::start_inner(config, Some(ResolverBackend::Test(resolver)))
+        Self::start_inner(config, Some(ResolverBackend::Test(resolver)), None)
+    }
+
+    #[cfg(test)]
+    fn start_with_test_connector(
+        config: ProxyConfig,
+        connector: Arc<dyn TestConnector>,
+    ) -> Result<Self, ProxyError> {
+        Self::start_inner(config, None, Some(ConnectorBackend::Test(connector)))
     }
 
     /// Return the listener endpoint shared by all leases.
@@ -411,6 +421,30 @@ trait TestResolver: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = io::Result<Vec<IpAddr>>> + Send + 'a>>;
 }
 
+enum ConnectorBackend {
+    System,
+    #[cfg(test)]
+    Test(Arc<dyn TestConnector>),
+}
+
+impl ConnectorBackend {
+    async fn connect(&self, address: SocketAddr) -> io::Result<TcpStream> {
+        match self {
+            Self::System => TcpStream::connect(address).await,
+            #[cfg(test)]
+            Self::Test(connector) => connector.connect(address).await,
+        }
+    }
+}
+
+#[cfg(test)]
+trait TestConnector: Send + Sync {
+    fn connect(
+        &self,
+        address: SocketAddr,
+    ) -> Pin<Box<dyn Future<Output = io::Result<TcpStream>> + Send + '_>>;
+}
+
 #[allow(clippy::too_many_lines)]
 async fn run_proxy(
     config: ProxyConfig,
@@ -418,6 +452,7 @@ async fn run_proxy(
     command_sender: tokio_mpsc::UnboundedSender<Command>,
     ready: mpsc::SyncSender<Result<Endpoint, String>>,
     resolver: Option<ResolverBackend>,
+    connector: Option<ConnectorBackend>,
 ) {
     let resolver = match resolver {
         Some(resolver) => Arc::new(resolver),
@@ -431,6 +466,7 @@ async fn run_proxy(
             }
         },
     };
+    let connector = Arc::new(connector.unwrap_or(ConnectorBackend::System));
     let listener = match TcpListener::bind(config.bind_address).await {
         Ok(listener) => listener,
         Err(error) => {
@@ -521,6 +557,7 @@ async fn run_proxy(
                 };
                 let resolver = Arc::clone(&resolver);
                 let dns_permits = Arc::clone(&dns_permits);
+                let connector = Arc::clone(&connector);
                 let config = config.clone();
                 tokio::spawn(async move {
                     let mut admission = admission;
@@ -529,7 +566,7 @@ async fn run_proxy(
                     let result = tokio::select! {
                         biased;
                         () = cancel.cancelled() => None,
-                        result = serve_connect(stream, &state, &resolver, &dns_permits, &config) => Some(result),
+                        result = serve_connect(stream, &state, &resolver, &dns_permits, &connector, &config) => Some(result),
                     };
                     if matches!(result, Some(Ok(ConnectionDisposition::Completed))) {
                         admission.mark_completed();
@@ -583,6 +620,7 @@ async fn serve_connect(
     state: &Arc<LeaseState>,
     resolver: &ResolverBackend,
     dns_permits: &Arc<Semaphore>,
+    connector: &ConnectorBackend,
     config: &ProxyConfig,
 ) -> io::Result<ConnectionDisposition> {
     let started = TokioInstant::now();
@@ -622,7 +660,7 @@ async fn serve_connect(
 
     let mut upstream = None;
     for address in addresses {
-        match timeout_at(handshake_deadline, TcpStream::connect(address)).await {
+        match timeout_at(handshake_deadline, connector.connect(address)).await {
             Ok(Ok(stream)) => {
                 upstream = Some(stream);
                 break;
@@ -926,6 +964,33 @@ mod tests {
         answer: Mutex<Option<tokio::sync::oneshot::Receiver<Vec<IpAddr>>>>,
     }
 
+    struct ActiveDial(Arc<std::sync::atomic::AtomicUsize>);
+
+    impl Drop for ActiveDial {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, Ordering::AcqRel);
+        }
+    }
+
+    struct PendingConnector {
+        entered: mpsc::Sender<SocketAddr>,
+        active: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl TestConnector for PendingConnector {
+        fn connect(
+            &self,
+            address: SocketAddr,
+        ) -> Pin<Box<dyn Future<Output = io::Result<TcpStream>> + Send + '_>> {
+            Box::pin(async move {
+                self.active.fetch_add(1, Ordering::AcqRel);
+                let _active = ActiveDial(Arc::clone(&self.active));
+                self.entered.send(address).expect("report dial entry");
+                std::future::pending::<io::Result<TcpStream>>().await
+            })
+        }
+    }
+
     impl TestResolver for LateAnswerResolver {
         fn lookup<'a>(
             &'a self,
@@ -950,6 +1015,16 @@ mod tests {
             .allow_port(port)
             .dns_timeout(Duration::from_secs(2))
             .handshake_timeout(Duration::from_secs(2))
+            .build()
+            .expect("valid policy")
+    }
+
+    fn ip_policy(port: u16, handshake_timeout: Duration) -> Policy {
+        Policy::builder()
+            .allow_network("127.0.0.0/8".parse().expect("valid loopback test network"))
+            .allow_port(port)
+            .dns_timeout(handshake_timeout)
+            .handshake_timeout(handshake_timeout)
             .build()
             .expect("valid policy")
     }
@@ -1091,6 +1166,89 @@ mod tests {
             target.accept(),
             Err(error) if error.kind() == io::ErrorKind::WouldBlock
         ));
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
+    }
+
+    #[test]
+    fn close_cancels_an_in_progress_dial() {
+        let port = 19_443;
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let connector = Arc::new(PendingConnector {
+            entered: entered_tx,
+            active: Arc::clone(&active),
+        });
+        let proxy = Proxy::start_with_test_connector(ProxyConfig::default(), connector)
+            .expect("start proxy");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                ip_policy(port, Duration::from_secs(2)),
+            )
+            .expect("attach lease");
+        let mut client =
+            std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+        std::io::Write::write_all(
+            &mut client,
+            format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\n").as_bytes(),
+        )
+        .expect("write CONNECT");
+
+        assert_eq!(
+            entered_rx
+                .recv_timeout(Duration::from_secs(1))
+                .expect("dial entered"),
+            SocketAddr::new(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), port)
+        );
+        assert_eq!(active.load(Ordering::Acquire), 1);
+        lease
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("close dialing lease");
+        assert_eq!(active.load(Ordering::Acquire), 0);
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
+    }
+
+    #[test]
+    fn absolute_handshake_deadline_cancels_an_in_progress_dial() {
+        let port = 19_444;
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let connector = Arc::new(PendingConnector {
+            entered: entered_tx,
+            active: Arc::clone(&active),
+        });
+        let proxy = Proxy::start_with_test_connector(ProxyConfig::default(), connector)
+            .expect("start proxy");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                ip_policy(port, Duration::from_millis(50)),
+            )
+            .expect("attach lease");
+        let mut client =
+            std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+        std::io::Write::write_all(
+            &mut client,
+            format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\n").as_bytes(),
+        )
+        .expect("write CONNECT");
+        entered_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("dial entered");
+
+        let mut response = String::new();
+        std::io::Read::read_to_string(&mut client, &mut response).expect("read dial denial");
+        assert!(response.starts_with("HTTP/1.1 502"), "{response}");
+        assert!(response.contains("dial-failed"), "{response}");
+        assert_eq!(active.load(Ordering::Acquire), 0);
+        assert_eq!(lease.usage().denied_connections, 1);
+        lease
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("close timed-out lease");
         proxy
             .shutdown(Instant::now() + Duration::from_secs(1))
             .expect("proxy shutdown");

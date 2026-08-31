@@ -41,3 +41,8 @@ host-authenticated policy with a guest-selected backend. Controlled resolver
 tests hold lookups pending, measure the exact concurrency ceiling, cancel both
 active and queued work, and deliver an answer after close to prove no dial
 consumer remains.
+
+The equivalent internal connector seam holds a dial future pending after
+recording the exact checked `SocketAddr`. Tests release it only through lease
+cancellation or the absolute handshake deadline and observe its drop directly,
+avoiding platform-dependent assumptions about unroutable addresses.

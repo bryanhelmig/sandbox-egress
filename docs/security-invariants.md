@@ -38,6 +38,10 @@ lookups executing concurrently; waiting for a permit consumes the same DNS and
 absolute handshake deadlines. A cancelled or late resolver future cannot reach
 dialing because it lives inside the tracked connection future.
 
+Dialing receives only approved `SocketAddr` values and shares the absolute
+handshake deadline. Lease cancellation drops the in-progress connect future;
+certified close waits for the owning tracked connection task to disappear.
+
 ## Shutdown result
 
 `Lease::close` consumes the lease. On deadline or coordination failure the
