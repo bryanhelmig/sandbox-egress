@@ -114,8 +114,8 @@ The current vertical slice provides:
 - direct dialing of a checked `SocketAddr`, with no second lookup;
 - an independently bounded process-wide DNS concurrency budget;
 - default rejection of loopback, private, link-local, multicast,
-  documentation, and cloud-metadata destinations unless a CIDR is explicitly
-  granted;
+  documentation, cloud-metadata, and unsafe IPv6 transition destinations
+  unless a CIDR is explicitly granted;
 - global and per-lease connection admission reserved before work is spawned;
 - bounded request headers, backpressure, absolute handshake and DNS deadlines;
 - opt-in, bounded TLS `ClientHello` parsing that requires visible SNI to equal

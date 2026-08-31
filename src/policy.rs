@@ -279,43 +279,82 @@ pub(crate) fn is_forbidden_destination(address: IpAddr) -> bool {
     match address {
         IpAddr::V4(address) => forbidden_v4(address),
         IpAddr::V6(address) => {
-            if let Some(mapped) = address.to_ipv4_mapped() {
-                return forbidden_v4(mapped);
+            if let Some(embedded) = address.to_ipv4() {
+                return forbidden_v4(embedded);
+            }
+            if is_well_known_nat64(address) {
+                let octets = address.octets();
+                return forbidden_v4(Ipv4Addr::new(
+                    octets[12], octets[13], octets[14], octets[15],
+                ));
             }
             forbidden_v6(address)
         }
     }
 }
 
+fn is_well_known_nat64(address: Ipv6Addr) -> bool {
+    let segments = address.segments();
+    segments[..6] == [0x0064, 0xff9b, 0, 0, 0, 0]
+}
+
+// Derived from the IANA special-purpose registries, reviewed 2026-08-31.
+const FORBIDDEN_V4_PREFIXES: &[(u32, u32)] = &[
+    (0x0000_0000, 8),  // 0.0.0.0/8, this network
+    (0x0a00_0000, 8),  // 10.0.0.0/8, private
+    (0x6440_0000, 10), // 100.64.0.0/10, shared
+    (0x7f00_0000, 8),  // 127.0.0.0/8, loopback
+    (0xa9fe_0000, 16), // 169.254.0.0/16, link-local
+    (0xac10_0000, 12), // 172.16.0.0/12, private
+    (0xc000_0000, 24), // 192.0.0.0/24, protocol assignments
+    (0xc000_0200, 24), // 192.0.2.0/24, documentation
+    (0xc058_6300, 24), // 192.88.99.0/24, deprecated 6to4 relay
+    (0xc0a8_0000, 16), // 192.168.0.0/16, private
+    (0xc612_0000, 15), // 198.18.0.0/15, benchmarking
+    (0xc633_6400, 24), // 198.51.100.0/24, documentation
+    (0xcb00_7100, 24), // 203.0.113.0/24, documentation
+    (0xe000_0000, 3),  // multicast and reserved
+];
+
+const FORBIDDEN_V6_PREFIXES: &[(u128, u32)] = &[
+    (0x0064_ff9b_0001_0000_0000_0000_0000_0000, 48), // local NAT64
+    (0x0100_0000_0000_0000_0000_0000_0000_0000, 64), // discard-only
+    (0x0100_0000_0000_0001_0000_0000_0000_0000, 64), // dummy
+    (0x2001_0000_0000_0000_0000_0000_0000_0000, 32), // Teredo
+    (0x2001_0002_0000_0000_0000_0000_0000_0000, 48), // benchmarking
+    (0x2001_0010_0000_0000_0000_0000_0000_0000, 28), // deprecated ORCHID
+    (0x2001_0020_0000_0000_0000_0000_0000_0000, 28), // ORCHIDv2
+    (0x2001_0030_0000_0000_0000_0000_0000_0000, 28), // DETs
+    (0x2001_0db8_0000_0000_0000_0000_0000_0000, 32), // documentation
+    (0x2002_0000_0000_0000_0000_0000_0000_0000, 16), // 6to4
+    (0x3fff_0000_0000_0000_0000_0000_0000_0000, 20), // documentation
+    (0x5f00_0000_0000_0000_0000_0000_0000_0000, 16), // SRv6 SIDs
+    (0xfc00_0000_0000_0000_0000_0000_0000_0000, 7),  // unique-local
+    (0xfe80_0000_0000_0000_0000_0000_0000_0000, 10), // link-local
+    (0xfec0_0000_0000_0000_0000_0000_0000_0000, 10), // deprecated site-local
+];
+
 fn forbidden_v4(address: Ipv4Addr) -> bool {
-    let [a, b, c, d] = address.octets();
-    a == 0
-        || a == 10
-        || a == 127
-        || (a == 100 && (64..=127).contains(&b))
-        || (a == 169 && b == 254)
-        || (a == 172 && (16..=31).contains(&b))
-        || (a == 192 && b == 0 && c == 0)
-        || (a == 192 && b == 0 && c == 2)
-        || (a == 192 && b == 88 && c == 99)
-        || (a == 192 && b == 168)
-        || (a == 198 && (b == 18 || b == 19))
-        || (a == 198 && b == 51 && c == 100)
-        || (a == 203 && b == 0 && c == 113)
-        || a >= 224
-        || (a == 255 && b == 255 && c == 255 && d == 255)
+    FORBIDDEN_V4_PREFIXES
+        .iter()
+        .any(|&(network, length)| prefix_matches(u32::from(address), network, length, 32))
 }
 
 fn forbidden_v6(address: Ipv6Addr) -> bool {
-    let segments = address.segments();
     address.is_unspecified()
         || address.is_loopback()
         || address.is_multicast()
-        || (segments[0] & 0xfe00) == 0xfc00
-        || (segments[0] & 0xffc0) == 0xfe80
-        || (segments[0] & 0xffc0) == 0xfec0
-        || (segments[0] == 0x2001 && segments[1] == 0x0db8)
-        || (segments[0] == 0x0100 && segments[1] == 0 && segments[2] == 0 && segments[3] == 0)
+        || FORBIDDEN_V6_PREFIXES
+            .iter()
+            .any(|&(network, length)| prefix_matches(u128::from(address), network, length, 128))
+}
+
+fn prefix_matches<T>(address: T, network: T, length: u32, width: u32) -> bool
+where
+    T: Copy + PartialEq + std::ops::Shr<u32, Output = T>,
+{
+    let shift = width - length;
+    address >> shift == network >> shift
 }
 
 #[cfg(test)]
@@ -332,12 +371,67 @@ mod tests {
 
     #[test]
     fn private_and_metadata_destinations_are_forbidden() {
-        for address in ["127.0.0.1", "10.0.0.1", "169.254.169.254", "::1", "fc00::1"] {
+        for address in [
+            "127.0.0.1",
+            "10.0.0.1",
+            "169.254.169.254",
+            "::1",
+            "fc00::1",
+            "::ffff:127.0.0.1",
+            "::ffff:169.254.169.254",
+            "::127.0.0.1",
+            "::169.254.169.254",
+            "64:ff9b::a9fe:a9fe",
+            "64:ff9b:1::1",
+            "100:0:0:1::1",
+            "2001::1",
+            "2001:2::1",
+            "2001:10::1",
+            "2001:20::1",
+            "2001:30::1",
+            "2002::1",
+            "3fff::1",
+            "5f00::1",
+        ] {
             let address = address.parse().expect("test IP");
             assert!(is_forbidden_destination(address), "{address}");
         }
         assert!(!is_forbidden_destination(
             "93.184.216.34".parse().expect("test IP")
         ));
+        assert!(!is_forbidden_destination(
+            "::93.184.216.34"
+                .parse()
+                .expect("compatible public test IP")
+        ));
+        assert!(!is_forbidden_destination(
+            "64:ff9b::5db8:d822".parse().expect("NAT64 public test IP")
+        ));
+    }
+
+    #[test]
+    fn every_forbidden_prefix_includes_its_first_and_last_address() {
+        for &(network, length) in FORBIDDEN_V4_PREFIXES {
+            let host_mask = u32::MAX >> length;
+            assert!(
+                forbidden_v4(Ipv4Addr::from(network)),
+                "{network:#010x}/{length}"
+            );
+            assert!(
+                forbidden_v4(Ipv4Addr::from(network | host_mask)),
+                "{network:#010x}/{length}"
+            );
+        }
+        for &(network, length) in FORBIDDEN_V6_PREFIXES {
+            let host_mask = u128::MAX >> length;
+            assert!(
+                forbidden_v6(Ipv6Addr::from(network)),
+                "{network:#034x}/{length}"
+            );
+            assert!(
+                forbidden_v6(Ipv6Addr::from(network | host_mask)),
+                "{network:#034x}/{length}"
+            );
+        }
     }
 }

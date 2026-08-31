@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Apply the IPv4 forbidden-address floor to mapped, compatible, and
+  well-known-NAT64 IPv6 forms, and deny unsafe transition prefixes by default.
 - Add opt-in bounded TLS ClientHello inspection with visible-SNI equality,
   explicit ECH policy, and revocation/deadline conformance.
 - Add an opt-in sustained local CONNECT harness with concurrency, throughput,

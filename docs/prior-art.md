@@ -26,6 +26,13 @@ production daemon limits, metrics, ACLs, and per-user policy.
   names.
 - The [IANA TLS extension registry](https://www.iana.org/assignments/tls-extensiontype-values)
   assigns `0xfe0d` to Encrypted ClientHello.
+- The IANA [IPv4](https://www.iana.org/assignments/iana-ipv4-special-registry)
+  and [IPv6](https://www.iana.org/assignments/iana-ipv6-special-registry)
+  special-purpose registries are the source of the default address floor;
+  transition prefixes receive extra treatment when they can encode IPv4.
+- Rust's [`Ipv6Addr`](https://doc.rust-lang.org/stable/std/net/struct.Ipv6Addr.html)
+  distinguishes mapped conversion from the broader mapped-or-compatible
+  conversion used by the guard.
 
 ## Research rule
 

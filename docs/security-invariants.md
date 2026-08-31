@@ -42,6 +42,13 @@ Dialing receives only approved `SocketAddr` values and shares the absolute
 handshake deadline. Lease cancellation drops the in-progress connect future;
 certified close waits for the owning tracked connection task to disappear.
 
+The forbidden-address floor applies IPv4 rules to both mapped and deprecated
+compatible IPv6 forms. The well-known NAT64 `/96` is decoded and the embedded
+IPv4 destination is checked. Local-use NAT64, Teredo, 6to4, and non-global
+special-purpose IPv6 prefixes are rejected because the effective endpoint is
+not safely knowable at this layer. A host can deliberately override the floor
+with an explicit CIDR grant.
+
 ## Shutdown result
 
 `Lease::close` consumes the lease. On deadline or coordination failure the

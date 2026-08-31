@@ -1047,6 +1047,17 @@ mod tests {
         answer: Mutex<Option<tokio::sync::oneshot::Receiver<Vec<IpAddr>>>>,
     }
 
+    struct FixedAnswerResolver(Vec<IpAddr>);
+
+    impl TestResolver for FixedAnswerResolver {
+        fn lookup<'a>(
+            &'a self,
+            _hostname: &'a str,
+        ) -> Pin<Box<dyn Future<Output = io::Result<Vec<IpAddr>>> + Send + 'a>> {
+            Box::pin(async move { Ok(self.0.clone()) })
+        }
+    }
+
     struct ActiveDial(Arc<std::sync::atomic::AtomicUsize>);
 
     impl Drop for ActiveDial {
@@ -1249,6 +1260,40 @@ mod tests {
             target.accept(),
             Err(error) if error.kind() == io::ErrorKind::WouldBlock
         ));
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
+    }
+
+    #[test]
+    fn dns_answer_with_ipv4_compatible_metadata_address_is_rejected_as_a_set() {
+        let resolver = Arc::new(FixedAnswerResolver(vec![
+            "93.184.216.34".parse().expect("public test address"),
+            "::169.254.169.254"
+                .parse()
+                .expect("compatible metadata address"),
+        ]));
+        let proxy =
+            Proxy::start_with_test_resolver(ProxyConfig::default(), resolver).expect("start proxy");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                hostname_policy("mixed.test", 443),
+            )
+            .expect("attach lease");
+        let mut client =
+            std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+        std::io::Write::write_all(&mut client, b"CONNECT mixed.test:443 HTTP/1.1\r\n\r\n")
+            .expect("write CONNECT");
+        let mut response = String::new();
+        std::io::Read::read_to_string(&mut client, &mut response).expect("read DNS denial");
+        assert!(response.starts_with("HTTP/1.1 403"), "{response}");
+        assert!(response.contains("resolved-address-denied"), "{response}");
+        assert_eq!(lease.usage().denied_connections, 1);
+
+        lease
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("close lease");
         proxy
             .shutdown(Instant::now() + Duration::from_secs(1))
             .expect("proxy shutdown");

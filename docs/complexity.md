@@ -42,3 +42,24 @@ duplicate a decision tree, or concentrate unrelated responsibilities? Clippy's
 denied warnings—including function-length and needless-complexity checks—remain
 the enforceable local guards. Any new threshold should first be justified by
 defect or review evidence and applied to the narrowest useful scope.
+
+## Address-floor simplification
+
+After the first TLS and IPv6 transition hardening passes, adding special ranges
+as another boolean predicate chain briefly raised the whole-tree structural and
+cognitive estimates to 420 and 1,256; `policy.rs` alone reached 147 and 461.
+Replacing both address chains with reviewed prefix data and one bit-prefix
+matcher retained broader behavior and produced:
+
+```text
+files: 18
+lines: 4,473
+code lines: 3,965
+structural complexity estimate: 314
+cognitive complexity estimate: 930
+policy.rs: 41 structural, 135 cognitive
+proxy.rs: 116 structural, 357 cognitive
+```
+
+This was accepted because reviewers can now audit network/prefix pairs directly,
+not because a lower aggregate score is inherently safer.

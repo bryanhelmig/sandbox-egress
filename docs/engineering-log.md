@@ -609,3 +609,41 @@ new ISC (`rustls-webpki`, `untrusted`) and BSD-3-Clause (`subtle`) transitive
 dependencies. Those specific OSI-approved permissive licenses were added to
 the allowlist. The repeated `syn` versions remain a configured warning from
 the Hickory and development dependency graphs.
+
+## 2026-08-31 — IPv6-embedded SSRF address audit
+
+### Finding
+
+The existing floor correctly canonicalized IPv4-mapped IPv6 with
+`to_ipv4_mapped`, but deprecated IPv4-compatible addresses such as
+`::169.254.169.254` remained on the IPv6 path. Rust's broader `to_ipv4`
+conversion explicitly covers both forms. Standard and local-use NAT64, Teredo,
+and 6to4 added separate ways for an IPv6-looking address to represent or reach
+an IPv4 endpoint.
+
+### Result
+
+Accepted a fail-closed extension grounded in the current IANA special-purpose
+registries:
+
+- mapped and compatible forms now receive the same IPv4 private, link-local,
+  metadata, documentation, multicast, and reserved checks;
+- the well-known NAT64 `64:ff9b::/96` is decoded so public embedded IPv4 remains
+  available while a metadata or private embedded address is denied;
+- local-use NAT64, Teredo, 6to4, benchmarking, ORCHID/DET, documentation,
+  discard/dummy, and non-global SRv6 SID prefixes are denied by default;
+- an explicit CIDR grant continues to override this floor.
+
+A controlled resolver returns a mixed set containing public `93.184.216.34`
+and compatible `::169.254.169.254`. The complete request is denied with
+`resolved-address-denied`; 25 consecutive focused runs passed. Unit cases also
+prove mapped, compatible, and well-known-NAT64 metadata forms are forbidden
+while compatible and NAT64 encodings of a public test address remain allowed.
+
+The first implementation extended the existing flat boolean chain and pushed
+`policy.rs` to 147 structural and 461 cognitive points, with whole-tree totals
+of 420 and 1,256. It was not retained. Prefixes are now immutable `(network,
+length)` tables checked by one bit-prefix function. Boundary tests cover the
+first and last address of every entry. With those tests included, the broader
+implementation measures 41/135 for `policy.rs` and 314/930 for the whole tree,
+below the pre-audit totals of 389/1,156.
