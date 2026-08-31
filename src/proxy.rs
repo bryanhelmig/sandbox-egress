@@ -119,6 +119,19 @@ impl Proxy {
         Self::start_inner(config, None, Some(ConnectorBackend::Test(connector)))
     }
 
+    #[cfg(test)]
+    pub(crate) fn start_with_test_backends(
+        config: ProxyConfig,
+        resolver: Arc<dyn TestResolver>,
+        connector: Arc<dyn TestConnector>,
+    ) -> Result<Self, ProxyError> {
+        Self::start_inner(
+            config,
+            Some(ResolverBackend::Test(resolver)),
+            Some(ConnectorBackend::Test(connector)),
+        )
+    }
+
     /// Return the listener endpoint shared by all leases.
     pub const fn endpoint(&self) -> Endpoint {
         self.endpoint
@@ -439,7 +452,7 @@ impl ConnectorBackend {
 }
 
 #[cfg(test)]
-trait TestConnector: Send + Sync {
+pub(crate) trait TestConnector: Send + Sync {
     fn connect(
         &self,
         address: SocketAddr,
@@ -686,22 +699,25 @@ async fn serve_connect(
             buffered_upload
         }
         TlsAuthority::RequireVisibleSni { ech } => {
-            let inspection = inspect_tls_tunnel(
-                &mut client,
-                state,
-                &request.host,
-                ech,
-                header.bytes[header.end..].to_vec(),
-                config.max_client_hello_bytes,
-            );
-            match timeout_at(handshake_deadline, inspection).await {
-                Ok(Ok(hello)) => {
-                    let bytes = hello.len();
-                    if upstream.write_all(&hello).await.is_err() {
-                        return reject_tunnel(&mut client, state, "upstream-write-failed").await;
-                    }
-                    bytes
-                }
+            let inspection_and_forward = async {
+                let hello = inspect_tls_tunnel(
+                    &mut client,
+                    state,
+                    &request.host,
+                    ech,
+                    header.bytes[header.end..].to_vec(),
+                    config.max_client_hello_bytes,
+                )
+                .await?;
+                let bytes = hello.len();
+                upstream
+                    .write_all(&hello)
+                    .await
+                    .map_err(|_| "upstream-write-failed")?;
+                Ok::<usize, &'static str>(bytes)
+            };
+            match timeout_at(handshake_deadline, inspection_and_forward).await {
+                Ok(Ok(bytes)) => bytes,
                 Ok(Err(reason)) => return reject_tunnel(&mut client, state, reason).await,
                 Err(_) => return reject_tunnel(&mut client, state, "client-hello-timeout").await,
             }

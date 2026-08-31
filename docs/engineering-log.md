@@ -647,3 +647,23 @@ length)` tables checked by one bit-prefix function. Boundary tests cover the
 first and last address of every entry. With those tests included, the broader
 implementation measures 41/135 for `policy.rs` and 314/930 for the whole tree,
 below the pre-audit totals of 389/1,156.
+
+## 2026-08-31 — absolute deadline through ClientHello forwarding
+
+### Finding
+
+The TLS authority phase ran the bounded read, Rustls parse, SNI comparison, and
+ECH decision inside the absolute handshake deadline, then wrote the approved
+ClientHello upstream outside it. A peer that accepted TCP but stopped reading
+could therefore hold the connection between validation and tunnelling until
+lease revocation.
+
+### Result
+
+Accepted a smaller phase boundary: inspection and the first upstream write now
+share one `timeout_at` future and the original absolute deadline. A controlled
+test builds a valid padded ClientHello of roughly 64 KiB, fragments it into
+16 KiB TLS records, constrains both upstream socket buffers to 1 KiB, and never
+reads until the proxy closes. The client sends the entire hello, the upstream
+receives only a prefix, the 250 millisecond deadline records one denial, and
+final usage has zero active connections. The case passed 25 consecutive runs.

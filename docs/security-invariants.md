@@ -63,7 +63,8 @@ authority inspection is opt-in. When enabled, a maintained TLS parser must
 accept a complete ClientHello within both the configured byte bound and the
 lease's absolute handshake deadline. The proxy requires one canonical visible
 SNI hostname equal to the canonical CONNECT hostname before forwarding any
-ClientHello bytes upstream.
+ClientHello bytes upstream. Forwarding the approved ClientHello is part of the
+same absolute deadline; upstream backpressure cannot hold this phase forever.
 
 Strict TLS authority mode rejects an ECH extension because the inner authority
 is encrypted. `AllowOuterSni` is an explicit compatibility tradeoff: it checks

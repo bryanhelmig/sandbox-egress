@@ -179,6 +179,14 @@ pub(crate) mod fixtures {
     }
 
     pub(crate) fn client_hello(hostname: Option<&str>, ech: bool) -> Vec<u8> {
+        client_hello_with_padding(hostname, ech, 0)
+    }
+
+    pub(crate) fn client_hello_with_padding(
+        hostname: Option<&str>,
+        ech: bool,
+        padding: usize,
+    ) -> Vec<u8> {
         let mut extensions = Vec::new();
         if let Some(hostname) = hostname {
             let mut server_name = vec![0];
@@ -191,6 +199,9 @@ pub(crate) mod fixtures {
         }
         extensions.extend_from_slice(&extension(43, &[2, 3, 4]));
         extensions.extend_from_slice(&extension(13, &[0, 2, 4, 3]));
+        if padding > 0 {
+            extensions.extend_from_slice(&extension(21, &vec![0; padding]));
+        }
         if ech {
             extensions.extend_from_slice(&extension(
                 ECH_EXTENSION,
@@ -227,11 +238,23 @@ pub(crate) mod fixtures {
         fragmented.extend_from_slice(&payload[at..]);
         fragmented
     }
+
+    pub(crate) fn fragment_records(record: &[u8], chunk_size: usize) -> Vec<u8> {
+        let mut fragmented = Vec::new();
+        for payload in record[5..].chunks(chunk_size) {
+            fragmented.extend_from_slice(&[TLS_HANDSHAKE, 3, 1]);
+            push_u16(&mut fragmented, payload.len());
+            fragmented.extend_from_slice(payload);
+        }
+        fragmented
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::fixtures::{client_hello, fragment_record};
+    use super::fixtures::{
+        client_hello, client_hello_with_padding, fragment_record, fragment_records,
+    };
     use super::*;
 
     fn inspect(wire: &[u8]) -> Result<InspectedClientHello, ClientHelloError> {
@@ -274,5 +297,14 @@ mod tests {
             .expect("test runtime")
             .block_on(async { read_client_hello(&mut &[][..], hello, 32).await });
         assert_eq!(result.unwrap_err(), ClientHelloError::TooLarge);
+    }
+
+    #[test]
+    fn accepts_a_large_client_hello_across_bounded_tls_records() {
+        let hello = client_hello_with_padding(Some("large.example"), false, 60_000);
+        let hello = fragment_records(&hello, 16_384);
+        let inspected = inspect(&hello).expect("large fragmented ClientHello");
+        assert_eq!(inspected.wire_bytes, hello);
+        assert_eq!(inspected.server_name.as_deref(), Some("large.example"));
     }
 }

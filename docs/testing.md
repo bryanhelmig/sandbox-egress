@@ -56,6 +56,13 @@ partial ClientHello open and prove that both lease close and the absolute
 handshake deadline end the client, upstream socket, parser work, and active
 connection count.
 
+A constrained-forwarding case uses a valid roughly 64 KiB ClientHello split
+across bounded TLS records and reduces both upstream socket buffers. The peer
+accepts but does not read. The absolute deadline must cancel the incomplete
+upstream write, send less than the full hello, record one denial, and finish
+with no active connection. This distinguishes a real forwarding barrier from
+a parser-only timeout.
+
 `docker build -t sandbox-egress:dev .` runs the standard factory and a small
 Linux `/proc` resource smoke on the declared Rust 1.88 MSRV. Running the image
 executes the serialized hostile conformance lane. The container is a clean-room

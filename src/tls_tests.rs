@@ -1,16 +1,35 @@
 use std::future::Future;
 use std::io;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::pin::Pin;
 use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::proxy::TestResolver;
-use crate::tls::fixtures::client_hello;
+use tokio::net::TcpStream;
+
+use crate::proxy::{TestConnector, TestResolver};
+use crate::tls::fixtures::{client_hello, client_hello_with_padding, fragment_records};
 use crate::{EchPolicy, Lease, PeerIdentity, Policy, Proxy, ProxyConfig, TlsAuthority};
 
 struct StaticResolver(IpAddr);
+
+struct ConstrainedConnector {
+    send_buffer_bytes: usize,
+}
+
+impl TestConnector for ConstrainedConnector {
+    fn connect(
+        &self,
+        address: SocketAddr,
+    ) -> Pin<Box<dyn Future<Output = io::Result<TcpStream>> + Send + '_>> {
+        Box::pin(async move {
+            let stream = TcpStream::connect(address).await?;
+            socket2::SockRef::from(&stream).set_send_buffer_size(self.send_buffer_bytes)?;
+            Ok(stream)
+        })
+    }
+}
 
 impl TestResolver for StaticResolver {
     fn lookup<'a>(
@@ -62,6 +81,32 @@ fn start_tls_denial_observer() -> (u16, mpsc::Receiver<usize>, thread::JoinHandl
             .expect("send observed size");
     });
     (port, observed_rx, handle)
+}
+
+fn start_nonreading_target() -> (
+    u16,
+    mpsc::Sender<()>,
+    mpsc::Receiver<usize>,
+    thread::JoinHandle<()>,
+) {
+    let listener =
+        std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind nonreading target");
+    let port = listener.local_addr().expect("nonreading address").port();
+    let (release_tx, release_rx) = mpsc::channel();
+    let (observed_tx, observed_rx) = mpsc::channel();
+    let handle = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept constrained dial");
+        socket2::SockRef::from(&stream)
+            .set_recv_buffer_size(1_024)
+            .expect("constrain target receive buffer");
+        let _ = release_rx.recv();
+        let mut observed = Vec::new();
+        std::io::Read::read_to_end(&mut stream, &mut observed).expect("read forwarded prefix");
+        observed_tx
+            .send(observed.len())
+            .expect("send forwarded prefix size");
+    });
+    (port, release_tx, observed_rx, handle)
 }
 
 fn start_tls_proxy(hostname: &str, port: u16, ech: EchPolicy) -> (Proxy, Lease) {
@@ -313,6 +358,64 @@ fn absolute_handshake_deadline_cancels_a_partial_client_hello() {
         .expect("close deadline lease")
         .usage();
     assert_eq!(final_usage.uploaded_bytes, partial.len() as u64);
+    assert_eq!(final_usage.denied_connections, 1);
+    assert_eq!(final_usage.active_connections, 0);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
+fn absolute_handshake_deadline_cancels_blocked_client_hello_forwarding() {
+    let hello = client_hello_with_padding(Some("allowed.test"), false, 64_000);
+    let hello = fragment_records(&hello, 16_384);
+    assert!(
+        hello.len() < 65_536,
+        "fixture must fit the configured bound"
+    );
+    let (port, release_target, observed_rx, target) = start_nonreading_target();
+    let proxy = Proxy::start_with_test_backends(
+        ProxyConfig::default().with_identity_reuse_quiet_period(Duration::ZERO),
+        Arc::new(StaticResolver(IpAddr::V4(Ipv4Addr::LOCALHOST))),
+        Arc::new(ConstrainedConnector {
+            send_buffer_bytes: 1_024,
+        }),
+    )
+    .expect("start constrained proxy");
+    let policy = Policy::builder()
+        .allow_host("allowed.test")
+        .expect("valid test hostname")
+        .allow_network("127.0.0.0/8".parse().expect("valid loopback test network"))
+        .allow_port(port)
+        .require_tls_sni()
+        .dns_timeout(Duration::from_millis(250))
+        .handshake_timeout(Duration::from_millis(250))
+        .build()
+        .expect("valid constrained policy");
+    let lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            policy,
+        )
+        .expect("attach constrained lease");
+    let mut client = open_tls_tunnel(&lease, "allowed.test", port);
+    std::io::Write::write_all(&mut client, &hello).expect("write large ClientHello");
+    assert_tunnel_closed(&mut client);
+    release_target.send(()).expect("release constrained target");
+    let observed = observed_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("observe forwarded prefix");
+    assert!(
+        observed < hello.len(),
+        "the constrained upstream unexpectedly received the full ClientHello"
+    );
+    target.join().expect("constrained target");
+
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close constrained lease")
+        .usage();
+    assert_eq!(final_usage.uploaded_bytes, hello.len() as u64);
     assert_eq!(final_usage.denied_connections, 1);
     assert_eq!(final_usage.active_connections, 0);
     proxy
