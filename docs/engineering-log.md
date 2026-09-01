@@ -4641,3 +4641,19 @@ five threads, and finished at 5,884 KiB, four descriptors, and two threads.
 The rootless 180/180 image is
 `sha256:f269178ebab0210338e0ad3241ed269f6c9c23214907dddf5250f83f44fba0c4`
 (40,903,102 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — reject linear DNS-answer deduplication
+
+The next performance rotation tested replacing the resolved-address hash set
+with duplicate checks against the bounded output vector. The candidate removed
+one allocation and one internal collection. Five baseline hostname-CONNECT
+intervals were 147.11–151.55, 149.20–162.85, 150.36–152.56,
+151.92–168.72, and 152.57–155.95 microseconds. Five candidate intervals were
+150.18–176.31, 150.72–172.48, 151.54–165.51, 150.79–176.21, and
+153.55–170.54 microseconds. Every comparison overlapped and Criterion detected
+no change.
+
+The candidate was discarded. It provided no measurable end-to-end benefit and
+would replace expected constant-time duplicate checks with quadratic work for
+a hostile maximum-size DNS answer. Production source, behavior, test count,
+and complexity remain unchanged.
