@@ -46,7 +46,6 @@ services may supplement research but must not become test dependencies.
 
 ## Tunnelling and accounting
 
-- Byte ceilings at exact boundaries and across buffered post-header bytes.
 - Counter behavior on cancellation, denial, reset, timeout, and normal EOF.
 - Integer overflow and monotonic snapshot behavior.
 - Large full-duplex transfers and asymmetric traffic.

@@ -1384,7 +1384,23 @@ impl<T: AsyncRead + Unpin> AsyncRead for Metered<T> {
         buffer: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
         let before = buffer.filled().len();
-        let result = Pin::new(&mut self.inner).poll_read(context, buffer);
+        let remaining = self
+            .limit
+            .map(|limit| limit.saturating_sub(self.transferred));
+        let result = match remaining.and_then(|bytes| usize::try_from(bytes).ok()) {
+            Some(bytes) if bytes > 0 && bytes < buffer.remaining() => {
+                let (result, filled) = {
+                    let mut limited = ReadBuf::new(buffer.initialize_unfilled_to(bytes));
+                    let result = Pin::new(&mut self.inner).poll_read(context, &mut limited);
+                    (result, limited.filled().len())
+                };
+                if let Poll::Ready(Ok(())) = &result {
+                    buffer.advance(filled);
+                }
+                result
+            }
+            _ => Pin::new(&mut self.inner).poll_read(context, buffer),
+        };
         if let Poll::Ready(Ok(())) = result {
             let bytes = (buffer.filled().len() - before) as u64;
             match self.direction {

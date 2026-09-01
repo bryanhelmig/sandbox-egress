@@ -391,6 +391,80 @@ fn zero_download_limit_never_forwards_upstream_payload() {
 }
 
 #[test]
+fn download_limit_forwards_the_exact_allowed_prefix() {
+    let (port, sender) = start_sender(b"allowed!");
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let lease = attach_for_ports(&proxy, &[port], Some(7));
+    let mut client = open_tunnel(lease.endpoint().socket_addr(), port);
+    let mut payload = Vec::new();
+    client
+        .read_to_end(&mut payload)
+        .expect("read limited tunnel");
+
+    assert_eq!(payload, b"allowed");
+    sender.join().expect("sender thread");
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close prefix-limited tunnel")
+        .usage();
+    assert_eq!(final_usage.downloaded_bytes, 8);
+    assert_eq!(final_usage.completed_connections, 0);
+    assert_eq!(final_usage.denied_connections, 1);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
+fn upload_limit_forwards_the_exact_allowed_prefix() {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind upstream");
+    let port = listener.local_addr().expect("upstream address").port();
+    let (captured_tx, captured_rx) = mpsc::sync_channel(1);
+    let upstream = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept proxy");
+        let mut captured = Vec::new();
+        stream.read_to_end(&mut captured).expect("read upload");
+        captured_tx.send(captured).expect("report upload");
+    });
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let policy = Policy::builder()
+        .allow_network("127.0.0.0/8".parse::<IpNet>().expect("loopback test CIDR"))
+        .allow_port(port)
+        .max_upload_bytes(7)
+        .build()
+        .expect("valid policy");
+    let lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            policy,
+        )
+        .expect("attach lease");
+    let mut client = open_tunnel(lease.endpoint().socket_addr(), port);
+    client.write_all(b"allowed!").expect("write limited upload");
+    client
+        .read_to_end(&mut Vec::new())
+        .expect("read limited tunnel closure");
+
+    assert_eq!(
+        captured_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("captured upload"),
+        b"allowed"
+    );
+    upstream.join().expect("upstream thread");
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close prefix-limited tunnel")
+        .usage();
+    assert_eq!(final_usage.uploaded_bytes, 8);
+    assert_eq!(final_usage.completed_connections, 0);
+    assert_eq!(final_usage.denied_connections, 1);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
 fn exact_download_limit_is_independent_for_each_tunnel() {
     let (first_port, first_sender) = start_sender(b"x");
     let (second_port, second_sender) = start_sender(b"y");

@@ -2876,3 +2876,41 @@ following 500-lease lane returned to four and two at 4,816 KiB in 1,066 ms.
 The rootless 136/136 conformance image is
 `sha256:e815594c685173018879d705817342fef924bf255ede92a241c19548215f6dcf`
 (40,535,243 bytes).
+
+## 2026-09-01 — make post-establishment byte ceilings exact
+
+The metered tunnel reader previously read whatever fit in Tokio's copy buffer,
+then rejected the whole read if its cumulative total crossed the policy limit.
+That was fail-closed but made useful allowance depend on kernel coalescing. A
+red end-to-end case gave an eight-byte upstream write a seven-byte download
+budget and received no payload instead of the permitted seven-byte prefix.
+
+While budget remains, the retained reader now caps only that socket read to the
+remaining allowance. Tokio forwards the permitted bytes normally. A following
+nonempty read is still counted, crosses the ceiling, and produces the existing
+single `transfer-limit` denial without forwarding excess. The unlimited path
+does not resize or initialize the copy buffer, and the implementation adds no
+allocation or staging buffer. Paired upload and download cases each write
+`allowed!` in one call, require exactly `allowed` at the peer, and require eight
+accounted bytes, zero completions, and one denial. They passed 25 consecutive
+focused runs. Over-limit bytes already coalesced with CONNECT deliberately
+retain their stronger pre-DNS whole-request denial.
+
+A detached worktree at the preceding commit provided a same-host comparison of
+the unlimited path. Across three warm 8-by-32 MiB runs, baseline median upload
+and download were 3,201 and 3,368 MiB/s; candidate medians were 3,281 and 3,432
+MiB/s. The short local distributions overlap, so this is recorded only as no
+measurable regression, not a speedup. The temporary worktree and its 333.8 MiB
+build tree were removed after measurement.
+
+Whole-tree SCC 4.0.0 complexity moved from 568/1,724 to 573/1,742
+structural/cognitive. Production `proxy.rs` accounts for 4/16 points; the
+remaining 1/2 is conformance code. The native and exact Rust 1.88 Linux
+factories passed all 138 deterministic cases, three README compile examples,
+documentation, and package verification; native dependency policy checks also
+passed. Linux's 64-caller control lane peaked at 5,340 KiB RSS and returned to
+four descriptors and two threads at 4,800 KiB in 182 ms. The following
+500-lease lane returned to four and two at 4,820 KiB in 1,082 ms. The rootless
+138/138 conformance image is
+`sha256:911cf1e1b00046aeed79dad19d252c52863ada036992da6a0b201b8494ab6e97`
+(40,555,530 bytes).

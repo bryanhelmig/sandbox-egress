@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Forward the exact permitted upload and download prefix before rejecting the
+  first read beyond a tunnel byte ceiling, independent of read coalescing.
 - Pin upstream refusal before CONNECT success and guest-reset broken-pipe
   accounting after success, including exact completion and denial semantics.
 - Isolate resolver construction and bounded lookup in a small internal module

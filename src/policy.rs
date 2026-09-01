@@ -189,12 +189,20 @@ impl PolicyBuilder {
     }
 
     /// Set the maximum bytes uploaded over one tunnel.
+    ///
+    /// After CONNECT succeeds, the proxy forwards exactly the permitted
+    /// prefix. A nonempty read after the limit is reached is accounted,
+    /// rejected, and closes the tunnel.
     pub fn max_upload_bytes(mut self, bytes: u64) -> Self {
         self.max_upload_bytes = Some(bytes);
         self
     }
 
     /// Set the maximum bytes downloaded over one tunnel.
+    ///
+    /// After CONNECT succeeds, the proxy forwards exactly the permitted
+    /// prefix. A nonempty read after the limit is reached is accounted,
+    /// rejected, and closes the tunnel.
     pub fn max_download_bytes(mut self, bytes: u64) -> Self {
         self.max_download_bytes = Some(bytes);
         self

@@ -181,10 +181,15 @@ limits are clamped to Tokio's semaphore maximum, and a per-lease limit beyond
 that maximum returns a typed policy error before attachment; extreme host
 configuration cannot reach a panicking semaphore constructor.
 
-Per-tunnel byte ceilings count bytes read from the guest or upstream. Bytes in
-the read that crosses a ceiling are accounted but not forwarded. A ceiling
-violation is a policy denial, distinct from an ordinary tunnel I/O failure, and
-increments the lease denial counter exactly once.
+Per-tunnel byte ceilings count bytes read from the guest or upstream. After
+CONNECT establishment, while allowance remains, the metered reader caps its
+next read to that remainder, so the proxy forwards exactly the permitted
+prefix regardless of kernel read coalescing. The first nonempty read after
+exhaustion is accounted but not forwarded. A ceiling violation is a policy
+denial, distinct from an ordinary tunnel I/O failure, and increments the lease
+denial counter exactly once. An over-limit upload already coalesced with the
+CONNECT header remains an earlier fail-closed case: it is denied in full before
+DNS or dialing.
 
 An ordinary EOF is directional. The proxy propagates it as a write-half
 shutdown and continues the reverse copy until that direction also ends. Only

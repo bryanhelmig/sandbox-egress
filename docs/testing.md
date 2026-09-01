@@ -191,8 +191,11 @@ listener, IPv6 source identity, checked IPv6 destination, and IPv6 upstream.
 
 Post-establishment upload and download ceiling cases send bytes across a
 zero-byte budget, prove the peer receives none, preserve attempted-byte
-accounting, and require exactly one policy denial. This is separate from socket
-reset tests so transport failure cannot masquerade as policy enforcement.
+accounting, and require exactly one policy denial. Paired nonzero cases write
+one byte beyond a seven-byte ceiling in a single call and require exactly the
+seven-byte prefix on the other side, removing kernel read coalescing from
+policy behavior. This is separate from socket reset tests so transport failure
+cannot masquerade as policy enforcement.
 
 Two ordinary FIN cases prove tunnel directions remain independent. After a
 guest finishes upload, an upstream may still send a delayed response; after an
