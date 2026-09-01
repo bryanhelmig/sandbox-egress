@@ -1,4 +1,4 @@
 #!/bin/sh
 set -eu
 
-cargo bench --bench lifecycle --bench connections
+cargo bench --locked --bench lifecycle --bench connections

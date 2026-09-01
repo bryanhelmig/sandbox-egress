@@ -334,7 +334,7 @@ scripts:
 ./scripts/measure-throughput.sh concurrent upload/download tunnel throughput
 ./scripts/measure-throughput-sweep.sh fixed-work data-plane scaling sweep
 ./scripts/check-iana-drift.sh   opt-in authoritative registry drift signal
-cargo run --bin sandbox-egress -- example.com
+cargo run --locked --bin sandbox-egress -- example.com
 ```
 
 The factory and tests never use the public network. The IANA drift command is

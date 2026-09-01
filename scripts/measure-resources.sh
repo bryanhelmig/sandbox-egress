@@ -18,4 +18,4 @@ SANDBOX_EGRESS_TERMINAL_RUNS=$terminal_runs_per_batch \
 SANDBOX_EGRESS_TERMINAL_BATCHES=$terminal_batches \
 SANDBOX_EGRESS_HEADER_CONNECTIONS=$header_connections \
 SANDBOX_EGRESS_UPSTREAM_CONNECTIONS=$upstream_connections \
-  cargo test --release --test resource_soak -- --ignored --nocapture --test-threads=1
+  cargo test --locked --release --test resource_soak -- --ignored --nocapture --test-threads=1

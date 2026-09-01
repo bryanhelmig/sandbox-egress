@@ -11,7 +11,7 @@ run_direction() {
     SANDBOX_EGRESS_THROUGHPUT_CONCURRENCY="${concurrency}" \
     SANDBOX_EGRESS_THROUGHPUT_DIRECTION="$1" \
     SANDBOX_EGRESS_THROUGHPUT_IDLE_MS="${idle_timeout_ms}" \
-        cargo test --release --test throughput -- --ignored --nocapture
+        cargo test --locked --release --test throughput -- --ignored --nocapture
 }
 
 case "${direction}" in

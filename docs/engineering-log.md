@@ -5398,3 +5398,20 @@ responses. The final image is
 `sha256:48076b3ea27c62cadc99443f681354f7983a3bb6a01c2382cb07271e2636f015`
 at 40,983,005 bytes. This is reproducibility evidence, not a production image
 or a claim about resources outside the measured factory matrix.
+
+## 2026-09-01 — make every factory consume the lockfile
+
+A release-factory consistency audit found that the container used
+`--locked`, while ordinary checks, conformance, benchmarks, load, throughput,
+resources, Cargo aliases, and most CI lanes allowed dependency resolution to
+rewrite `Cargo.lock`. That could make two clean contributors test different
+transitive graphs even though the repository intentionally commits its lock.
+
+Every Cargo invocation that resolves or builds repository dependencies now
+uses `--locked`; formatting and dependency-policy commands do not resolve the
+crate and remain unchanged. A negative search finds no unlocked check, Clippy,
+test, benchmark, documentation, package, run, or build command in the public
+scripts, README, Dockerfile, or CI workflow. The updated ordinary factory
+passes all 188 deterministic tests, six doctests, benchmark smoke,
+documentation, package verification, and dependency policy without modifying
+the lockfile.
