@@ -37,7 +37,9 @@ contributor instead of preserving solved work as apparent backlog.
 - ECH evolution and interoperability beyond the explicit current policy modes.
 - Domain fronting and the exact difference between CONNECT, SNI, and
   application authority.
-- TLS parser time, memory, and input bounds.
+- Concurrent TLS-parser RSS and cleanup near the maximum configured hello size;
+  the byte ceiling, legal record fragmentation, empty initial input, and
+  one-byte transport delivery are pinned individually.
 
 ## Tunnelling and accounting
 

@@ -5,6 +5,9 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Drain already-buffered TLS records before another socket read so a valid
+  fragmented `ClientHello` cannot become a false EOF; cover empty initial input
+  and bytewise transport delivery, and remove one redundant handshake copy.
 - Disable resolver caching by default, cap opt-in storage at 64 responses, and
   narrow default concurrent DNS work to 32 after measuring dense decoded
   responses; pin inflated section-count replies to bounded failure and no dial.

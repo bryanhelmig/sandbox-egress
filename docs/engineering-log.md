@@ -3294,6 +3294,67 @@ The rootless 153/153 image is
 `sha256:239f534ed18ee39b1c9ddb50a51030069a5e8a314bc3fe09201b07d312e8f5e1`
 (40,705,015 bytes).
 
+## 2026-09-01 — drain buffered TLS records before reading again
+
+The TLS suite covered every split inside one record and a large hello split
+across legal records, but its helper always supplied some bytes coalesced with
+the CONNECT request or delivered the remaining slice in a favorable shape. A
+new roughly 60 KiB `ClientHello` case began with an empty initial buffer and
+let the async reader return ordinary 4 KiB chunks. Its first run failed with
+`UnexpectedEof` even though the complete valid hello was already in the
+crate-owned buffer.
+
+Rustls's incremental `Acceptor::read_tls` may consume only one complete TLS
+record from a cursor that also contains bytes from the next record. Sandbox
+Egress correctly retained the unconsumed suffix and tracked its offset, but
+after `accept()` returned incomplete it read the socket again instead of first
+feeding that suffix. Once the reader reached EOF, the function returned the
+EOF result while still holding parseable bytes. The fix is one branch: when
+the feed offset trails the buffer length, loop back to the parser before any
+size check or socket read.
+
+Two deterministic neighbors pin the boundary. The original empty-initial
+shape now recovers the expected SNI and exact 60 KiB wire image. A custom async
+reader then delivers the same legal multi-record hello one transport byte at a
+time. Both passed 25 consecutive focused runs. In an optimized test binary, 25
+process launches put the bytewise case at a 10.95 ms median versus 4.69 ms for
+an empty harness, about 6.26 ms for roughly 60,000 incremental reads. This is a
+bounded linear compatibility cost, not a throughput claim.
+
+The adjacent ECH deframer audit found one complete handshake-body allocation
+and copy after Rustls had already accepted the hello. The extension walk only
+needs a borrowed slice while its local reassembly vector is alive, so the
+deframer now truncates that vector to the declared handshake length and lends
+the body directly. A detached pre-change worktree received the same feed-loop
+fix, and both versions ran 500 large parses per sample. After two warmup
+samples, the last eight of ten runs had medians of 16.92 microseconds before
+and 15.49 microseconds after, an 8.4% reduction. The simpler allocation shape
+was retained and the temporary measurement case and worktree were removed.
+
+The first Rust 1.88 Linux factory run exposed a second false assumption in the
+test harness. Requesting 1 KiB socket buffers did not guarantee backpressure;
+Linux loopback occasionally accepted the complete 64 KiB hello, leaving the
+guest open. Before the parser fix, the same case could pass with zero upstream
+bytes because it failed during parsing rather than at the forwarding barrier.
+The test connector now fills its bounded send queue to an observed
+`WouldBlock` before returning the socket, records that exact prefill, and
+asserts only bytes beyond it as ClientHello forwarding. The corrected barrier
+passed 25 native runs and the repeated Linux factory.
+
+Whole-tree SCC 4.0.0 complexity moves from 633/1,893 to 642/1,934
+structural/cognitive. `tls.rs` moves from 57/166 to 60/175 for the feed branch
+and two reader fixtures; the exact send-queue saturation harness moves
+`tls_tests.rs` from 13/30 to 19/62. Production parser control flow adds only
+the one backlog check. The native and exact Rust 1.88 Linux factories passed
+155 deterministic cases, five doctests,
+documentation, and package verification; native dependency policy checks also
+passed. Linux's idle lane peaked at 8,400 KiB RSS, 521 descriptors, and six
+threads, then returned to 4,804 KiB, four descriptors, and two threads. The
+control, 500-lease, and 2,000-terminal-connection lanes returned to four and
+two at 5,280, 5,280, and 5,484 KiB. The rootless 155/155 image is
+`sha256:08fd76dd094047897fa22f50fac894e690a6ea675b9297fce78a9989822403ff`
+(40,717,296 bytes).
+
 ## 2026-09-01 — expire bidirectionally backpressured tunnels
 
 A silent socket is the simplest idle case, but it does not establish what

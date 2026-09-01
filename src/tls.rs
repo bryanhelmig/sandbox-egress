@@ -59,6 +59,10 @@ pub(crate) async fn read_client_hello<R: AsyncRead + Unpin>(
             Err(_) => return Err(ClientHelloError::Invalid),
         }
 
+        if fed < wire_bytes.len() {
+            continue;
+        }
+
         if wire_bytes.len() == max_bytes {
             return Err(ClientHelloError::TooLarge);
         }
@@ -77,7 +81,7 @@ pub(crate) async fn read_client_hello<R: AsyncRead + Unpin>(
 
 fn client_hello_has_ech(wire_bytes: &[u8]) -> Result<bool, ClientHelloError> {
     let handshake = deframe_client_hello(wire_bytes)?;
-    let mut body = handshake.as_slice();
+    let mut body = &handshake[4..];
     take(&mut body, 2 + 32)?;
     take_u8_vector(&mut body)?;
     take_u16_vector(&mut body)?;
@@ -132,7 +136,8 @@ fn deframe_client_hello(wire_bytes: &[u8]) -> Result<Vec<u8>, ClientHelloError> 
     if handshake.len() < expected {
         return Err(ClientHelloError::Invalid);
     }
-    Ok(handshake[4..expected].to_vec())
+    handshake.truncate(expected);
+    Ok(handshake)
 }
 
 fn take_u8_vector<'a>(bytes: &mut &'a [u8]) -> Result<&'a [u8], ClientHelloError> {
@@ -280,11 +285,31 @@ pub(crate) mod fixtures {
 
 #[cfg(test)]
 mod tests {
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
     use super::fixtures::{
         client_hello, client_hello_with_grease, client_hello_with_padding,
         client_hello_with_server_names, fragment_record, fragment_records,
     };
     use super::*;
+    use tokio::io::ReadBuf;
+
+    struct OneByteReader<'a>(&'a [u8]);
+
+    impl AsyncRead for OneByteReader<'_> {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            _context: &mut Context<'_>,
+            buffer: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            if let Some((byte, remaining)) = self.0.split_first() {
+                buffer.put_slice(std::slice::from_ref(byte));
+                self.0 = remaining;
+            }
+            Poll::Ready(Ok(()))
+        }
+    }
 
     fn inspect(wire: &[u8]) -> Result<InspectedClientHello, ClientHelloError> {
         tokio::runtime::Builder::new_current_thread()
@@ -348,6 +373,37 @@ mod tests {
         let hello = client_hello_with_padding(Some("large.example"), false, 60_000);
         let hello = fragment_records(&hello, 16_384);
         let inspected = inspect(&hello).expect("large fragmented ClientHello");
+        assert_eq!(inspected.wire_bytes, hello);
+        assert_eq!(inspected.server_name.as_deref(), Some("large.example"));
+    }
+
+    #[test]
+    fn accepts_fragmented_client_hello_with_no_initial_bytes() {
+        let hello = client_hello_with_padding(Some("large.example"), false, 60_000);
+        let hello = fragment_records(&hello, 16_384);
+        let inspected = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("test runtime")
+            .block_on(async {
+                let mut reader = hello.as_slice();
+                read_client_hello(&mut reader, Vec::new(), 65_536).await
+            })
+            .expect("valid fragmented ClientHello without initial bytes");
+        assert_eq!(inspected.wire_bytes, hello);
+        assert_eq!(inspected.server_name.as_deref(), Some("large.example"));
+    }
+
+    #[test]
+    fn accepts_a_large_client_hello_one_transport_byte_at_a_time() {
+        let hello = client_hello_with_padding(Some("large.example"), false, 60_000);
+        let hello = fragment_records(&hello, 16_384);
+        let inspected = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("test runtime")
+            .block_on(async {
+                read_client_hello(&mut OneByteReader(&hello), Vec::new(), 65_536).await
+            })
+            .expect("valid bytewise ClientHello");
         assert_eq!(inspected.wire_bytes, hello);
         assert_eq!(inspected.server_name.as_deref(), Some("large.example"));
     }

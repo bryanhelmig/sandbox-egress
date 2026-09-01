@@ -306,7 +306,10 @@ ClientHello bytes upstream. A ClientHello with more than one hostname is
 invalid under [RFC 6066 section 3](https://www.rfc-editor.org/rfc/rfc6066.html#section-3)
 and is denied rather than selecting one interpretation. Forwarding the
 approved ClientHello is part of the same absolute deadline; upstream
-backpressure cannot hold this phase forever.
+backpressure cannot hold this phase forever. All bytes already read from the
+guest are offered to the incremental parser before another socket read, so a
+peer EOF cannot discard a complete fragmented hello retained in the bounded
+buffer.
 When TLS authority inspection is disabled, any tunnel bytes coalesced with the
 CONNECT header are also forwarded within that deadline before the connection
 enters ordinary bidirectional tunnelling.

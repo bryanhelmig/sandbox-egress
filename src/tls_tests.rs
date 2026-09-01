@@ -2,6 +2,7 @@ use std::future::Future;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Shutdown, SocketAddr};
 use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -20,6 +21,7 @@ struct StaticResolver(IpAddr);
 
 struct ConstrainedConnector {
     send_buffer_bytes: usize,
+    prefilled_bytes: Arc<AtomicUsize>,
 }
 
 impl TestConnector for ConstrainedConnector {
@@ -27,9 +29,27 @@ impl TestConnector for ConstrainedConnector {
         &self,
         address: SocketAddr,
     ) -> Pin<Box<dyn Future<Output = io::Result<TcpStream>> + Send + '_>> {
+        let prefilled_bytes = Arc::clone(&self.prefilled_bytes);
         Box::pin(async move {
             let stream = TcpStream::connect(address).await?;
             socket2::SockRef::from(&stream).set_send_buffer_size(self.send_buffer_bytes)?;
+            stream.writable().await?;
+            let fill = [0xa5; 16 * 1_024];
+            let mut total = 0_usize;
+            loop {
+                match stream.try_write(&fill) {
+                    Ok(0) => return Err(io::Error::other("zero-byte test prefill write")),
+                    Ok(written) => {
+                        total = total.saturating_add(written);
+                        if total >= 8 * 1_024 * 1_024 {
+                            return Err(io::Error::other("test send queue did not saturate"));
+                        }
+                    }
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
+                    Err(error) => return Err(error),
+                }
+            }
+            prefilled_bytes.store(total, Ordering::Release);
             Ok(stream)
         })
     }
@@ -493,11 +513,13 @@ fn absolute_handshake_deadline_cancels_blocked_client_hello_forwarding() {
         "fixture must fit the configured bound"
     );
     let (port, release_target, observed_rx, target) = start_nonreading_target();
+    let prefilled_bytes = Arc::new(AtomicUsize::new(0));
     let proxy = Proxy::start_with_test_backends(
         ProxyConfig::default().with_identity_reuse_quiet_period(Duration::ZERO),
         Arc::new(StaticResolver(IpAddr::V4(Ipv4Addr::LOCALHOST))),
         Arc::new(ConstrainedConnector {
             send_buffer_bytes: 1_024,
+            prefilled_bytes: Arc::clone(&prefilled_bytes),
         }),
     )
     .expect("start constrained proxy");
@@ -524,8 +546,13 @@ fn absolute_handshake_deadline_cancels_blocked_client_hello_forwarding() {
     let observed = observed_rx
         .recv_timeout(Duration::from_secs(1))
         .expect("observe forwarded prefix");
+    let prefilled = prefilled_bytes.load(Ordering::Acquire);
+    assert!(prefilled > 0, "test connector did not fill its send queue");
+    let forwarded = observed
+        .checked_sub(prefilled)
+        .expect("target observed the complete test prefill");
     assert!(
-        observed < hello.len(),
+        forwarded < hello.len(),
         "the constrained upstream unexpectedly received the full ClientHello"
     );
     target.join().expect("constrained target");

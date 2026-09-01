@@ -396,6 +396,14 @@ ClientHello open and prove that both lease close and the absolute handshake
 deadline end the client, upstream socket, parser work, and active connection
 count.
 
+A roughly 60 KiB valid hello split across legal 16 KiB TLS records is also
+delivered with no bytes coalesced after CONNECT and, separately, one transport
+byte per async read. The empty-initial-buffer case pins a discovered boundary:
+if Rustls consumes only the first complete record from a larger socket read,
+the proxy must feed every retained byte before reading the socket again. EOF
+cannot override a complete hello that is already in the bounded buffer. Both
+shapes must recover the same SNI and preserve the exact wire bytes.
+
 A two-connection public-path case distinguishes a syntactically valid
 ClientHello with no SNI from bytes that are not a TLS record. It requires the
 stable `tls-sni-missing` and `client-hello-invalid` diagnostics respectively,
@@ -409,11 +417,13 @@ unchanged. This is an ordinary deterministic compatibility case, not a claim
 that one fixture represents every deployed TLS client.
 
 A constrained-forwarding case uses a valid roughly 64 KiB ClientHello split
-across bounded TLS records and reduces both upstream socket buffers. The peer
-accepts but does not read. The absolute deadline must cancel the incomplete
-upstream write, send less than the full hello, record one denial, and finish
-with no active connection. This distinguishes a real forwarding barrier from
-a parser-only timeout.
+across bounded TLS records and reduces both upstream socket buffers. The test
+connector fills its send queue to an observed `WouldBlock` before returning the
+socket and records that exact prefill; the peer accepts but does not read. The
+absolute deadline must cancel the blocked upstream write, send less than the
+full hello beyond the prefill, record one denial, and finish with no active
+connection. This distinguishes a real forwarding barrier from a parser-only
+timeout without relying on platform TCP buffer requests as proof of pressure.
 
 The uninspected path separately fills a bounded in-memory upstream to force
 backpressure before tunnelling. Its original absolute handshake deadline must
