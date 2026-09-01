@@ -5517,3 +5517,17 @@ entry point parses and is executable, the package list remains 69 files, and
 the commit graph passes full object verification. One unreachable blob from a
 discarded experiment remains in the local object database; it is not reachable
 from the 187-commit history or package and has no release effect.
+
+## 2026-09-01 — retain explicit Rustls TLS 1.2 support
+
+A dependency simplification trial removed Rustls's explicit `tls12` feature
+while retaining its `std` parser support. All 20 TLS-focused cases passed,
+including independent OpenSSL, Rustls, and SecureTransport fixtures, record
+fragmentation, malformed input, ECH, deadlines, and certified cancellation.
+
+The locked optimized arm64 macOS wrapper did not shrink: it changed from
+2,867,840 to 2,867,920 bytes, an 80-byte increase inside ordinary linker
+variation. With no artifact benefit, removing the feature would only make the
+intended deployed TLS compatibility less explicit. The candidate was reverted;
+the normal dependency graph remains free of OpenSSL, native-tls, ring, AWS-LC,
+and an HTTP client/server framework.
