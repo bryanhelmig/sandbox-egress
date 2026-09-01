@@ -2,4 +2,4 @@
 set -eu
 
 cargo test --lib
-cargo test --test lifecycle --test concurrency --test tunneling -- --test-threads=1
+cargo test --test cli --test lifecycle --test concurrency --test tunneling -- --test-threads=1

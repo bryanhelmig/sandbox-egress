@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Exercise the thin executable wrapper in both native and container factories,
+  including its usage error and stdin-EOF lease shutdown paths.
 - Reject bracketed CONNECT hosts unless their contents are a supported IPv6
   literal, instead of reinterpreting bracketed DNS or IPvFuture text.
 - Restart the identity-reuse quiet period whenever another socket is rejected

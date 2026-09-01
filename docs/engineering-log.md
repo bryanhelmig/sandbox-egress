@@ -1429,3 +1429,28 @@ The change moves whole-tree structural/cognitive complexity from 393/1,149 to
 cases and verified the assembled crate; the serialized Linux lane passed the
 same set. Its 500-lease smoke returned from eight descriptors and five threads
 while live to four descriptors and two threads, finishing at 4,132 KiB RSS.
+
+## 2026-08-31 — execute the thin wrapper in the factory
+
+### Finding
+
+The all-target native factory compiled the executable but did not execute it.
+The serialized container conformance lane named its integration test binaries
+individually, so adding a process-level test without extending that list would
+also leave the packaged wrapper unproved on the pinned Linux toolchain.
+
+### Result
+
+A dedicated process test now pins the two stable wrapper edges: no host policy
+exits with status 2 and an exact usage line, while an allowed host with stdin
+already at EOF starts the shared proxy, prints its loopback endpoint, revokes
+the lease, and reports final usage before exiting successfully. The serialized
+container command explicitly includes this test binary.
+
+The first native factory attempt stopped at the formatting gate, as intended;
+formatting was applied before any later gate ran. The completed native and
+exact Rust 1.88 factories passed all 79 deterministic cases and verified the
+assembled crate. The rebuilt image executed all 79 cases through its default
+command. Complexity remains 397/1,160, and the Linux 500-lease smoke returned
+from eight descriptors and five threads while live to four descriptors and two
+threads, finishing at 4,060 KiB RSS.

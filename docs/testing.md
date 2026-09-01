@@ -17,6 +17,8 @@ The suite is organized by claimed invariant rather than by source module.
   passing.
 - Parser robustness: deterministic malformed-input matrices and ordinary
   regression tests for every discovered defect.
+- Executable contract: process-level tests pin the no-policy usage error and
+  prove that stdin EOF starts, revokes, and cleanly closes the embedded lease.
 - Boundary validation: extreme but type-valid durations are rejected by the
   public construction APIs before they can overflow runtime deadline math.
   Zero header timeouts are rejected as unusable. Extreme global connection and
@@ -156,8 +158,9 @@ from the guest.
 
 `docker build -t sandbox-egress:dev .` runs the standard factory and a small
 Linux `/proc` resource smoke on the declared Rust 1.88 MSRV. Running the image
-executes the serialized hostile conformance lane. The container is a clean-room
-reproducer, not a substitute for the native OS matrix.
+executes the serialized hostile conformance lane, including the thin wrapper's
+process-level contract. The container is a clean-room reproducer, not a
+substitute for the native OS matrix.
 
 The container builds debug and release dependencies from the locked manifest
 before copying project sources. This cache boundary makes source-only rebuilds
