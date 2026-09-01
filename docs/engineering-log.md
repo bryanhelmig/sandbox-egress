@@ -2817,3 +2817,31 @@ runs. The corrected exact Linux factory passed all 134 deterministic cases,
 resource lanes, documentation, and package verification, and the rootless
 134/134 conformance run passed in the combined candidate image. Deterministic
 case count and production complexity are unchanged.
+
+## 2026-09-01 — isolate resolver machinery without adding abstraction
+
+The explicit-server work left resolver construction, transport/cache options,
+backend dispatch, and bounded answer collection inside the already large
+lifecycle module. Those responsibilities were moved verbatim into one private
+`resolver` module. `proxy` still owns listener admission, per-lease deadlines,
+cancellation, address policy, dialing, and certified close. The test-only
+resolver trait moved with its production counterpart; it remains crate-private
+and cannot become a guest-selected backend.
+
+This is deliberately a module extraction, not a new public type or trait layer.
+SCC 4.0.0 remains exactly 564/1,716 structural/cognitive. `proxy.rs` fell from
+3,538 to 3,467 lines and from 783 to 773 cognitive points; `resolver.rs` is 91
+lines and 10 cognitive points. The whole tree gained 22 source lines for module
+documentation, imports, and the module edge. The measured benefit is a smaller
+lifecycle ownership surface with identical total machinery, which is useful to
+future agents working on resolver behavior without competing in the core
+lifecycle file.
+
+The native and corrected exact Rust 1.88 Linux factories passed all 134
+deterministic cases, three README compile examples, documentation, and package
+verification; native dependency policy checks also passed. Linux's 64-caller
+control lane peaked at 5,304 KiB RSS and returned to four descriptors and two
+threads at 4,772 KiB in 174 ms. The following 500-lease lane returned to four
+and two at 4,764 KiB in 1,104 ms. The rootless 134/134 conformance image is
+`sha256:88e887c52519019718f7febf43e5a50d8ed84672257d99880833661b1b5053ad`
+(40,529,915 bytes), 1,766 bytes smaller than the pre-extraction image.

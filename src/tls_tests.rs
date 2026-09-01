@@ -8,7 +8,8 @@ use std::time::{Duration, Instant};
 
 use tokio::net::TcpStream;
 
-use crate::proxy::{TestConnector, TestResolver};
+use crate::proxy::TestConnector;
+use crate::resolver::TestResolver;
 use crate::tls::fixtures::{
     client_hello, client_hello_with_grease, client_hello_with_padding,
     client_hello_with_server_names, fragment_records,

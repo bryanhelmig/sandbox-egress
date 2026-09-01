@@ -66,6 +66,13 @@ tasks call only `try_send`; they never wait for a logger or spawn a logging
 thread. One process-wide fixed-window limiter records rate- and
 channel-suppressed events on the next delivered event.
 
+Resolver construction and lookup live in one small internal module. It owns
+the distinction between host-system and explicitly pinned recursive servers,
+cache and transport options, absolute-name lookup, and bounded answer
+collection. The proxy lifecycle owns deadlines, cancellation, address policy,
+and dialing. This boundary is internal: it does not create a guest-selectable
+backend or another public core object.
+
 ## Data path
 
 The listener uses the socket peer address as host-supplied identity. Lease

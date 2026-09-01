@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Isolate resolver construction and bounded lookup in a small internal module
+  without changing the public API or total complexity.
 - Prove certified lease close cancels Hickory's real wire lookup so late DNS
   failures cannot trigger either UDP or TCP retries for the old lease.
 - Add trusted process-wide explicit DNS server configuration, bounded to eight
