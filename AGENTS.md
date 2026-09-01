@@ -42,9 +42,15 @@ design documents before adding code. Do not weaken an invariant silently.
 
 ## How to work
 
+- Rotate ongoing cycles through performance evidence, simplification,
+  prior-art comparison, and feature or security hardening, then repeat. The
+  order is a guard against tunnel vision, not permission to force a change:
+  discard unsupported candidates and record what was learned.
 - Prefer the smallest vertical slice that strengthens a named invariant.
 - Write or identify the failing test first. Include the phase and race in the
   test name.
+- Use deterministic conformance matrices and controlled inputs. Do not add
+  randomized input-generation tooling to this project.
 - Use mature protocol parsers. Do not hand-roll HTTP or TLS grammar.
 - Keep policy values immutable and public structs' fields private.
 - Use typed errors with actionable, non-secret diagnostics.

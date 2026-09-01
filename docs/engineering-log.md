@@ -5279,3 +5279,17 @@ a causal hot-path change, so no speedup is claimed. The repeated shape is the
 useful evidence: throughput saturates around 32–64 callers and 256 callers
 materially worsen tail latency. No runtime tuning or production code is
 changed.
+
+## 2026-09-01 — preserve the rotating hardening cadence
+
+The final process simplification makes the requested iteration loop durable in
+`AGENTS.md`: performance evidence, simplification, prior-art comparison, then
+feature or security hardening, repeated without forcing unsupported changes.
+It also directs future contributors toward deterministic conformance matrices
+and controlled inputs rather than randomized input-generation tooling.
+
+The README diagram now accurately describes one shared `Proxy`, which may be
+embedded in the supervisor process, rather than implying that the library
+always owns a separate process. A nearby capability sentence is made
+grammatically unambiguous. Runtime behavior, public API, tests, and complexity
+are unchanged.

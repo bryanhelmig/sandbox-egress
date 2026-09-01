@@ -19,7 +19,7 @@ part: controlled access from the jail to the network.
 ```text
                          trusted host
                               |
-                    one shared Proxy process
+                        one shared Proxy
                               |
           source IP ----------+---------- immutable Policy
                               |
@@ -36,8 +36,8 @@ socket. Merely setting `HTTP_PROXY` is not a security boundary.
 
 If that boundary exempts trusted proxy sockets with Linux `SO_MARK`, remove
 both `CAP_NET_ADMIN` and `CAP_NET_RAW` from every untrusted workload and
-sidecar in the network namespace. Since Linux 5.17 either capability can set
-the mark, and Docker retains `CAP_NET_RAW` by default. Running as a non-root UID
+sidecar in the network namespace. Since Linux 5.17, either capability can set
+the mark; Docker retains `CAP_NET_RAW` by default. Running as a non-root UID
 does not replace this capability check.
 
 The complete [deployment contract](docs/deployment-contract.md) divides the
