@@ -274,6 +274,69 @@ fn upstream_download_fin_keeps_the_upload_direction_open() {
 }
 
 #[test]
+fn close_interrupts_a_half_closed_tunnel_without_waiting_for_upstream() {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind upstream");
+    let port = listener.local_addr().expect("upstream address").port();
+    let (upload_finished_tx, upload_finished_rx) = mpsc::sync_channel(1);
+    let (release_tx, release_rx) = mpsc::sync_channel(1);
+    let (writer_stopped_tx, writer_stopped_rx) = mpsc::sync_channel(1);
+    let upstream = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept proxy");
+        let mut upload = Vec::new();
+        stream.read_to_end(&mut upload).expect("read upload FIN");
+        assert!(upload.is_empty());
+        upload_finished_tx.send(()).expect("report upload FIN");
+        release_rx.recv().expect("release upstream writer");
+        stream
+            .set_write_timeout(Some(Duration::from_secs(1)))
+            .expect("set upstream write timeout");
+        let block = [0x5a_u8; 16 * 1024];
+        let error = loop {
+            if let Err(error) = stream.write_all(&block) {
+                break error.kind();
+            }
+        };
+        writer_stopped_tx
+            .send(error)
+            .expect("report upstream writer stop");
+    });
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let lease = attach_for_ports(&proxy, &[port], None);
+    let mut client = open_tunnel(lease.endpoint().socket_addr(), port);
+    client
+        .set_read_timeout(Some(Duration::from_millis(250)))
+        .expect("client read timeout");
+    client
+        .shutdown(Shutdown::Write)
+        .expect("finish guest upload direction");
+    upload_finished_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("proxy propagated upload FIN");
+
+    let started = Instant::now();
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close half-closed tunnel")
+        .usage();
+    assert!(started.elapsed() < Duration::from_millis(500));
+    assert_eq!(final_usage.active_connections, 0);
+    assert_eq!(final_usage.completed_connections, 0);
+    assert_eq!(final_usage.denied_connections, 0);
+
+    assert_terminal_read(client.read(&mut [0_u8; 1]));
+    release_tx.send(()).expect("release upstream writer");
+    assert_terminal_write(
+        writer_stopped_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("upstream writer closure"),
+    );
+    upstream.join().expect("upstream thread");
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
 fn upstream_reset_is_terminal_but_not_completed_or_denied() {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind upstream");
     let port = listener.local_addr().expect("upstream address").port();

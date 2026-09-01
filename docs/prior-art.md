@@ -44,6 +44,15 @@ saturation is fail-fast rather than a fairness queue. A two-lease proof pins
 correct refusal attribution and admission on retry after certified release;
 reserved shares remain a separate, optional scheduling design.
 
+Motosan's per-run proxy uses `copy_bidirectional`, so ordinary directional EOF
+inherits Tokio's correct half-close behavior. Its async handle aborts the
+listener task, while accepted connections are spawned without retained join
+ownership. That is appropriate for a small proxy whose process or sandbox owns
+the run, but it cannot certify that those connections ended. Sandbox Egress
+therefore keeps the mature bidirectional-copy lesson and separately proves that
+lease close terminates a tunnel whose upload direction already reached EOF,
+without waiting for the still-open upstream direction to cooperate.
+
 ## Hostname-denial comparison
 
 Smokescreen and nono both pin case-insensitive and trailing-root-dot hostname

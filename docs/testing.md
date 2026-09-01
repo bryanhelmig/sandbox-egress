@@ -224,11 +224,15 @@ Two ordinary FIN cases prove tunnel directions remain independent. After a
 guest finishes upload, an upstream may still send a delayed response; after an
 upstream finishes download, the guest may still send a late upload. Both paths
 must preserve exact byte counters and count one normally completed tunnel. A
-separate upstream RST case proves delivered upload bytes remain accounted while
-the tunnel is neither completed nor classified as a policy denial. The mirror
-case waits until download accounting advances, resets the guest, and requires
-the upstream writer to hit a terminal error while the read bytes remain in the
-final counters. A refused local destination separately requires a bounded 502
+certified-close case then holds the remaining direction open after the guest's
+upload FIN has propagated. Close must return without upstream cooperation,
+leave no active ownership, make the guest read terminal, and make a subsequently
+released upstream writer observe a terminal socket error. A separate upstream
+RST case proves delivered upload bytes remain accounted while the tunnel is
+neither completed nor classified as a policy denial. The mirror case waits
+until download accounting advances, resets the guest, and requires the upstream
+writer to hit a terminal error while the read bytes remain in the final
+counters. A refused local destination separately requires a bounded 502
 `dial-failed` denial before any CONNECT-success response.
 
 Counter boundary tests seed cumulative atomics immediately below `u64::MAX`,

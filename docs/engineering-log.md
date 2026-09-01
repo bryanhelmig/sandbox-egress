@@ -3888,3 +3888,39 @@ then returned after shutdown to 5,840 KiB, four descriptors, and two threads.
 The rootless 161/161 image is
 `sha256:94ab401a97e01bded1a3b3810d3e62ad0153f38b22d2bdf2626dac0446b52651`
 (40,736,538 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — certify revocation after a tunnel half-close
+
+The comparison rotation cloned motosan-sandbox at the documented `13eab245`
+pin and reviewed its CONNECT proxy. Its use of Tokio's `copy_bidirectional`
+correctly preserves ordinary directional EOF. Its shutdown handle aborts the
+listener task, while connection handlers are spawned without retained join
+ownership. This exposed a useful conformance question for Sandbox Egress:
+could certified close terminate the still-live half of a tunnel after the
+other half had already finished?
+
+A controlled upstream now reads until the guest's upload FIN propagates, then
+deliberately withholds its response. Lease close must return in under 500
+milliseconds without releasing that upstream, freeze zero active ownership,
+make the guest read terminal, and make the released upstream writer observe a
+terminal socket error. Final completion and denial counters remain zero because
+revocation, not normal EOF or policy refusal, ended the tunnel. The proof passed
+25 consecutive focused repetitions.
+
+The first focused run tried to install the guest read timeout after close had
+already made the socket terminal; macOS rejected that test-side operation with
+`EINVAL`. Moving the timeout before the half-close removed the harness race.
+The upstream result wait was also given a two-second scheduling margin while
+its own write is still bounded to one second. Neither correction changes the
+500-millisecond close requirement.
+
+Production source and dependencies are unchanged, so no performance benchmark
+was run. Whole-tree SCC 4.0.0 complexity moves from 683/2,046 to 686/2,055
+structural/cognitive, entirely in the new conformance proof. The native and
+exact Rust 1.88 Linux factories passed 162 deterministic cases, five doctests,
+documentation, package verification, and all six Linux resource lanes; native
+dependency policy checks also passed. Linux's TLS lane peaked at 14,840 KiB
+RSS, 265 descriptors, and six threads, then returned after shutdown to 6,156
+KiB, four descriptors, and two threads. The rootless 162/162 image is
+`sha256:a495ddba8cb9ea129e90ec76a15b2e7927ebac79b6eff6006bfbaedeceacc8eb`
+(40,739,469 bytes) and runs as UID/GID 65534.
