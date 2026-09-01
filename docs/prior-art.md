@@ -45,6 +45,27 @@ saturation is fail-fast rather than a fairness queue. A two-lease proof pins
 correct refusal attribution and admission on retry after certified release;
 reserved shares remain a separate, optional scheduling design.
 
+## Listener failure comparison
+
+Smokescreen delegates serving to Go's
+[`net/http.Server`](https://github.com/golang/go/blob/go1.26.6/src/net/http/server.go#L3428-L3459),
+whose temporary accept-error path starts at a 5 millisecond delay, doubles to a
+one-second ceiling, and resets after a successful accept. At the reviewed Lens
+pin, [both proxy listeners](https://github.com/lensapp/lens-sandbox-core/blob/2bc4ecc5d92a3dac985d28fbdfe0c1c0e1db4ffc/crates/lens-sandbox-core/src/proxy.rs#L510-L550)
+warn and immediately continue after an accept error. Current nono commit
+`46867b2f` [does the same](https://github.com/nolabs-ai/nono/blob/46867b2fd073e324d13448304e80d3a5725e9788/crates/nono-proxy/src/server.rs#L1370-L1405)
+in its proxy loop. [Motosan](https://github.com/motosan-dev/motosan-sandbox/blob/13eab245e25100638db091381f24fe51d23d9e78/crates/motosan-sandbox-proxy/src/lib.rs#L53-L70)
+instead warns and ends its small per-run accept task.
+
+Immediate retry is risky when a ready listener repeatedly reports process or
+system descriptor exhaustion: it can monopolize an executor worker. Ending the
+loop is also the wrong library contract for a shared proxy that must preserve
+management ownership. Sandbox Egress therefore keeps an asynchronous bounded
+backoff for ordinary accepts. Its mandatory identity drain fails `close` or a
+replacement `attach` with `ListenerUnavailable`, rather than either spinning
+or treating an uninspected queue as empty. The caller retains the lease and can
+retry after host resources recover.
+
 Motosan's per-run proxy uses `copy_bidirectional`, so ordinary directional EOF
 inherits Tokio's correct half-close behavior. Its async handle aborts the
 listener task, while accepted connections are spawned without retained join

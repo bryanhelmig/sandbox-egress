@@ -152,6 +152,13 @@ An already-quiesced retry has a separate state-level case. It must request a
 fresh listener drain before returning the stored final snapshot, but does not
 repeat the quiet interval or alter final counters.
 
+The listener-error backoff has a deterministic state-level boundary case: the
+first failure waits five milliseconds, consecutive failures double only to a
+one-second ceiling, and one successful accept or drain resets the sequence.
+The management path treats a failed mandatory drain as
+`ListenerUnavailable`; it never converts that failure into an empty-queue
+certificate.
+
 A proxy-wide shutdown case first records one real denied CONNECT, then joins
 the runtime while retaining its lease handle. Calling `Lease::close` afterward
 must return the committed snapshot with one accepted, one denied, and zero

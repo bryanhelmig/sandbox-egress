@@ -25,11 +25,18 @@ source address is reassigned. The implementation keeps the identity revoking
 until one complete configured interval passes without an accepted old socket;
 each observed arrival restarts that interval. At the end of a candidate quiet
 interval, the listener owner drains ready accepts in bounded batches and
-rechecks the generation before certifying cleanup. Reaching a batch limit or
-an accept error is not treated as an empty queue. Attachment independently
-requires an empty ready-queue poll before installing a mapping, so management
-command pressure cannot carry an already-queued socket into a replacement
-policy.
+rechecks the generation before certifying cleanup. Reaching a batch limit is
+not treated as an empty queue. An accept failure returns
+`ListenerUnavailable`, retains lease ownership, and cannot certify cleanup.
+Attachment independently requires a successful empty ready-queue poll before
+installing a replacement mapping, so management command pressure or listener
+failure cannot carry an already-queued socket into a new policy.
+
+The ordinary accept loop backs off from 5 milliseconds to at most one second
+after consecutive listener errors and resets after a successful accept or
+drain. The retry timer remains inside the management select loop, so resource
+pressure cannot turn a ready listener error into a CPU spin or prevent close
+and shutdown commands from being serviced.
 
 The proxy still cannot authenticate a packet that arrives after the interval,
 so the host-side fencing order is load-bearing:

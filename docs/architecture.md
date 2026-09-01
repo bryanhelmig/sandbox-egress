@@ -47,6 +47,12 @@ Host integrations should still bound their own concurrent management calls. An
 opt-in resource lane releases 64 simultaneous attaches and closes in repeated
 batches and verifies process threads and descriptors recover.
 
+Listener accept errors use a bounded retry delay without sleeping the runtime
+thread, so management commands remain responsive during descriptor pressure.
+A failure while performing the identity handoff drain is different from an
+empty queue: close or replacement attachment fails explicitly and the old
+identity remains owned.
+
 A successful proxy-wide shutdown drains every lease tracker and marks each
 state closed before joining the runtime thread. A surviving lease handle reads
 that immutable closed snapshot locally; runtime loss alone cannot hide an

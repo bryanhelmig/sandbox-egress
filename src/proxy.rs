@@ -377,7 +377,7 @@ enum Command {
         retryable: bool,
     },
     DrainAcceptQueue {
-        reply: tokio::sync::oneshot::Sender<()>,
+        reply: tokio::sync::oneshot::Sender<Result<(), CloseErrorKind>>,
     },
     #[cfg(test)]
     KeepCommandsReady {
@@ -596,6 +596,33 @@ pub(crate) trait TestConnector: Send + Sync {
 // Yield between bounded drain batches. A full batch is never evidence that the
 // queue is empty; the command is requeued and attachment or cleanup stays held.
 const ACCEPT_DRAIN_BATCH: usize = 256;
+const ACCEPT_RETRY_INITIAL: Duration = Duration::from_millis(5);
+const ACCEPT_RETRY_MAX: Duration = Duration::from_secs(1);
+
+#[derive(Default)]
+struct AcceptBackoff(Duration);
+
+impl AcceptBackoff {
+    fn next_delay(&mut self) -> Duration {
+        self.0 = if self.0.is_zero() {
+            ACCEPT_RETRY_INITIAL
+        } else {
+            self.0.saturating_mul(2).min(ACCEPT_RETRY_MAX)
+        };
+        self.0
+    }
+
+    fn reset(&mut self) {
+        self.0 = Duration::ZERO;
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DrainResult {
+    Drained,
+    BatchFull,
+    AcceptFailed,
+}
 
 struct ConnectionRuntime {
     resolver: Arc<ResolverBackend>,
@@ -663,7 +690,7 @@ impl ConnectionRuntime {
         &self,
         listener: &TcpListener,
         leases: &HashMap<PeerIdentity, Arc<LeaseState>>,
-    ) -> bool {
+    ) -> DrainResult {
         for _ in 0..ACCEPT_DRAIN_BATCH {
             let accepted = std::future::poll_fn(|context| match listener.poll_accept(context) {
                 Poll::Ready(result) => Poll::Ready(Some(result)),
@@ -672,12 +699,29 @@ impl ConnectionRuntime {
             .await;
             match accepted {
                 Some(Ok((stream, peer))) => self.dispatch(stream, peer, leases),
-                None => return true,
-                Some(Err(_)) => return false,
+                None => return DrainResult::Drained,
+                Some(Err(_)) => return DrainResult::AcceptFailed,
             }
         }
-        false
+        DrainResult::BatchFull
     }
+}
+
+async fn wait_for_accept_retry(deadline: Option<TokioInstant>) {
+    if let Some(deadline) = deadline {
+        sleep_until(deadline).await;
+    } else {
+        std::future::pending::<()>().await;
+    }
+}
+
+fn schedule_accept_retry(backoff: &mut AcceptBackoff, retry_at: &mut Option<TokioInstant>) {
+    *retry_at = TokioInstant::now().checked_add(backoff.next_delay());
+}
+
+fn clear_accept_retry(backoff: &mut AcceptBackoff, retry_at: &mut Option<TokioInstant>) {
+    backoff.reset();
+    *retry_at = None;
 }
 
 #[allow(clippy::too_many_lines)]
@@ -744,7 +788,10 @@ async fn run_proxy(
     };
 
     let mut stopping = false;
+    let mut accept_backoff = AcceptBackoff::default();
+    let mut accept_retry_at = None;
     loop {
+        let retry_at = accept_retry_at;
         tokio::select! {
             biased;
             command = commands.recv() => {
@@ -758,11 +805,31 @@ async fn run_proxy(
                             let _ = reply.send(Err(AttachError::ProxyStopping));
                         } else if !replaceable {
                             let _ = reply.send(Err(AttachError::IdentityInUse));
-                        } else if connections.drain_ready(&listener, &leases).await {
-                            leases.insert(state.identity.clone(), state);
-                            let _ = reply.send(Ok(()));
                         } else {
-                            let _ = command_sender.send(Command::Attach { state, reply });
+                            match connections.drain_ready(&listener, &leases).await {
+                                DrainResult::Drained => {
+                                    clear_accept_retry(
+                                        &mut accept_backoff,
+                                        &mut accept_retry_at,
+                                    );
+                                    leases.insert(state.identity.clone(), state);
+                                    let _ = reply.send(Ok(()));
+                                }
+                                DrainResult::BatchFull => {
+                                    clear_accept_retry(
+                                        &mut accept_backoff,
+                                        &mut accept_retry_at,
+                                    );
+                                    let _ = command_sender.send(Command::Attach { state, reply });
+                                }
+                                DrainResult::AcceptFailed => {
+                                    schedule_accept_retry(
+                                        &mut accept_backoff,
+                                        &mut accept_retry_at,
+                                    );
+                                    let _ = reply.send(Err(AttachError::ListenerUnavailable));
+                                }
+                            }
                         }
                     }
                     Command::Close { state, deadline, reply } => {
@@ -830,10 +897,22 @@ async fn run_proxy(
                         if reply.is_closed() {
                             continue;
                         }
-                        if drained {
-                            let _ = reply.send(());
-                        } else {
-                            let _ = command_sender.send(Command::DrainAcceptQueue { reply });
+                        match drained {
+                            DrainResult::Drained => {
+                                clear_accept_retry(&mut accept_backoff, &mut accept_retry_at);
+                                let _ = reply.send(Ok(()));
+                            }
+                            DrainResult::BatchFull => {
+                                clear_accept_retry(&mut accept_backoff, &mut accept_retry_at);
+                                let _ = command_sender.send(Command::DrainAcceptQueue { reply });
+                            }
+                            DrainResult::AcceptFailed => {
+                                schedule_accept_retry(
+                                    &mut accept_backoff,
+                                    &mut accept_retry_at,
+                                );
+                                let _ = reply.send(Err(CloseErrorKind::ListenerUnavailable));
+                            }
                         }
                     }
                     #[cfg(test)]
@@ -850,9 +929,19 @@ async fn run_proxy(
                     }
                 }
             }
-            accepted = listener.accept(), if !stopping => {
-                if let Ok((stream, peer)) = accepted {
-                    connections.dispatch(stream, peer, &leases);
+            () = wait_for_accept_retry(retry_at), if retry_at.is_some() => {
+                accept_retry_at = None;
+            }
+            accepted = listener.accept(), if !stopping && retry_at.is_none() => {
+                match accepted {
+                    Ok((stream, peer)) => {
+                        clear_accept_retry(&mut accept_backoff, &mut accept_retry_at);
+                        connections.dispatch(stream, peer, &leases);
+                    }
+                    Err(_) => schedule_accept_retry(
+                        &mut accept_backoff,
+                        &mut accept_retry_at,
+                    ),
                 }
             }
         }
@@ -923,7 +1012,7 @@ async fn drain_accept_queue(
     command_sender
         .send(Command::DrainAcceptQueue { reply })
         .map_err(|_| CloseErrorKind::RuntimeStopped)?;
-    drained.await.map_err(|_| CloseErrorKind::RuntimeStopped)
+    drained.await.map_err(|_| CloseErrorKind::RuntimeStopped)?
 }
 
 async fn complete_before_deadline<T>(
@@ -3748,13 +3837,27 @@ mod tests {
                 else {
                     panic!("unexpected command while retrying close");
                 };
-                reply.send(()).expect("acknowledge accept drain");
+                reply.send(Ok(())).expect("acknowledge accept drain");
             };
             let (usage, ()) = tokio::join!(close, drain);
             usage.expect("quiesced retry")
         });
 
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn accept_retry_backoff_is_bounded_and_resets_after_success() {
+        let mut backoff = AcceptBackoff::default();
+        assert_eq!(backoff.next_delay(), ACCEPT_RETRY_INITIAL);
+        assert_eq!(backoff.next_delay(), ACCEPT_RETRY_INITIAL * 2);
+        for _ in 0..16 {
+            backoff.next_delay();
+        }
+        assert_eq!(backoff.next_delay(), ACCEPT_RETRY_MAX);
+
+        backoff.reset();
+        assert_eq!(backoff.next_delay(), ACCEPT_RETRY_INITIAL);
     }
 
     #[test]

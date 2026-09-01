@@ -4532,3 +4532,35 @@ five threads, and finished at 5,856 KiB, four descriptors, and two threads.
 The rootless 178/178 image is
 `sha256:f161db7099386ae0278eb17e12517792c6bf77a7edb458d076b6b21cbe57cd89`
 (40,861,824 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — bound listener-error retries without weakening close
+
+The comparison rotation inspected listener failure at Smokescreen `d4da883a`,
+Lens `2bc4ecc5`, current nono `46867b2f`, and Motosan `13eab245`. Smokescreen
+inherits Go `net/http`'s 5 millisecond exponential delay with a one-second
+ceiling. Lens and nono warn and immediately retry; Motosan ends its per-run
+accept task. Sandbox Egress also immediately retried, and a failed accept in
+the certified-close drain requeued its command. Persistent descriptor pressure
+could therefore consume a runtime worker and circulate a management request.
+
+Ordinary listener failures now arm a Tokio timer, doubling from 5 milliseconds
+to a one-second ceiling while the same select loop continues servicing
+management commands. A successful accept or listener drain resets the delay.
+A failed mandatory drain returns `ListenerUnavailable` to close or replacement
+attachment. It is never interpreted as an empty queue, and close retains lease
+ownership so an uninspected old socket cannot inherit a replacement policy.
+
+A deterministic state-level case pins the bounded delay and reset. All 121
+library cases pass. Whole-tree SCC 4.0.0 complexity moves from 748/2,228 to
+754/2,238 structural/cognitive; the increase is the explicit three-way drain
+result and retry state required to distinguish empty, bounded-progress, and
+listener-failure outcomes.
+
+The native and exact Rust 1.88 Linux factories passed all 179 deterministic
+cases, six doctests, documentation, package verification, benchmark smoke, and
+all six Linux resource lanes. Linux's TLS lane peaked at 14,880 KiB RSS, 265
+descriptors, and six threads, recovered to 11,620 KiB, eight descriptors, and
+five threads, and finished at 6,304 KiB, four descriptors, and two threads.
+The rootless 179/179 image is
+`sha256:027431a73ad8feed861c02fe7a834a81c54a291af2b12a736b4bbd9cb33740af`
+(40,877,983 bytes) and runs as UID/GID 65534.

@@ -106,6 +106,10 @@ pub enum AttachError {
     /// Proxy-wide shutdown has begun, so no new lease may be installed.
     #[error("proxy shutdown has begun")]
     ProxyStopping,
+    /// The listener could not be inspected before installing a replacement
+    /// policy for this identity.
+    #[error("proxy listener is temporarily unavailable")]
+    ListenerUnavailable,
     /// The proxy runtime stopped before attachment completed.
     #[error("proxy runtime stopped during attachment")]
     RuntimeStopped,
@@ -119,6 +123,9 @@ pub enum CloseErrorKind {
     DeadlineExceeded,
     /// The proxy runtime stopped before certifying completion.
     RuntimeStopped,
+    /// The listener could not be drained, so identity cleanup was not
+    /// certified.
+    ListenerUnavailable,
 }
 
 /// A failed close that retains the still-owning [`Lease`].
@@ -157,6 +164,9 @@ impl fmt::Display for CloseError {
             }
             CloseErrorKind::RuntimeStopped => {
                 formatter.write_str("proxy runtime stopped before certifying lease shutdown")
+            }
+            CloseErrorKind::ListenerUnavailable => {
+                formatter.write_str("proxy listener could not be drained for certified shutdown")
             }
         }
     }
