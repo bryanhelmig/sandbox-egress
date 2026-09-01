@@ -297,7 +297,13 @@ fn arrivals_that_prevent_quiet_close_return_the_owning_lease() {
 #[test]
 fn hostname_policy_denies_before_dns() {
     let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
-    let lease = attach_local(&proxy, Policy::builder().build().expect("valid policy"));
+    let lease = attach_local(
+        &proxy,
+        Policy::builder()
+            .allow_port(443)
+            .build()
+            .expect("valid policy"),
+    );
     let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
     client
         .write_all(b"CONNECT forbidden.invalid:443 HTTP/1.1\r\n\r\n")
@@ -316,6 +322,34 @@ fn hostname_policy_denies_before_dns() {
 }
 
 #[test]
+fn an_explicit_http_port_does_not_also_allow_https() {
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let policy = Policy::builder()
+        .allow_network("127.0.0.0/8".parse::<IpNet>().expect("test CIDR"))
+        .allow_port(80)
+        .build()
+        .expect("valid HTTP-only policy");
+    let lease = attach_local(&proxy, policy);
+    let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+    client
+        .write_all(b"CONNECT 127.0.0.1:443 HTTP/1.1\r\n\r\n")
+        .expect("write disallowed HTTPS CONNECT");
+    let mut response = String::new();
+    client.read_to_string(&mut response).expect("read denial");
+    assert!(response.starts_with("HTTP/1.1 403"), "{response}");
+    assert!(response.contains("port-denied"), "{response}");
+
+    let usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close HTTP-only lease")
+        .usage();
+    assert_eq!(usage.denied_connections, 1);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
 fn diagnostics_retain_lease_attribution_across_identity_reuse() {
     let (diagnostic_tx, diagnostic_rx) = mpsc::sync_channel(4);
     let proxy = Proxy::start(ProxyConfig::default().with_diagnostic_channel(diagnostic_tx, 10))
@@ -324,7 +358,10 @@ fn diagnostics_retain_lease_attribution_across_identity_reuse() {
     let lease = proxy
         .attach(
             identity.clone(),
-            Policy::builder().build().expect("valid policy"),
+            Policy::builder()
+                .allow_port(443)
+                .build()
+                .expect("valid policy"),
         )
         .expect("attach lease");
     let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
@@ -341,7 +378,10 @@ fn diagnostics_retain_lease_attribution_across_identity_reuse() {
     let replacement = proxy
         .attach(
             identity.clone(),
-            Policy::builder().build().expect("valid policy"),
+            Policy::builder()
+                .allow_port(443)
+                .build()
+                .expect("valid policy"),
         )
         .expect("reuse identity after certified close");
     let mut client = TcpStream::connect(replacement.endpoint().socket_addr())
@@ -427,7 +467,10 @@ fn dual_stack_listener_maps_ipv4_peer_to_the_ipv4_lease() {
     let lease = proxy
         .attach(
             PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-            Policy::builder().build().expect("valid policy"),
+            Policy::builder()
+                .allow_port(443)
+                .build()
+                .expect("valid policy"),
         )
         .expect("attach IPv4 lease");
     let mut client = TcpStream::connect(SocketAddr::new(

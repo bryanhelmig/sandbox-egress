@@ -65,6 +65,12 @@ that full-set validation, duplicate approved socket addresses are collapsed in
 first-seen order. Repeated records therefore consume one bounded answer slot
 each but cannot amplify sequential connection attempts.
 
+Policy construction begins with no allowed hostname, destination network, or
+port. Every permitted port is explicit: adding one port cannot retain a hidden
+HTTPS default, and adding a hostname cannot create a port grant. The thin
+executable chooses port 443 itself; that wrapper convenience is not a library
+policy default.
+
 Dialing receives only approved `SocketAddr` values and shares the absolute
 handshake deadline. Lease cancellation drops the in-progress connect future;
 certified close waits for the owning tracked connection task to disappear.

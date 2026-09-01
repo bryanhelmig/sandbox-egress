@@ -146,7 +146,7 @@ impl PolicyBuilder {
         Ok(self)
     }
 
-    /// Allow CONNECT to a destination port.
+    /// Allow CONNECT to a destination port. No port is allowed until added.
     pub fn allow_port(mut self, port: u16) -> Self {
         self.ports.insert(port);
         self
@@ -250,7 +250,7 @@ impl Default for PolicyBuilder {
     fn default() -> Self {
         Self {
             hosts: Vec::new(),
-            ports: BTreeSet::from([443]),
+            ports: BTreeSet::new(),
             allowed_networks: Vec::new(),
             max_connections: 64,
             dns_timeout: Duration::from_secs(3),
@@ -391,6 +391,19 @@ mod tests {
         assert!(pattern.matches("deep.api.example.com"));
         assert!(!pattern.matches("example.com"));
         assert!(!pattern.matches("notexample.com"));
+    }
+
+    #[test]
+    fn ports_are_empty_until_explicitly_allowed() {
+        let empty = Policy::builder().build().expect("valid empty policy");
+        assert!(!empty.allows_port(443));
+
+        let http_only = Policy::builder()
+            .allow_port(80)
+            .build()
+            .expect("valid HTTP-only policy");
+        assert!(http_only.allows_port(80));
+        assert!(!http_only.allows_port(443));
     }
 
     #[test]

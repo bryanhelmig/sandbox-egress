@@ -140,7 +140,10 @@ fn denied_connect(criterion: &mut Criterion) {
     let lease = proxy
         .attach(
             PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-            Policy::builder().build().expect("valid policy"),
+            Policy::builder()
+                .allow_port(443)
+                .build()
+                .expect("valid policy"),
         )
         .expect("attach benchmark lease");
     let endpoint = lease.endpoint().socket_addr();

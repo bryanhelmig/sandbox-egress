@@ -1588,3 +1588,45 @@ The native and exact Rust 1.88 factories passed all 87 deterministic cases and
 verified the assembled crate; the serialized Linux image ran the same set. Its
 500-lease smoke held eight descriptors and five threads while live, returned to
 four descriptors and two threads, and finished at 4,044 KiB RSS.
+
+## 2026-08-31 — make every port grant explicit
+
+### Finding
+
+`Policy::builder()` described a deny-by-default policy, but its port set began
+with 443. Because `allow_port` is additive, a caller constructing an apparently
+HTTP-only policy with `allow_port(80)` silently retained HTTPS access. The
+first regression test reproduced the mismatch by requiring an untouched
+builder to deny 443; it failed before the implementation changed.
+
+### Result
+
+The library policy now starts with no allowed ports. Every port is an explicit
+host-side grant. The thin executable deliberately opts into 443 so its familiar
+single-policy example remains useful without weakening the reusable library
+default. A real-socket integration case grants loopback and port 80, attempts
+port 443, requires the structured `port-denied` response, and checks the final
+denial counter. Existing cases and benchmarks that intentionally exercise a
+later phase now grant 443 explicitly.
+
+Changing only the initial `BTreeSet` unexpectedly moved the full-LTO 1 MiB
+header-rejection benchmark from the parent commit's 638.83–646.77 microseconds
+to 1.018–1.279 milliseconds, even though that path never consults the port set.
+Using `BTreeSet::default()` did not help; temporarily restoring the hidden 443
+recovered 655.77–660.12 microseconds and isolated this as whole-program code
+layout sensitivity rather than runtime policy work. A measured, non-inlined
+boundary around the hostile-input header scan preserves the correct empty
+default and recovered 640.59–648.71 microseconds in the focused replay. The
+final full replay measured 659.77–695.71 microseconds, within its established
+historical range. Allowed loopback, allowed hostname, visible-SNI, hostname
+denial, and empty-lease benchmarks reported no detected change.
+
+Whole-tree structural/cognitive complexity remains 409/1,202. The native and
+exact Rust 1.88 factories passed all 89 deterministic cases and verified the
+assembled crate; the serialized Linux image ran the same set. Its 500-lease
+smoke held eight descriptors and five threads while live, returned to four
+descriptors and two threads, and finished at 4,072 KiB RSS. During the first
+exact rebuild, Docker's legacy builder retained a failed 1.85 GiB intermediate
+container after exhausting its internal disk. Only inspected, superseded
+Sandbox Egress build state was removed; the clean rebuild then passed without a
+source change.

@@ -83,6 +83,11 @@ The management API is synchronous. The proxy owns one Tokio runtime; embedding
 it does not require converting an existing supervisor to async or creating a
 runtime per sandbox run.
 
+`Policy::builder()` is deny-by-default across every rule dimension. Adding a
+hostname does not add a port, and adding port 80 does not silently retain port
+443. The example permits 443 explicitly; the thin executable makes the same
+HTTPS-only choice on behalf of its intentionally smaller command-line surface.
+
 ## Why a lease?
 
 Starting a connection and ending a run are concurrent events. A connection may

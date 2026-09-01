@@ -1103,6 +1103,10 @@ struct HeaderBlock {
     end: usize,
 }
 
+// Keep the hostile-input scan behind a stable code-generation boundary.
+// Whole-program LTO otherwise coupled its loop layout to unrelated policy
+// constructor changes; the committed 1 MiB benchmark reproduced the effect.
+#[inline(never)]
 async fn read_header<R>(stream: &mut R, max: usize) -> io::Result<HeaderBlock>
 where
     R: AsyncRead + Unpin,

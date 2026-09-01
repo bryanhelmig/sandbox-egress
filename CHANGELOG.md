@@ -5,6 +5,9 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Make destination ports fully deny-by-default: only calls to `allow_port`
+  create grants, while the thin executable explicitly retains its HTTPS-only
+  port 443 behavior.
 - Decode operator-registered RFC 6052 NAT64 prefixes before destination policy
   checks, preventing translated private or metadata IPv4 addresses from
   appearing as ordinary global IPv6 DNS answers.

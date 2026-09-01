@@ -33,6 +33,10 @@ both `api.example.com` and `deep.api.example.com`, but neither `example.com`
 nor `notexample.com`. The wildcard therefore means any nonempty sequence of
 complete left-hand labels, not TLS certificate wildcard semantics.
 
+Port policy cases require an empty builder to allow no port and an HTTP-only
+builder to allow 80 without inheriting 443. A real listener repeats the latter
+case against CONNECT and requires the stable `port-denied` response.
+
 Header conformance distinguishes a byte-ceiling violation (`431
 header-too-large`), early EOF (`400 header-eof`), and the absolute slow-header
 deadline (`408 header-timeout`). Each case must close with one denial and no
@@ -49,7 +53,10 @@ A unit boundary case places the four-byte header terminator at every split
 around the proxy's 4 KiB read boundary and proves buffered tunnel bytes are
 preserved. The connection benchmark sends a full 1 MiB unterminated header and
 observes the real 431 response, guarding the incremental scan's CPU shape as
-well as its parsing result.
+well as its parsing result. The scan remains a non-inlined code-generation
+boundary because whole-program LTO otherwise made its optimized loop sensitive
+to unrelated policy-constructor changes; benchmark comparison must accompany
+any change to that boundary.
 
 Paired capacity cases hold one admitted slow header open, then prove the next
 socket is terminal under either the global or per-lease ceiling. The rejected

@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(2);
     }
 
-    let mut builder = Policy::builder();
+    let mut builder = Policy::builder().allow_port(443);
     for host in hosts {
         builder = builder.allow_host(host)?;
     }
