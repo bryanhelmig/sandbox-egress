@@ -1645,6 +1645,16 @@ mod tests {
         response
     }
 
+    fn local_servfail_response(query: &[u8]) -> Vec<u8> {
+        let question_end = local_dns_question_end(query);
+        let mut response = Vec::with_capacity(question_end);
+        response.extend_from_slice(&query[..2]);
+        response.extend_from_slice(&[0x81, 0x82]);
+        response.extend_from_slice(&[0, 1, 0, 0, 0, 0, 0, 0]);
+        response.extend_from_slice(&query[12..question_end]);
+        response
+    }
+
     fn local_dns_question_end(query: &[u8]) -> usize {
         assert!(query.len() >= 17, "DNS query is too short");
         let name_end = query[12..]
@@ -2233,6 +2243,102 @@ mod tests {
             assert_eq!(answer.answers()[0].data.to_string(), "127.0.0.1");
         });
         server.join().expect("join local DNS server");
+    }
+
+    #[test]
+    fn lease_close_stops_real_dns_retries_after_late_failure() {
+        const INITIAL_QUERIES: usize = 2;
+
+        let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .expect("bind late-response TCP DNS server");
+        listener
+            .set_nonblocking(true)
+            .expect("configure late-response TCP DNS server");
+        let dns_address = listener.local_addr().expect("late-response DNS address");
+        let socket =
+            std::net::UdpSocket::bind(dns_address).expect("bind late-response UDP DNS server");
+        socket
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .expect("set initial DNS timeout");
+        let (ready_tx, ready_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let server = thread::spawn(move || {
+            let mut packet = [0_u8; 2_048];
+            let mut requests = Vec::with_capacity(INITIAL_QUERIES);
+            for _ in 0..INITIAL_QUERIES {
+                let (length, peer) = socket.recv_from(&mut packet).expect("receive DNS query");
+                requests.push((packet[..length].to_vec(), peer));
+            }
+            ready_tx.send(()).expect("report initial DNS queries");
+            release_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("release late DNS responses");
+            for (query, peer) in &requests {
+                socket
+                    .send_to(&local_servfail_response(query), peer)
+                    .expect("send late DNS failure");
+            }
+
+            socket
+                .set_nonblocking(true)
+                .expect("configure retry observation");
+            let mut retries = 0;
+            let observation_deadline = Instant::now() + Duration::from_millis(400);
+            while Instant::now() < observation_deadline {
+                match socket.recv_from(&mut packet) {
+                    Ok(_) => retries += 1,
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
+                    Err(error) => panic!("observe DNS retries: {error}"),
+                }
+                match listener.accept() {
+                    Ok(_) => retries += 1,
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
+                    Err(error) => panic!("observe TCP DNS retries: {error}"),
+                }
+                thread::sleep(Duration::from_millis(5));
+            }
+            retries
+        });
+
+        let proxy = Proxy::start(
+            ProxyConfig::default()
+                .with_dns_server(dns_address)
+                .with_dns_cache(0, Duration::ZERO),
+        )
+        .expect("start explicit DNS proxy");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                hostname_policy("cancel-wire.test", 443),
+            )
+            .expect("attach DNS lease");
+        let mut client = std::net::TcpStream::connect(lease.endpoint().socket_addr())
+            .expect("connect explicit DNS proxy");
+        std::io::Write::write_all(
+            &mut client,
+            b"CONNECT cancel-wire.test:443 HTTP/1.1\r\nHost: cancel-wire.test\r\n\r\n",
+        )
+        .expect("write DNS-bound CONNECT");
+        ready_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("observe initial wire queries");
+
+        let final_usage = lease
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("close DNS-bound lease");
+        let final_usage = final_usage.usage();
+        assert_eq!(final_usage.accepted_connections, 1);
+        assert_eq!(final_usage.active_connections, 0);
+        release_tx.send(()).expect("release late DNS failures");
+        assert_client_stopped(client);
+        assert_eq!(
+            server.join().expect("join late-response DNS server"),
+            0,
+            "cancelled lookup must not retry after a late DNS failure"
+        );
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("shutdown explicit DNS proxy");
     }
 
     #[test]

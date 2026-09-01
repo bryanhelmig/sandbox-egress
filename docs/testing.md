@@ -280,6 +280,14 @@ must produce the second upstream query. A fixed NXDOMAIN response carrying a
 60-second SOA negative TTL follows the same sequence, proving that the shared
 ceiling constrains negative caching in behavior as well as configuration.
 
+A real proxy/lease case holds Hickory's parallel A and AAAA requests at a local
+recursive server, certifies lease close, then releases valid late SERVFAIL
+responses. The server watches both new UDP packets and TCP accepts for 400 ms
+and requires neither. This pins the dependency-level cancellation behavior:
+closing our lookup future must close Hickory's request completion channel and
+prevent a late failure from entering its retry path. The case also requires the
+guest socket to terminate and final active ownership to be zero.
+
 An oversized-answer case supplies one address beyond the default cardinality
 ceiling and uses a recording connector. It requires the bounded
 `dns-answer-too-large` denial, one denial counter increment, and zero dial

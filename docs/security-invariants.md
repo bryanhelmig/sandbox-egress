@@ -92,6 +92,14 @@ Permit starvation, resolver failure, and deadline enforcement are distinct
 bounded denials: `503 dns-capacity`, `502 dns-failed`, and `504 dns-timeout`.
 None can start a dial.
 
+Dropping a system lookup also closes Hickory's request completion channel. The
+resolver's background transport removes that active request rather than
+retrying it. Conformance observes this at the dependency's real UDP and TCP
+boundary: after certified close, late failures for both parallel IP queries
+cause no new outbound DNS packet or connection. Packets already sent before
+revocation cannot be recalled, and a remote resolver may still deliver their
+responses; neither event can make the proxy dial or retry after close.
+
 Without explicit servers, resolver construction snapshots the host operating
 system configuration at proxy startup. When the host supplies one or more DNS
 server socket addresses, construction does not consult the operating system's

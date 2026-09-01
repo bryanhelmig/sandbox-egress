@@ -2766,3 +2766,35 @@ four descriptors and two threads at 4,732 KiB in 196 ms. The following
 133/133 conformance image is
 `sha256:c9579b68fd0652097bcc5c2dcb6bd43d4e4bd5c0497e3eceb97a24595f4e9f9f`
 (40,524,986 bytes).
+
+## 2026-09-01 — prove real resolver cancellation at the wire boundary
+
+The controlled `TestResolver` seam already proved that dropping a lookup future
+prevents a late answer from reaching the connector. Hickory documents that its
+resolver drives network exchanges in background tasks, however, so that seam
+did not prove the dependency stops retry traffic after our future is cancelled.
+This matters to the strongest interpretation of certified close: a run that no
+longer owns DNS work must not cause a new query after revocation.
+
+A new real-proxy case uses the explicit local recursive server and waits for
+Hickory's parallel A and AAAA UDP queries. The lease is successfully closed
+before the server releases valid SERVFAIL responses for both request IDs. For
+400 ms after release, the server polls for both new UDP packets and new TCP
+connections and requires zero. The guest socket must also terminate and final
+usage must report one accepted and zero active connections. The result pins the
+relevant Hickory behavior: dropping the lookup closes its completion channel,
+the background exchange removes the active request, and a late failure cannot
+enter retry or dialing logic.
+
+The observation watches TCP as well as UDP because the preceding cycle enabled
+transport fallback. It passed ten consecutive focused runs. Whole-tree SCC
+4.0.0 complexity moved from 554/1,667 to 564/1,716 structural/cognitive,
+entirely in the wire server and conformance case; production code is unchanged.
+The native and exact Rust 1.88 Linux factories passed all 134 deterministic
+cases, three README compile examples, documentation, and package verification;
+native dependency policy checks also passed. Linux's 64-caller control lane
+peaked at 5,284 KiB RSS and returned to four descriptors and two threads at
+4,752 KiB in 168 ms. The following 500-lease lane returned to four and two at
+4,748 KiB in 1,094 ms. The rootless 134/134 conformance image is
+`sha256:7d595c29f08dae162dfd2a17654d7f03d5cf89d4a064821b4748886f8bc2e8d7`
+(40,531,681 bytes).
