@@ -600,20 +600,37 @@ const ACCEPT_RETRY_INITIAL: Duration = Duration::from_millis(5);
 const ACCEPT_RETRY_MAX: Duration = Duration::from_secs(1);
 
 #[derive(Default)]
-struct AcceptBackoff(Duration);
+struct AcceptBackoff {
+    delay: Duration,
+    retry_at: Option<TokioInstant>,
+}
 
 impl AcceptBackoff {
     fn next_delay(&mut self) -> Duration {
-        self.0 = if self.0.is_zero() {
+        self.delay = if self.delay.is_zero() {
             ACCEPT_RETRY_INITIAL
         } else {
-            self.0.saturating_mul(2).min(ACCEPT_RETRY_MAX)
+            self.delay.saturating_mul(2).min(ACCEPT_RETRY_MAX)
         };
-        self.0
+        self.delay
     }
 
-    fn reset(&mut self) {
-        self.0 = Duration::ZERO;
+    fn fail(&mut self) {
+        let delay = self.next_delay();
+        self.retry_at = TokioInstant::now().checked_add(delay);
+    }
+
+    const fn retry_at(&self) -> Option<TokioInstant> {
+        self.retry_at
+    }
+
+    fn resume(&mut self) {
+        self.retry_at = None;
+    }
+
+    fn recover(&mut self) {
+        self.delay = Duration::ZERO;
+        self.resume();
     }
 }
 
@@ -715,15 +732,6 @@ async fn wait_for_accept_retry(deadline: Option<TokioInstant>) {
     }
 }
 
-fn schedule_accept_retry(backoff: &mut AcceptBackoff, retry_at: &mut Option<TokioInstant>) {
-    *retry_at = TokioInstant::now().checked_add(backoff.next_delay());
-}
-
-fn clear_accept_retry(backoff: &mut AcceptBackoff, retry_at: &mut Option<TokioInstant>) {
-    backoff.reset();
-    *retry_at = None;
-}
-
 #[allow(clippy::too_many_lines)]
 async fn run_proxy(
     mut config: ProxyConfig,
@@ -789,9 +797,8 @@ async fn run_proxy(
 
     let mut stopping = false;
     let mut accept_backoff = AcceptBackoff::default();
-    let mut accept_retry_at = None;
     loop {
-        let retry_at = accept_retry_at;
+        let retry_at = accept_backoff.retry_at();
         tokio::select! {
             biased;
             command = commands.recv() => {
@@ -808,25 +815,16 @@ async fn run_proxy(
                         } else {
                             match connections.drain_ready(&listener, &leases).await {
                                 DrainResult::Drained => {
-                                    clear_accept_retry(
-                                        &mut accept_backoff,
-                                        &mut accept_retry_at,
-                                    );
+                                    accept_backoff.recover();
                                     leases.insert(state.identity.clone(), state);
                                     let _ = reply.send(Ok(()));
                                 }
                                 DrainResult::BatchFull => {
-                                    clear_accept_retry(
-                                        &mut accept_backoff,
-                                        &mut accept_retry_at,
-                                    );
+                                    accept_backoff.recover();
                                     let _ = command_sender.send(Command::Attach { state, reply });
                                 }
                                 DrainResult::AcceptFailed => {
-                                    schedule_accept_retry(
-                                        &mut accept_backoff,
-                                        &mut accept_retry_at,
-                                    );
+                                    accept_backoff.fail();
                                     let _ = reply.send(Err(AttachError::ListenerUnavailable));
                                 }
                             }
@@ -899,18 +897,15 @@ async fn run_proxy(
                         }
                         match drained {
                             DrainResult::Drained => {
-                                clear_accept_retry(&mut accept_backoff, &mut accept_retry_at);
+                                accept_backoff.recover();
                                 let _ = reply.send(Ok(()));
                             }
                             DrainResult::BatchFull => {
-                                clear_accept_retry(&mut accept_backoff, &mut accept_retry_at);
+                                accept_backoff.recover();
                                 let _ = command_sender.send(Command::DrainAcceptQueue { reply });
                             }
                             DrainResult::AcceptFailed => {
-                                schedule_accept_retry(
-                                    &mut accept_backoff,
-                                    &mut accept_retry_at,
-                                );
+                                accept_backoff.fail();
                                 let _ = reply.send(Err(CloseErrorKind::ListenerUnavailable));
                             }
                         }
@@ -930,18 +925,15 @@ async fn run_proxy(
                 }
             }
             () = wait_for_accept_retry(retry_at), if retry_at.is_some() => {
-                accept_retry_at = None;
+                accept_backoff.resume();
             }
             accepted = listener.accept(), if !stopping && retry_at.is_none() => {
                 match accepted {
                     Ok((stream, peer)) => {
-                        clear_accept_retry(&mut accept_backoff, &mut accept_retry_at);
+                        accept_backoff.recover();
                         connections.dispatch(stream, peer, &leases);
                     }
-                    Err(_) => schedule_accept_retry(
-                        &mut accept_backoff,
-                        &mut accept_retry_at,
-                    ),
+                    Err(_) => accept_backoff.fail(),
                 }
             }
         }
@@ -3856,7 +3848,7 @@ mod tests {
         }
         assert_eq!(backoff.next_delay(), ACCEPT_RETRY_MAX);
 
-        backoff.reset();
+        backoff.recover();
         assert_eq!(backoff.next_delay(), ACCEPT_RETRY_INITIAL);
     }
 

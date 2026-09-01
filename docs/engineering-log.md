@@ -4578,3 +4578,27 @@ The candidate would also add two steady threads to every embedded proxy. It
 was discarded: this load is not improved by broader scheduling, and the fixed
 two-worker runtime remains the smaller, more reproducible default. Production
 source, complexity, and behavior remain unchanged.
+
+## 2026-09-01 — make accept retry one state object
+
+The simplification rotation revisited the listener hardening immediately. Its
+first secure form kept the current delay and optional retry deadline in two
+separately mutable variables and maintained them through free helper functions.
+`AcceptBackoff` now owns both values and exposes the three lifecycle operations:
+failure schedules, timer expiry resumes, and a successful accept or drain
+recovers.
+
+This removes eight production lines and makes invalid delay/deadline pairings
+unrepresentable inside the runtime loop. Fifty repeated backoff-boundary cases
+and the two sensitive identity-drain cases pass. Whole-tree SCC 4.0.0 remains
+754/2,238 structural/cognitive; the simplification is state ownership rather
+than a claimed metric reduction.
+
+The native and exact Rust 1.88 Linux factories passed all 179 deterministic
+cases, six doctests, documentation, package verification, benchmark smoke, and
+all six Linux resource lanes. Linux's TLS lane peaked at 14,676 KiB RSS, 265
+descriptors, and six threads, recovered to 11,284 KiB, eight descriptors, and
+five threads, and finished at 8,668 KiB, four descriptors, and two threads.
+The rootless 179/179 image is
+`sha256:03e37c866319b40374ceb5520399ea45c656e3ac22778db23c583bed203c5b82`
+(40,878,564 bytes) and runs as UID/GID 65534.
