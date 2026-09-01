@@ -1454,3 +1454,42 @@ assembled crate. The rebuilt image executed all 79 cases through its default
 command. Complexity remains 397/1,160, and the Linux 500-lease smoke returned
 from eight descriptors and five threads while live to four descriptors and two
 threads, finishing at 4,060 KiB RSS.
+
+## 2026-08-31 — collapse mapped source-identity aliases
+
+### Finding
+
+The lease registry compared `PeerIdentity` values exactly. IPv4 `127.0.0.1`
+and its IPv4-mapped IPv6 transport spelling `::ffff:127.0.0.1` could therefore
+attach two immutable policies even though a dual-stack listener can present
+those values as two representations of one effective source address. The new
+ownership regression first failed because the second attachment succeeded.
+
+### Result
+
+One private canonicalization rule now converts only IPv4-mapped IPv6 to IPv4.
+It runs symmetrically when the trusted host attaches a lease and when the
+listener accepts a peer. Native IPv6 and deprecated IPv4-compatible forms stay
+distinct. The registry regression now returns the exact `IdentityInUse` error;
+a real dual-stack listener routes an IPv4 client into the canonical IPv4 lease;
+and the existing IPv6 destination case now also uses an IPv6 listener, source
+identity, client, and upstream.
+
+The added accept-path branch produced no detected connection-setup change:
+allowed loopback measured 109.13–112.41 microseconds (`p=0.19`), hostname
+CONNECT 142.17–157.82 microseconds (`p=0.05`), visible-SNI CONNECT
+142.19–147.22 microseconds (`p=0.11`), hostname denial 64.728–72.314
+microseconds (`p=0.71`), and 1 MiB header rejection 650.22–710.34 microseconds
+(`p=0.30`). Whole-tree structural/cognitive complexity moves from 397/1,160 to
+398/1,163; `identity.rs` accounts for 2/4.
+
+The native and exact Rust 1.88 factories passed all 82 deterministic cases and
+verified the assembled crate; the serialized Linux lane passed the same set.
+Its 500-lease smoke returned from eight descriptors and five threads while live
+to four descriptors and two threads, finishing at 4,056 KiB RSS.
+
+The first exact-toolchain build ran every debug case successfully, then filled
+Docker's internal disk while linking the release resource target. The stopped
+build container and only the explicitly inventoried, dangling Sandbox Egress
+build images were removed; unrelated tagged images and volumes were retained.
+The clean rebuild then passed the complete factory and image command.

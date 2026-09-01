@@ -5,7 +5,7 @@ use std::net::{IpAddr, Ipv4Addr, TcpStream};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use sandbox_egress::{PeerIdentity, Policy, Proxy, ProxyConfig};
+use sandbox_egress::{AttachError, PeerIdentity, Policy, Proxy, ProxyConfig};
 
 fn assert_terminal_read(result: std::io::Result<usize>) {
     match result {
@@ -141,6 +141,32 @@ fn identity_cannot_be_attached_twice() {
             .attach(identity, Policy::builder().build().expect("valid policy"))
             .is_err()
     );
+    lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close lease");
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
+fn mapped_ipv4_spelling_cannot_attach_a_second_policy() {
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            Policy::builder().build().expect("valid policy"),
+        )
+        .expect("attach IPv4 spelling");
+
+    assert!(matches!(
+        proxy.attach(
+            PeerIdentity::SourceIp(IpAddr::V6(Ipv4Addr::LOCALHOST.to_ipv6_mapped())),
+            Policy::builder().build().expect("valid policy"),
+        ),
+        Err(AttachError::IdentityInUse)
+    ));
+
     lease
         .close(Instant::now() + Duration::from_secs(1))
         .expect("close lease");

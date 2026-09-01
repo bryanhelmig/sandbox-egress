@@ -153,6 +153,7 @@ impl Proxy {
     /// [`AttachError::LeaseIdExhausted`] rather than reusing a diagnostic
     /// sequence after process-local exhaustion.
     pub fn attach(&self, identity: PeerIdentity, policy: Policy) -> Result<Lease, AttachError> {
+        let identity = identity.canonical();
         let id = self
             .next_lease_id
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
@@ -677,7 +678,7 @@ async fn run_proxy(
             accepted = listener.accept() => {
                 let Ok((stream, peer)) = accepted else { continue };
                 let accepted_at = TokioInstant::now();
-                let identity = PeerIdentity::SourceIp(peer.ip());
+                let identity = PeerIdentity::SourceIp(peer.ip()).canonical();
                 let Some(state) = leases.get(&identity).cloned() else {
                     drop(stream);
                     continue;

@@ -25,6 +25,11 @@ load-bearing:
 An integration that cannot guarantee that ordering must use unique per-run
 source addresses or a stronger host-authenticated transport identity.
 
+IPv6 listeners can report an IPv4 peer with the IPv4-mapped IPv6 transport
+spelling. Attachment and accepted peers both canonicalize that spelling to
+IPv4 before registry lookup. The two spellings therefore cannot hold separate
+policies for one effective source address. Other IPv6 forms remain distinct.
+
 ## Admission and policy snapshot
 
 The runtime reserves global and per-lease permits and obtains a task-tracker

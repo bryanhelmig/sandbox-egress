@@ -381,13 +381,22 @@ fn diagnostics_retain_lease_attribution_across_identity_reuse() {
 #[test]
 fn bracketed_ipv6_literal_is_checked_and_dialed_directly() {
     let (port, echo) = start_echo_on(IpAddr::V6(Ipv6Addr::LOCALHOST));
-    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let proxy = Proxy::start(
+        ProxyConfig::default()
+            .with_bind_address(SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 0)),
+    )
+    .expect("start IPv6 proxy");
     let policy = Policy::builder()
         .allow_network("::1/128".parse::<IpNet>().expect("IPv6 test CIDR"))
         .allow_port(port)
         .build()
         .expect("valid policy");
-    let lease = attach_local(&proxy, policy);
+    let lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(IpAddr::V6(Ipv6Addr::LOCALHOST)),
+            policy,
+        )
+        .expect("attach IPv6 identity");
     let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
     client
         .write_all(format!("CONNECT [::1]:{port} HTTP/1.1\r\n\r\n").as_bytes())
@@ -403,6 +412,45 @@ fn bracketed_ipv6_literal_is_checked_and_dialed_directly() {
         .expect("close IPv6 lease");
     drop(client);
     echo.join().expect("echo thread");
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
+fn dual_stack_listener_maps_ipv4_peer_to_the_ipv4_lease() {
+    let proxy = Proxy::start(
+        ProxyConfig::default()
+            .with_bind_address(SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0)),
+    )
+    .expect("start dual-stack proxy");
+    let lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            Policy::builder().build().expect("valid policy"),
+        )
+        .expect("attach IPv4 lease");
+    let mut client = TcpStream::connect(SocketAddr::new(
+        IpAddr::V4(Ipv4Addr::LOCALHOST),
+        lease.endpoint().socket_addr().port(),
+    ))
+    .expect("connect IPv4 client to dual-stack listener");
+    client
+        .write_all(b"CONNECT denied.test:443 HTTP/1.1\r\n\r\n")
+        .expect("write denied CONNECT");
+    let mut response = String::new();
+    client
+        .read_to_string(&mut response)
+        .expect("read owned denial");
+    assert!(response.starts_with("HTTP/1.1 403"), "{response}");
+    assert!(response.contains("host-denied"), "{response}");
+
+    let usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close IPv4 lease")
+        .usage();
+    assert_eq!(usage.accepted_connections, 1);
+    assert_eq!(usage.denied_connections, 1);
     proxy
         .shutdown(Instant::now() + Duration::from_secs(1))
         .expect("proxy shutdown");

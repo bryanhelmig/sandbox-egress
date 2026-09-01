@@ -6,7 +6,22 @@ use std::net::{IpAddr, SocketAddr};
 #[non_exhaustive]
 pub enum PeerIdentity {
     /// The socket source address enforced by the guest namespace/NAT boundary.
+    /// A proxy treats an IPv4-mapped IPv6 spelling as the equivalent IPv4
+    /// address at both attachment and socket acceptance.
     SourceIp(IpAddr),
+}
+
+impl PeerIdentity {
+    pub(crate) fn canonical(self) -> Self {
+        match self {
+            Self::SourceIp(IpAddr::V6(address)) => address
+                .to_ipv4_mapped()
+                .map_or(Self::SourceIp(IpAddr::V6(address)), |address| {
+                    Self::SourceIp(IpAddr::V4(address))
+                }),
+            identity => identity,
+        }
+    }
 }
 
 /// The HTTP proxy endpoint to expose inside the guest.
@@ -27,5 +42,25 @@ impl Endpoint {
 impl fmt::Display for Endpoint {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "http://{}", self.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    #[test]
+    fn canonicalizes_only_the_ipv4_mapped_transport_spelling() {
+        let ipv4 = Ipv4Addr::new(192, 0, 2, 1);
+        let compatible = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0xc000, 0x0201);
+        assert_eq!(
+            PeerIdentity::SourceIp(IpAddr::V6(ipv4.to_ipv6_mapped())).canonical(),
+            PeerIdentity::SourceIp(IpAddr::V4(ipv4))
+        );
+        assert_eq!(
+            PeerIdentity::SourceIp(IpAddr::V6(compatible)).canonical(),
+            PeerIdentity::SourceIp(IpAddr::V6(compatible))
+        );
     }
 }

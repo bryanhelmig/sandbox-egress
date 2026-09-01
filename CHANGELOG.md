@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Collapse IPv4-mapped IPv6 source identities into their IPv4 spelling at
+  attachment and acceptance so one effective address cannot own two policies.
 - Exercise the thin executable wrapper in both native and container factories,
   including its usage error and stdin-EOF lease shutdown paths.
 - Reject bracketed CONNECT hosts unless their contents are a supported IPv6

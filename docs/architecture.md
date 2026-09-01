@@ -46,15 +46,17 @@ channel-suppressed events on the next delivered event.
 
 ## Data path
 
-The listener uses the socket peer address as host-supplied identity. Admission
-is reserved before a task is spawned. `httparse` parses a bounded header block.
-The policy checks the CONNECT authority and port. Hickory performs one async
-lookup under a deadline. Every result is filtered, and Tokio dials a selected
-checked IP directly. An opt-in TLS authority phase incrementally parses a
-bounded ClientHello, compares visible SNI with CONNECT authority, and applies
-the lease's explicit ECH policy before forwarding those bytes. The ordinary
-path does not instantiate the parser. A bounded bidirectional copy loop
-accounts bytes.
+The listener uses the socket peer address as host-supplied identity. Lease
+attachment and socket acceptance canonicalize an IPv4-mapped IPv6 peer to the
+equivalent IPv4 identity before registry lookup. Admission is reserved before
+a task is spawned. `httparse` parses a bounded header block. The policy checks
+the CONNECT authority and port. Hickory performs one async lookup under a
+deadline. Every result is filtered, and Tokio dials a selected checked IP
+directly. An opt-in TLS authority phase incrementally parses a bounded
+ClientHello, compares visible SNI with CONNECT authority, and applies the
+lease's explicit ECH policy before forwarding those bytes. The ordinary path
+does not instantiate the parser. A bounded bidirectional copy loop accounts
+bytes.
 
 ## Why one package
 
