@@ -3692,3 +3692,34 @@ threads, then returned after shutdown to 6,604 KiB, four descriptors, and two
 threads. The rootless 160/160 image is
 `sha256:99c20d16acd0cf9f70e09a720c7c9d4874d374655e2c3c08b8ebfaa29cb4e5b7`
 (40,740,380 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — remove the mirrored policy-builder state
+
+This cycle intentionally pursued simplification rather than another feature.
+`PolicyBuilder` mirrored all twelve `Policy` fields and then reconstructed the
+same object field by field in `build()`. The builder now owns the not-yet-frozen
+policy directly. Its methods mutate that private value; `build()` validates it
+and transfers it intact. The public API, defaults, validation order, immutable
+result, dependencies, tasks, and allocation shape are unchanged.
+
+The first attempted refactor instead combined resolved-host and literal-IP
+decisions behind an `allow_public_by_default` boolean. It saved one code line
+but obscured a meaningful deny-by-default distinction and raised SCC cognitive
+complexity from 2,035 to 2,039. That version was discarded. The retained
+builder change removes 18 production lines while leaving structural/cognitive
+complexity at 678/2,035.
+
+Three alternating A/B lifecycle pairs compared the retained result with a
+detached `4587c07` worktree. Candidate intervals spanned 1.3720–1.3973
+milliseconds and baseline intervals spanned 1.3752–1.4071. Every pair
+overlapped, so no performance change is claimed. The comparison worktree was
+removed after measurement.
+
+The native and exact Rust 1.88 Linux factories passed the unchanged 160
+deterministic cases, five doctests, documentation, package verification, and
+all six Linux resource lanes; native dependency policy checks also passed.
+Linux's TLS lane peaked at 14,860 KiB RSS, 265 descriptors, and six threads,
+then returned after shutdown to 5,948 KiB, four descriptors, and two threads.
+The rootless 160/160 image is
+`sha256:7cb8903747c512e24b99f20037960ecf0b859884c3fbb69f15fbaf93eee71222`
+(40,740,438 bytes) and runs as UID/GID 65534.

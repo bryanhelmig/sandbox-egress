@@ -156,18 +156,7 @@ fn address_matches_network(network: &IpNet, address: IpAddr, nat64_prefixes: &[I
 #[derive(Clone, Debug)]
 #[must_use]
 pub struct PolicyBuilder {
-    hosts: Vec<HostPattern>,
-    denied_hosts: Vec<HostPattern>,
-    ports: BTreeSet<u16>,
-    allowed_networks: Vec<IpNet>,
-    denied_networks: Vec<IpNet>,
-    max_connections: usize,
-    dns_timeout: Duration,
-    handshake_timeout: Duration,
-    idle_timeout: Option<Duration>,
-    max_upload_bytes: Option<u64>,
-    max_download_bytes: Option<u64>,
-    tls_authority: TlsAuthority,
+    policy: Policy,
 }
 
 impl PolicyBuilder {
@@ -178,7 +167,7 @@ impl PolicyBuilder {
     ///
     /// Returns an error when the pattern is not a canonical ASCII DNS pattern.
     pub fn allow_host(mut self, pattern: impl AsRef<str>) -> Result<Self, PolicyError> {
-        self.hosts.push(HostPattern::parse(pattern)?);
+        self.policy.hosts.push(HostPattern::parse(pattern)?);
         Ok(self)
     }
 
@@ -189,20 +178,20 @@ impl PolicyBuilder {
     ///
     /// Returns an error when the pattern is not a canonical ASCII DNS pattern.
     pub fn deny_host(mut self, pattern: impl AsRef<str>) -> Result<Self, PolicyError> {
-        self.denied_hosts.push(HostPattern::parse(pattern)?);
+        self.policy.denied_hosts.push(HostPattern::parse(pattern)?);
         Ok(self)
     }
 
     /// Allow CONNECT to a destination port. No port is allowed until added.
     pub fn allow_port(mut self, port: u16) -> Self {
-        self.ports.insert(port);
+        self.policy.ports.insert(port);
         self
     }
 
     /// Explicitly allow a destination network, overriding the default
     /// forbidden-address floor for that network unless it is also denied.
     pub fn allow_network(mut self, network: IpNet) -> Self {
-        self.allowed_networks.push(network);
+        self.policy.allowed_networks.push(network);
         self
     }
 
@@ -212,7 +201,7 @@ impl PolicyBuilder {
     /// default public-address behavior. An IPv4 denial also covers mapped,
     /// compatible, and configured NAT64 forms of that effective destination.
     pub fn deny_network(mut self, network: IpNet) -> Self {
-        self.denied_networks.push(network);
+        self.policy.denied_networks.push(network);
         self
     }
 
@@ -229,26 +218,26 @@ impl PolicyBuilder {
         if max > tokio::sync::Semaphore::MAX_PERMITS {
             return Err(PolicyError::ConnectionLimitTooLarge);
         }
-        self.max_connections = max;
+        self.policy.max_connections = max;
         Ok(self)
     }
 
     /// Set the DNS deadline.
     pub fn dns_timeout(mut self, timeout: Duration) -> Self {
-        self.dns_timeout = timeout;
+        self.policy.dns_timeout = timeout;
         self
     }
 
     /// Set the absolute header + DNS + dial + optional `ClientHello` deadline.
     pub fn handshake_timeout(mut self, timeout: Duration) -> Self {
-        self.handshake_timeout = timeout;
+        self.policy.handshake_timeout = timeout;
         self
     }
 
     /// End an established tunnel after this duration passes without bytes in
     /// either direction. Idle expiry is disabled unless configured.
     pub fn idle_timeout(mut self, timeout: Duration) -> Self {
-        self.idle_timeout = Some(timeout);
+        self.policy.idle_timeout = Some(timeout);
         self
     }
 
@@ -258,7 +247,7 @@ impl PolicyBuilder {
     /// prefix. A nonempty read after the limit is reached is accounted,
     /// rejected, and closes the tunnel.
     pub fn max_upload_bytes(mut self, bytes: u64) -> Self {
-        self.max_upload_bytes = Some(bytes);
+        self.policy.max_upload_bytes = Some(bytes);
         self
     }
 
@@ -268,14 +257,14 @@ impl PolicyBuilder {
     /// prefix. A nonempty read after the limit is reached is accounted,
     /// rejected, and closes the tunnel.
     pub fn max_download_bytes(mut self, bytes: u64) -> Self {
-        self.max_download_bytes = Some(bytes);
+        self.policy.max_download_bytes = Some(bytes);
         self
     }
 
     /// Require the tunnel to begin with a valid `ClientHello` whose visible SNI
     /// equals its hostname CONNECT authority, and reject ECH.
     pub fn require_tls_sni(mut self) -> Self {
-        self.tls_authority = TlsAuthority::RequireVisibleSni {
+        self.policy.tls_authority = TlsAuthority::RequireVisibleSni {
             ech: EchPolicy::Reject,
         };
         self
@@ -283,7 +272,7 @@ impl PolicyBuilder {
 
     /// Configure TLS authority inspection explicitly.
     pub fn tls_authority(mut self, authority: TlsAuthority) -> Self {
-        self.tls_authority = authority;
+        self.policy.tls_authority = authority;
         self
     }
 
@@ -295,56 +284,49 @@ impl PolicyBuilder {
     /// complete handshake deadline, or a timeout too large for a runtime
     /// deadline.
     pub fn build(self) -> Result<Policy, PolicyError> {
-        if self.dns_timeout.is_zero()
-            || self.handshake_timeout.is_zero()
-            || self.idle_timeout.is_some_and(|timeout| timeout.is_zero())
+        let policy = self.policy;
+        if policy.dns_timeout.is_zero()
+            || policy.handshake_timeout.is_zero()
+            || policy.idle_timeout.is_some_and(|timeout| timeout.is_zero())
         {
             return Err(PolicyError::ZeroTimeout);
         }
-        if self.dns_timeout > self.handshake_timeout {
+        if policy.dns_timeout > policy.handshake_timeout {
             return Err(PolicyError::DnsTimeoutExceedsHandshake);
         }
-        if Instant::now().checked_add(self.handshake_timeout).is_none() {
+        if Instant::now()
+            .checked_add(policy.handshake_timeout)
+            .is_none()
+        {
             return Err(PolicyError::TimeoutTooLarge);
         }
-        if self
+        if policy
             .idle_timeout
             .is_some_and(|timeout| Instant::now().checked_add(timeout).is_none())
         {
             return Err(PolicyError::TimeoutTooLarge);
         }
-        Ok(Policy {
-            hosts: self.hosts,
-            denied_hosts: self.denied_hosts,
-            ports: self.ports,
-            allowed_networks: self.allowed_networks,
-            denied_networks: self.denied_networks,
-            max_connections: self.max_connections,
-            dns_timeout: self.dns_timeout,
-            handshake_timeout: self.handshake_timeout,
-            idle_timeout: self.idle_timeout,
-            max_upload_bytes: self.max_upload_bytes,
-            max_download_bytes: self.max_download_bytes,
-            tls_authority: self.tls_authority,
-        })
+        Ok(policy)
     }
 }
 
 impl Default for PolicyBuilder {
     fn default() -> Self {
         Self {
-            hosts: Vec::new(),
-            denied_hosts: Vec::new(),
-            ports: BTreeSet::new(),
-            allowed_networks: Vec::new(),
-            denied_networks: Vec::new(),
-            max_connections: 64,
-            dns_timeout: Duration::from_secs(3),
-            handshake_timeout: Duration::from_secs(10),
-            idle_timeout: None,
-            max_upload_bytes: None,
-            max_download_bytes: None,
-            tls_authority: TlsAuthority::Disabled,
+            policy: Policy {
+                hosts: Vec::new(),
+                denied_hosts: Vec::new(),
+                ports: BTreeSet::new(),
+                allowed_networks: Vec::new(),
+                denied_networks: Vec::new(),
+                max_connections: 64,
+                dns_timeout: Duration::from_secs(3),
+                handshake_timeout: Duration::from_secs(10),
+                idle_timeout: None,
+                max_upload_bytes: None,
+                max_download_bytes: None,
+                tls_authority: TlsAuthority::Disabled,
+            },
         }
     }
 }

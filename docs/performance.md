@@ -396,3 +396,19 @@ candidate had several severe outliers, widening opposite sides of the overall
 ranges. Criterion reported no statistically detected candidate change in all
 three runs. No stable regression or improvement is claimed; the benchmark
 remains the signal for future changes to hostname matching.
+
+## Policy-builder simplification lifecycle check
+
+Recorded 2026-09-01 on the same Apple M1 with Rust 1.97.1. Three alternating
+pairs compared the simplified builder with a detached `4587c07` worktree:
+
+```text
+command: cargo bench --bench lifecycle -- attach_close_empty_lease --noplot
+paired runs: 3
+candidate intervals: 1.3720 .. 1.3973 ms
+baseline intervals:  1.3752 .. 1.4071 ms
+```
+
+Every pair overlapped. The result supports retaining the deletion without a
+performance claim; it neither demonstrates an improvement nor a regression in
+the measured attach/build/close lifecycle.
