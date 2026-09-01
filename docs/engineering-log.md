@@ -5242,3 +5242,26 @@ The stripped conformance image is
 `sha256:d7739b3ddf7faac5406df48f9edb14f5fa87b580e3387183520dee7cf89f71da`
 (40,980,588 bytes). It contains the assembled test executables rather than
 Cargo or source and runs successfully as UID/GID 65534.
+
+## 2026-09-01 — compare production rate controls
+
+The next comparison rotation pinned current G3 `79e99f76` and Rama `cde3aa85`.
+G3 checks a per-user request rate before acquiring its concurrent-request
+permit. Rama documents the same composition explicitly: a shared token bucket
+outside a concurrency guard provides cheap rejection without occupying an
+in-flight slot. Smokescreen independently carries separate request-rate and
+request-concurrency controls.
+
+This exposes a real boundary in Sandbox Egress. Its global and per-lease
+connection permits cap simultaneous work, but a guest can still generate rapid
+terminal or denied connection churn below that ceiling. A future rate control
+must be process-wide and per-lease, fail fast before task creation, attribute
+the denial to the currently observed lease, and reset per-lease state on safe
+identity reuse. That contract is added to the hardening backlog; no late token
+bucket or public API is improvised in this pass.
+
+The exact implementation also passes all 187 deterministic cases and both
+benchmark smoke targets under optimized code generation. The package audit
+lists 69 intended source, test, benchmark, documentation, and factory files;
+there is no configured Git remote. Production behavior and complexity are
+unchanged.

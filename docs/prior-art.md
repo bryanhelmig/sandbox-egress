@@ -16,9 +16,11 @@ links remain upstream-owned and are not vendored.
 | [eavs](https://github.com/byteowlz/eavs) | `afa178a0` | transparent destination recovery and SNI/Host ACLs | no ephemeral run ownership |
 | [microsandbox](https://github.com/superradcompany/microsandbox) | `df4e1ead` | network-layer DNS timeout/rebinding controls | microVM network subsystem, not forward-proxy lease API |
 | [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) | `4ef84234` | operator-owned corporate proxy chaining after local SSRF validation | product supervisor with broader TLS/auth/bypass configuration |
+| [G3](https://github.com/bytedance/g3) | `79e99f76` | production user rate/concurrency limits, buffer controls, protocol breadth | daemon/user model rather than ephemeral certified leases |
+| [Rama](https://github.com/plabayo/rama) | `cde3aa85` | composable timeout, concurrency, and token-bucket policies | general framework rather than an opinionated sandbox boundary |
 
-Also relevant: Rama for composable mature proxy machinery and VEY/G3 for
-production daemon limits, metrics, ACLs, and per-user policy.
+Also relevant: VEY for production daemon limits, metrics, ACLs, and per-user
+policy.
 
 ## Admission and shutdown comparison
 

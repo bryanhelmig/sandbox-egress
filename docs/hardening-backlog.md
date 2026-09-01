@@ -43,6 +43,10 @@ contributor instead of preserving solved work as apparent backlog.
 
 ## Capacity and denial of service
 
+- Optional fail-fast connection-attempt rate and burst ceilings, both
+  process-wide and per lease, checked before task creation and attributed to
+  the current lease. Concurrency bounds do not cap rapid terminal or denied
+  connection churn; identity reuse must begin with fresh per-lease rate state.
 - Optional reserved-share or fair admission semantics between leases; the
   current contract is fail-fast attribution and recovery on retry.
 - Listener backlog saturation and general accept-loop fairness beyond the
