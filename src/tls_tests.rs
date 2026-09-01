@@ -134,7 +134,7 @@ fn open_tls_tunnel(lease: &Lease, hostname: &str, port: u16) -> std::net::TcpStr
         .expect("set client timeout");
     std::io::Write::write_all(
         &mut client,
-        format!("CONNECT {hostname}:{port} HTTP/1.1\r\n\r\n").as_bytes(),
+        format!("CONNECT {hostname}:{port} HTTP/1.1\r\nHost: {hostname}\r\n\r\n").as_bytes(),
     )
     .expect("write CONNECT");
     let mut response = [0; 39];
@@ -166,7 +166,8 @@ fn matching_tls_sni_forwards_the_exact_client_hello() {
     client
         .set_read_timeout(Some(Duration::from_secs(1)))
         .expect("set client timeout");
-    let mut request = format!("CONNECT allowed.test:{port} HTTP/1.1\r\n\r\n").into_bytes();
+    let mut request =
+        format!("CONNECT allowed.test:{port} HTTP/1.1\r\nHost: allowed.test\r\n\r\n").into_bytes();
     request.extend_from_slice(&hello);
     std::io::Write::write_all(&mut client, &request).expect("write coalesced CONNECT and hello");
     let mut response_and_marker = [0; 40];

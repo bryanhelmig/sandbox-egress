@@ -91,6 +91,15 @@ accepted only around a value that parses as IPv6; bracketed DNS names, IPv4,
 IPvFuture, and scoped-zone forms fail as `invalid-ipv6-literal` rather than
 being stripped and reinterpreted as another host class.
 
+The CONNECT request-target is the sole authority input. HTTP/1.1 requests must
+contain exactly one syntactically valid Host field whose hostname agrees with
+the target; if Host supplies a port, that port must also agree. A missing,
+duplicate, malformed, or conflicting field is rejected before policy or DNS.
+HTTP/1.0 may omit Host. Host and all other guest headers are never identity or
+policy selectors. This follows the message requirements and authority-form
+reconstruction rules in [RFC 9112 sections 3.2 and
+3.3](https://www.rfc-editor.org/rfc/rfc9112.html#section-3.2).
+
 Configuration and immutable policy construction reject durations too large for
 the platform clock to represent as deadlines. The connection path also uses
 checked deadline arithmetic, so elapsed startup time or a platform clock edge

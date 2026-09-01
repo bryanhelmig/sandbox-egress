@@ -120,7 +120,9 @@ fn connect_tunnels_and_accounts_bytes() {
     let lease = attach_local(&proxy, local_policy(port));
     let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
     client
-        .write_all(format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\n").as_bytes())
+        .write_all(
+            format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").as_bytes(),
+        )
         .expect("write CONNECT");
     let mut response = [0_u8; 39];
     client
@@ -202,8 +204,8 @@ fn oversized_header_has_a_distinct_denial() {
 #[test]
 fn excess_header_count_has_a_distinct_denial() {
     let (diagnostic_tx, diagnostic_rx) = mpsc::sync_channel(1);
-    let mut request = b"CONNECT example.com:443 HTTP/1.1\r\n".to_vec();
-    for index in 0..65 {
+    let mut request = b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\n".to_vec();
+    for index in 0..64 {
         request.extend_from_slice(format!("attacker-{index}: secret-{index}\r\n").as_bytes());
     }
     request.extend_from_slice(b"\r\n");
@@ -231,6 +233,17 @@ fn bracketed_non_ipv6_host_has_a_distinct_denial() {
     );
     assert!(response.starts_with("HTTP/1.1 400"), "{response}");
     assert!(response.contains("invalid-ipv6-literal"), "{response}");
+}
+
+#[test]
+fn mismatched_host_header_is_denied_before_policy_and_dns() {
+    let response = header_denial(
+        ProxyConfig::default(),
+        b"CONNECT allowed.test:443 HTTP/1.1\r\nHost: forbidden.test\r\n\r\n",
+        false,
+    );
+    assert!(response.starts_with("HTTP/1.1 400"), "{response}");
+    assert!(response.contains("host-header-mismatch"), "{response}");
 }
 
 #[test]
@@ -306,7 +319,7 @@ fn hostname_policy_denies_before_dns() {
     );
     let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
     client
-        .write_all(b"CONNECT forbidden.invalid:443 HTTP/1.1\r\n\r\n")
+        .write_all(b"CONNECT forbidden.invalid:443 HTTP/1.1\r\nHost: forbidden.invalid\r\n\r\n")
         .expect("write CONNECT");
     let mut response = String::new();
     client.read_to_string(&mut response).expect("read denial");
@@ -332,7 +345,7 @@ fn an_explicit_http_port_does_not_also_allow_https() {
     let lease = attach_local(&proxy, policy);
     let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
     client
-        .write_all(b"CONNECT 127.0.0.1:443 HTTP/1.1\r\n\r\n")
+        .write_all(b"CONNECT 127.0.0.1:443 HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
         .expect("write disallowed HTTPS CONNECT");
     let mut response = String::new();
     client.read_to_string(&mut response).expect("read denial");
@@ -366,7 +379,9 @@ fn diagnostics_retain_lease_attribution_across_identity_reuse() {
         .expect("attach lease");
     let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
     client
-        .write_all(b"CONNECT attacker-controlled.invalid:443 HTTP/1.1\r\n\r\n")
+        .write_all(
+            b"CONNECT attacker-controlled.invalid:443 HTTP/1.1\r\nHost: attacker-controlled.invalid\r\n\r\n",
+        )
         .expect("write CONNECT");
     let mut response = String::new();
     client.read_to_string(&mut response).expect("read denial");
@@ -387,7 +402,9 @@ fn diagnostics_retain_lease_attribution_across_identity_reuse() {
     let mut client = TcpStream::connect(replacement.endpoint().socket_addr())
         .expect("connect replacement lease");
     client
-        .write_all(b"CONNECT another-attacker-value.invalid:443 HTTP/1.1\r\n\r\n")
+        .write_all(
+            b"CONNECT another-attacker-value.invalid:443 HTTP/1.1\r\nHost: another-attacker-value.invalid\r\n\r\n",
+        )
         .expect("write replacement CONNECT");
     let mut response = String::new();
     client
@@ -439,7 +456,7 @@ fn bracketed_ipv6_literal_is_checked_and_dialed_directly() {
         .expect("attach IPv6 identity");
     let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
     client
-        .write_all(format!("CONNECT [::1]:{port} HTTP/1.1\r\n\r\n").as_bytes())
+        .write_all(format!("CONNECT [::1]:{port} HTTP/1.1\r\nHost: [::1]\r\n\r\n").as_bytes())
         .expect("write IPv6 CONNECT");
     let mut response = [0_u8; 39];
     client
@@ -479,7 +496,7 @@ fn dual_stack_listener_maps_ipv4_peer_to_the_ipv4_lease() {
     ))
     .expect("connect IPv4 client to dual-stack listener");
     client
-        .write_all(b"CONNECT denied.test:443 HTTP/1.1\r\n\r\n")
+        .write_all(b"CONNECT denied.test:443 HTTP/1.1\r\nHost: denied.test\r\n\r\n")
         .expect("write denied CONNECT");
     let mut response = String::new();
     client
@@ -512,7 +529,10 @@ fn upload_limit_blocks_payload_coalesced_with_connect_header() {
     let lease = attach_local(&proxy, policy);
     let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
     client
-        .write_all(format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\nsecret").as_bytes())
+        .write_all(
+            format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\nsecret")
+                .as_bytes(),
+        )
         .expect("write coalesced payload");
     let mut response = String::new();
     client.read_to_string(&mut response).expect("read response");
@@ -549,7 +569,10 @@ fn upload_limit_allows_exact_coalesced_boundary() {
     let lease = attach_local(&proxy, policy);
     let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
     client
-        .write_all(format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\nsecret").as_bytes())
+        .write_all(
+            format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\nsecret")
+                .as_bytes(),
+        )
         .expect("write coalesced payload");
     let mut response = [0_u8; 39];
     client
@@ -589,7 +612,9 @@ fn upload_limit_blocks_payload_sent_after_connect_response() {
     let lease = attach_local(&proxy, policy);
     let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
     client
-        .write_all(format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\n").as_bytes())
+        .write_all(
+            format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").as_bytes(),
+        )
         .expect("write CONNECT");
     let mut response = [0_u8; 39];
     client
@@ -637,7 +662,9 @@ fn upload_limit_is_independent_for_each_tunnel() {
     for port in [first_port, second_port] {
         let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
         client
-            .write_all(format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\n").as_bytes())
+            .write_all(
+                format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").as_bytes(),
+            )
             .expect("write CONNECT");
         let mut response = [0_u8; 39];
         client

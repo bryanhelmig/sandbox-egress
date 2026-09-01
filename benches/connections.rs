@@ -41,7 +41,7 @@ fn allowed_connect(criterion: &mut Criterion) {
         )
         .expect("attach benchmark lease");
     let endpoint = lease.endpoint().socket_addr();
-    let request = format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\n");
+    let request = format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
 
     criterion.bench_function("connect_allowed_loopback", |bencher| {
         bencher.iter(|| {
@@ -89,7 +89,8 @@ fn allowed_hostname_connect(criterion: &mut Criterion, inspect_tls: bool) {
         )
         .expect("attach benchmark lease");
     let endpoint = lease.endpoint().socket_addr();
-    let mut request = format!("CONNECT localhost:{port} HTTP/1.1\r\n\r\n").into_bytes();
+    let mut request =
+        format!("CONNECT localhost:{port} HTTP/1.1\r\nHost: localhost\r\n\r\n").into_bytes();
     request.extend_from_slice(LOCALHOST_CLIENT_HELLO);
     let name = if inspect_tls {
         "connect_allowed_visible_sni"
@@ -152,7 +153,9 @@ fn denied_connect(criterion: &mut Criterion) {
         bencher.iter(|| {
             let mut client = TcpStream::connect(endpoint).expect("connect proxy");
             client
-                .write_all(b"CONNECT forbidden.invalid:443 HTTP/1.1\r\n\r\n")
+                .write_all(
+                    b"CONNECT forbidden.invalid:443 HTTP/1.1\r\nHost: forbidden.invalid\r\n\r\n",
+                )
                 .expect("write CONNECT");
             let mut response = [0_u8; 256];
             let bytes = client.read(&mut response).expect("read denial");

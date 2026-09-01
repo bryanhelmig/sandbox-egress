@@ -1,4 +1,4 @@
-use std::net::Ipv6Addr;
+use std::net::{IpAddr, Ipv6Addr};
 
 use http::uri::Authority;
 
@@ -31,27 +31,77 @@ pub(crate) fn parse_connect(bytes: &[u8]) -> Result<ConnectRequest, &'static str
     }
     let authority: Authority = target.parse().map_err(|_| "invalid-authority")?;
     let port = authority.port_u16().ok_or("missing-port")?;
-    let host = authority.host();
-    let host = if let Some(host) = host
-        .strip_prefix('[')
-        .and_then(|host| host.strip_suffix(']'))
-    {
-        host.parse::<Ipv6Addr>()
-            .map_err(|_| "invalid-ipv6-literal")?;
-        host
-    } else {
-        host
-    };
+    let host = authority_host(authority.host()).map_err(|()| "invalid-ipv6-literal")?;
     if host.is_empty() {
         return Err("missing-host");
     }
     if port == 0 {
         return Err("invalid-port");
     }
+    validate_host_header(&request, host, port)?;
     Ok(ConnectRequest {
         host: host.to_owned(),
         port,
     })
+}
+
+fn validate_host_header(
+    request: &httparse::Request<'_, '_>,
+    connect_host: &str,
+    connect_port: u16,
+) -> Result<(), &'static str> {
+    let mut values = request
+        .headers
+        .iter()
+        .filter(|header| header.name.eq_ignore_ascii_case("host"));
+    let Some(value) = values.next() else {
+        return if request.version == Some(1) {
+            Err("missing-host-header")
+        } else {
+            Ok(())
+        };
+    };
+    if values.next().is_some() {
+        return Err("duplicate-host-header");
+    }
+
+    let value = std::str::from_utf8(value.value).map_err(|_| "invalid-host-header")?;
+    if value.contains('@') || value.ends_with(':') {
+        return Err("invalid-host-header");
+    }
+    let authority: Authority = value.parse().map_err(|_| "invalid-host-header")?;
+    let host = authority_host(authority.host()).map_err(|()| "invalid-host-header")?;
+    if !hosts_equivalent(connect_host, host)
+        || authority
+            .port_u16()
+            .is_some_and(|port| port != connect_port)
+    {
+        return Err("host-header-mismatch");
+    }
+    Ok(())
+}
+
+fn authority_host(host: &str) -> Result<&str, ()> {
+    if let Some(host) = host
+        .strip_prefix('[')
+        .and_then(|host| host.strip_suffix(']'))
+    {
+        host.parse::<Ipv6Addr>().map_err(|_| ())?;
+        Ok(host)
+    } else {
+        Ok(host)
+    }
+}
+
+fn hosts_equivalent(left: &str, right: &str) -> bool {
+    match (left.parse::<IpAddr>(), right.parse::<IpAddr>()) {
+        (Ok(left), Ok(right)) => left == right,
+        (Err(_), Err(_)) => left
+            .strip_suffix('.')
+            .unwrap_or(left)
+            .eq_ignore_ascii_case(right.strip_suffix('.').unwrap_or(right)),
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -59,8 +109,8 @@ mod tests {
     use super::*;
 
     fn connect_with_headers(count: usize) -> Vec<u8> {
-        let mut request = b"CONNECT example.com:443 HTTP/1.1\r\n".to_vec();
-        for index in 0..count {
+        let mut request = b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\n".to_vec();
+        for index in 1..count {
             request.extend_from_slice(format!("x-{index}: value\r\n").as_bytes());
         }
         request.extend_from_slice(b"\r\n");
@@ -74,6 +124,50 @@ mod tests {
                 .expect("valid CONNECT");
         assert_eq!(request.host, "example.com");
         assert_eq!(request.port, 443);
+    }
+
+    #[test]
+    fn rejects_ambiguous_http_11_host_fields() {
+        for (request, reason) in [
+            (
+                "CONNECT example.com:443 HTTP/1.1\r\n\r\n",
+                "missing-host-header",
+            ),
+            (
+                "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\nhOsT: example.com\r\n\r\n",
+                "duplicate-host-header",
+            ),
+            (
+                "CONNECT example.com:443 HTTP/1.1\r\nHost: user@example.com\r\n\r\n",
+                "invalid-host-header",
+            ),
+            (
+                "CONNECT example.com:443 HTTP/1.1\r\nHost: forbidden.example\r\n\r\n",
+                "host-header-mismatch",
+            ),
+            (
+                "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:8443\r\n\r\n",
+                "host-header-mismatch",
+            ),
+        ] {
+            assert_eq!(
+                parse_connect(request.as_bytes()).unwrap_err(),
+                reason,
+                "unexpected result for {request:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_compatible_host_field_spellings() {
+        for request in [
+            "CONNECT example.com:443 HTTP/1.1\r\nHost: EXAMPLE.COM\r\n\r\n",
+            "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n",
+            "CONNECT [2001:db8::1]:443 HTTP/1.1\r\nHost: [2001:0db8::1]\r\n\r\n",
+            "CONNECT example.com:443 HTTP/1.0\r\n\r\n",
+        ] {
+            parse_connect(request.as_bytes()).expect("compatible Host field");
+        }
     }
 
     #[test]
@@ -94,8 +188,9 @@ mod tests {
 
     #[test]
     fn normalizes_bracketed_ipv6() {
-        let request = parse_connect(b"CONNECT [2001:db8::1]:443 HTTP/1.1\r\n\r\n")
-            .expect("valid IPv6 CONNECT");
+        let request =
+            parse_connect(b"CONNECT [2001:db8::1]:443 HTTP/1.1\r\nHost: [2001:db8::1]\r\n\r\n")
+                .expect("valid IPv6 CONNECT");
         assert_eq!(request.host, "2001:db8::1");
         assert_eq!(request.port, 443);
     }

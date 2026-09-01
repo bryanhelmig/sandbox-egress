@@ -48,6 +48,11 @@ attacker-controlled names or values into the event.
 Authority cases require bracketed IPv6 to remain accepted while bracketed DNS,
 IPv4, and IPvFuture text return the exact `invalid-ipv6-literal` reason. A real
 listener case verifies that reason is preserved in the bounded 400 response.
+HTTP/1.1 cases reject missing, duplicate, malformed, hostname-mismatched, and
+port-mismatched Host fields. Compatible case and IP spellings, a Host value
+without the CONNECT port, and Host-less HTTP/1.0 remain accepted. A real socket
+requires `host-header-mismatch` before policy or DNS and closes with one
+accounted denial.
 
 A unit boundary case places the four-byte header terminator at every split
 around the proxy's 4 KiB read boundary and proves buffered tunnel bytes are

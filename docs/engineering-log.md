@@ -1630,3 +1630,52 @@ exact rebuild, Docker's legacy builder retained a failed 1.85 GiB intermediate
 container after exhausting its internal disk. Only inspected, superseded
 Sandbox Egress build state was removed; the clean rebuild then passed without a
 source change.
+
+## 2026-08-31 — make CONNECT authority single-source
+
+### Finding
+
+The earlier CONNECT authority review deliberately left Host-field strictness
+open. RFC 9112 requires every HTTP/1.1 request to carry exactly one valid Host
+field and reconstructs an authority-form target from the request-target, not
+that field. The proxy already selected policy and DNS only from the target, but
+accepted a missing, repeated, malformed, or contradictory Host. That left two
+guest-controlled authority spellings in one otherwise bounded message.
+
+The first parser regression required a Host-less HTTP/1.1 CONNECT to return
+`missing-host-header`; it failed against the permissive implementation. The
+protocol decision follows [RFC 9112 sections 3.2 and
+3.3](https://www.rfc-editor.org/rfc/rfc9112.html#section-3.2), while retaining a
+deliberate HTTP/1.0 compatibility path.
+
+### Result
+
+HTTP/1.1 now requires exactly one syntactically valid Host whose hostname
+agrees with the CONNECT request-target. If Host supplies a port, it must agree
+too; omitting that port remains valid, matching the RFC's CONNECT examples.
+DNS names compare case-insensitively and equivalent IPv6 text compares by
+address value. HTTP/1.0 can still omit Host. Missing, case-insensitively
+duplicated, malformed, hostname-mismatched, and port-mismatched fields receive
+distinct bounded parse reasons before policy or DNS. The returned authority is
+still exclusively the request-target, so no guest header can select identity,
+policy, resolution, or dialing.
+
+Unit cases pin both rejection and compatible spellings. A real socket requires
+`400 host-header-mismatch` and one final accounted denial. All normal traffic
+fixtures now send standards-valid Host fields, and the 64-field ceiling counts
+Host as one of those fixed parser slots.
+
+The full connection benchmark detected no regression: allowed loopback was
+110.65–126.93 microseconds (`p=0.05`, no detected change), allowed hostname
+137.59–150.32, visible-SNI 151.54–161.73, and hostname denial 72.46–82.76.
+Because the first loopback result was borderline noisy, an isolated same-tree
+replay measured 102.76–111.11 microseconds. The 1 MiB header scan was faster in
+the full sample, but is treated as code-layout noise rather than an improvement
+caused by Host validation.
+
+The shared validation and its proofs move whole-tree structural/cognitive
+complexity from 409/1,202 to 428/1,248, concentrated in `connect.rs`. The native
+and exact Rust 1.88 factories passed all 92 deterministic cases and verified
+the assembled crate; the serialized Linux image ran the same set. Its
+500-lease smoke held eight descriptors and five threads while live, returned to
+four descriptors and two threads, and finished at 4,060 KiB RSS.

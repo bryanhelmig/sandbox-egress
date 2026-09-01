@@ -5,6 +5,9 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Require one valid HTTP/1.1 Host field that agrees with the CONNECT
+  request-target, while keeping the request-target as the only authority used
+  for policy, DNS, and dialing.
 - Make destination ports fully deny-by-default: only calls to `allow_port`
   create grants, while the thin executable explicitly retains its HTTPS-only
   port 443 behavior.

@@ -112,7 +112,8 @@ cancellation, but never certifies cleanup.
 
 The current vertical slice provides:
 
-- HTTP/1 CONNECT authority and destination-port allow rules;
+- HTTP/1 CONNECT request-target authority and destination-port allow rules,
+  with strict HTTP/1.1 Host-field validation but no header-selected policy;
 - exact hostnames and wildcard suffixes matching one or more subdomain labels;
 - source-IP identity derived from the accepted socket;
 - one DNS resolution followed by checks on every returned address;
@@ -138,8 +139,11 @@ The current vertical slice provides:
   nonblocking bounded-channel delivery;
 - explicit lease and proxy shutdown deadlines.
 
-The default policy promise remains CONNECT authority plus resolved destination
-IP. Calling `PolicyBuilder::require_tls_sni` opts a lease into the stricter
+The CONNECT request-target is the authority input. HTTP/1.1 requires exactly
+one valid Host field that agrees with that target, but Host and every other
+guest header are validation-only and can never select identity or policy. The
+default policy promise remains CONNECT authority plus resolved destination IP.
+Calling `PolicyBuilder::require_tls_sni` opts a lease into the stricter
 promise: the first tunnel bytes must be a valid, bounded `ClientHello`, its
 visible SNI must equal the CONNECT hostname, and ECH must be absent. IP-literal
 CONNECT requests cannot satisfy this mode. `ProxyConfig` bounds buffered

@@ -105,7 +105,10 @@ fn open_tunnel(endpoint: SocketAddr, upstream_port: u16) -> TcpStream {
         .set_linger(Some(Duration::ZERO))
         .expect("reset client on failure");
     client
-        .write_all(format!("CONNECT 127.0.0.1:{upstream_port} HTTP/1.1\r\n\r\n").as_bytes())
+        .write_all(
+            format!("CONNECT 127.0.0.1:{upstream_port} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+                .as_bytes(),
+        )
         .expect("write CONNECT");
     let mut response = [0_u8; 39];
     client

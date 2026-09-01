@@ -137,7 +137,9 @@ fn attach_for_ports(
 fn open_tunnel(endpoint: SocketAddr, port: u16) -> TcpStream {
     let mut client = TcpStream::connect(endpoint).expect("connect proxy");
     client
-        .write_all(format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\n").as_bytes())
+        .write_all(
+            format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").as_bytes(),
+        )
         .expect("write CONNECT");
     let mut response = [0_u8; 39];
     client

@@ -1404,8 +1404,11 @@ mod tests {
         for _ in 0..CLIENTS {
             let mut client = std::net::TcpStream::connect(lease.endpoint().socket_addr())
                 .expect("connect proxy");
-            std::io::Write::write_all(&mut client, b"CONNECT pending.test:443 HTTP/1.1\r\n\r\n")
-                .expect("write CONNECT");
+            std::io::Write::write_all(
+                &mut client,
+                b"CONNECT pending.test:443 HTTP/1.1\r\nHost: pending.test\r\n\r\n",
+            )
+            .expect("write CONNECT");
             clients.push(client);
         }
         for _ in 0..DNS_LIMIT {
@@ -1459,7 +1462,7 @@ mod tests {
             std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
         std::io::Write::write_all(
             &mut client,
-            format!("CONNECT late.test:{port} HTTP/1.1\r\n\r\n").as_bytes(),
+            format!("CONNECT late.test:{port} HTTP/1.1\r\nHost: late.test\r\n\r\n").as_bytes(),
         )
         .expect("write CONNECT");
         started_rx
@@ -1504,8 +1507,11 @@ mod tests {
             .expect("attach lease");
         let mut client =
             std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
-        std::io::Write::write_all(&mut client, b"CONNECT mixed.test:443 HTTP/1.1\r\n\r\n")
-            .expect("write CONNECT");
+        std::io::Write::write_all(
+            &mut client,
+            b"CONNECT mixed.test:443 HTTP/1.1\r\nHost: mixed.test\r\n\r\n",
+        )
+        .expect("write CONNECT");
         let mut response = String::new();
         std::io::Read::read_to_string(&mut client, &mut response).expect("read DNS denial");
         assert!(response.starts_with("HTTP/1.1 403"), "{response}");
@@ -1545,8 +1551,11 @@ mod tests {
             .expect("attach lease");
         let mut client =
             std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
-        std::io::Write::write_all(&mut client, b"CONNECT nat64.test:443 HTTP/1.1\r\n\r\n")
-            .expect("write CONNECT");
+        std::io::Write::write_all(
+            &mut client,
+            b"CONNECT nat64.test:443 HTTP/1.1\r\nHost: nat64.test\r\n\r\n",
+        )
+        .expect("write CONNECT");
         let mut response = String::new();
         std::io::Read::read_to_string(&mut client, &mut response).expect("read NAT64 denial");
         assert!(response.starts_with("HTTP/1.1 403"), "{response}");
@@ -1579,7 +1588,7 @@ mod tests {
             std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
         std::io::Write::write_all(
             &mut client,
-            b"CONNECT large-answer.test:443 HTTP/1.1\r\n\r\n",
+            b"CONNECT large-answer.test:443 HTTP/1.1\r\nHost: large-answer.test\r\n\r\n",
         )
         .expect("write CONNECT");
         let mut response = String::new();
@@ -1615,7 +1624,7 @@ mod tests {
             std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
         std::io::Write::write_all(
             &mut client,
-            b"CONNECT duplicate-answer.test:443 HTTP/1.1\r\n\r\n",
+            b"CONNECT duplicate-answer.test:443 HTTP/1.1\r\nHost: duplicate-answer.test\r\n\r\n",
         )
         .expect("write CONNECT");
         let mut response = String::new();
@@ -1652,7 +1661,7 @@ mod tests {
             std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
         std::io::Write::write_all(
             &mut client,
-            format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\n").as_bytes(),
+            format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").as_bytes(),
         )
         .expect("write CONNECT");
 
@@ -1693,7 +1702,7 @@ mod tests {
             std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
         std::io::Write::write_all(
             &mut client,
-            format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\n").as_bytes(),
+            format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").as_bytes(),
         )
         .expect("write CONNECT");
         entered_rx
