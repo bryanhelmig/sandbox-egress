@@ -4508,3 +4508,27 @@ The candidate trended lower but every comparison overlapped and Criterion
 detected no change. It was discarded: one fewer small allocation is not enough
 evidence to alter the denial path. Production source, complexity, and behavior
 remain unchanged.
+
+## 2026-09-01 — unify direct and proxied connected streams
+
+The simplification rotation found that direct and upstream-proxied connections
+entered identical tunnel setup through two enum arms. A single connected-stream
+wrapper now represents either an empty prefix or bytes coalesced after a
+validated upstream CONNECT response. This removes the transport enum and the
+duplicated setup branch without weakening the approved-numeric-address handoff.
+
+Three baseline direct-CONNECT intervals were 111.14–124.32, 113.19–118.32,
+and 114.62–128.46 microseconds. Three candidate intervals were 111.46–126.49,
+113.66–121.18, and 113.07–131.08 microseconds. Every comparison overlapped and
+Criterion detected no change, so no regression is claimed. All 120 library
+cases pass. Whole-tree SCC 4.0.0 complexity moves from 749/2,230 to 748/2,228
+structural/cognitive.
+
+The native and exact Rust 1.88 Linux factories passed all 178 deterministic
+cases, six doctests, documentation, package verification, benchmark smoke, and
+all six Linux resource lanes. Linux's TLS lane peaked at 14,920 KiB RSS, 265
+descriptors, and six threads, recovered to 11,116 KiB, eight descriptors, and
+five threads, and finished at 5,856 KiB, four descriptors, and two threads.
+The rootless 178/178 image is
+`sha256:f161db7099386ae0278eb17e12517792c6bf77a7edb458d076b6b21cbe57cd89`
+(40,861,824 bytes) and runs as UID/GID 65534.

@@ -11,18 +11,17 @@ use crate::connect::find_header_end;
 const MAX_RESPONSE_HEADER_BYTES: usize = 32 * 1_024;
 const MAX_RESPONSE_HEADERS: usize = 64;
 
-pub(crate) struct UpstreamStream {
+pub(crate) struct ConnectedStream {
     stream: TcpStream,
     prefix: Vec<u8>,
     prefix_offset: usize,
 }
 
-pub(crate) enum ConnectedStream {
-    Direct(TcpStream),
-    Proxied(UpstreamStream),
-}
+impl ConnectedStream {
+    pub(crate) fn direct(stream: TcpStream) -> Self {
+        Self::with_prefix(stream, Vec::new())
+    }
 
-impl UpstreamStream {
     fn with_prefix(stream: TcpStream, prefix: Vec<u8>) -> Self {
         Self {
             stream,
@@ -35,7 +34,7 @@ impl UpstreamStream {
 pub(crate) async fn connect_via(
     proxy: SocketAddr,
     target: SocketAddr,
-) -> io::Result<UpstreamStream> {
+) -> io::Result<ConnectedStream> {
     let mut stream = TcpStream::connect(proxy).await?;
     let request = format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n");
     stream.write_all(request.as_bytes()).await?;
@@ -66,7 +65,7 @@ pub(crate) async fn connect_via(
     };
     validate_response(&bytes[..end])?;
     let prefix = bytes.split_off(end);
-    Ok(UpstreamStream::with_prefix(stream, prefix))
+    Ok(ConnectedStream::with_prefix(stream, prefix))
 }
 
 fn validate_response(bytes: &[u8]) -> io::Result<()> {
@@ -87,7 +86,7 @@ fn validate_response(bytes: &[u8]) -> io::Result<()> {
     Ok(())
 }
 
-impl AsyncRead for UpstreamStream {
+impl AsyncRead for ConnectedStream {
     fn poll_read(
         mut self: Pin<&mut Self>,
         context: &mut Context<'_>,
@@ -110,7 +109,7 @@ impl AsyncRead for UpstreamStream {
     }
 }
 
-impl AsyncWrite for UpstreamStream {
+impl AsyncWrite for ConnectedStream {
     fn poll_write(
         mut self: Pin<&mut Self>,
         context: &mut Context<'_>,

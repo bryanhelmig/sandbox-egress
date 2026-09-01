@@ -565,15 +565,13 @@ impl ConnectorBackend {
         match self {
             Self::Direct => TcpStream::connect(address)
                 .await
-                .map(ConnectedStream::Direct),
-            Self::Upstream(proxy) => connect_via(*proxy, address)
-                .await
-                .map(ConnectedStream::Proxied),
+                .map(ConnectedStream::direct),
+            Self::Upstream(proxy) => connect_via(*proxy, address).await,
             #[cfg(test)]
             Self::Test(connector) => connector
                 .connect(address)
                 .await
-                .map(ConnectedStream::Direct),
+                .map(ConnectedStream::direct),
         }
     }
 
@@ -1015,32 +1013,16 @@ async fn serve_connect(
         return deny(&mut client, state, 502, connector.failure_reason()).await;
     };
 
-    match upstream {
-        ConnectedStream::Direct(upstream) => {
-            establish_tunnel(
-                client,
-                upstream,
-                state,
-                &request,
-                header,
-                config,
-                handshake_deadline,
-            )
-            .await
-        }
-        ConnectedStream::Proxied(upstream) => {
-            establish_tunnel(
-                client,
-                upstream,
-                state,
-                &request,
-                header,
-                config,
-                handshake_deadline,
-            )
-            .await
-        }
-    }
+    establish_tunnel(
+        client,
+        upstream,
+        state,
+        &request,
+        header,
+        config,
+        handshake_deadline,
+    )
+    .await
 }
 
 async fn establish_tunnel<U>(
