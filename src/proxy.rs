@@ -1671,6 +1671,62 @@ mod tests {
 
     struct CapturingResolver(mpsc::Sender<String>);
 
+    struct CapturingAnswerResolver {
+        captured: mpsc::Sender<String>,
+        answers: Vec<IpAddr>,
+    }
+
+    fn read_blocking_header(stream: &mut std::net::TcpStream) -> Vec<u8> {
+        let mut header = Vec::new();
+        let mut byte = [0_u8; 1];
+        while !header.ends_with(b"\r\n\r\n") {
+            std::io::Read::read_exact(stream, &mut byte).expect("read complete header");
+            header.push(byte[0]);
+        }
+        header
+    }
+
+    fn start_refusing_upstream() -> (
+        SocketAddr,
+        mpsc::Receiver<Vec<Vec<u8>>>,
+        thread::JoinHandle<()>,
+    ) {
+        let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .expect("bind upstream proxy");
+        let address = listener.local_addr().expect("upstream proxy address");
+        let (requests_tx, requests_rx) = mpsc::sync_channel(1);
+        let server = thread::spawn(move || {
+            let mut requests = Vec::new();
+            let (mut refused, _) = listener.accept().expect("accept first attempt");
+            refused
+                .set_read_timeout(Some(Duration::from_secs(1)))
+                .expect("set first read timeout");
+            requests.push(read_blocking_header(&mut refused));
+            std::io::Write::write_all(&mut refused, b"HTTP/1.1 502 Bad Gateway\r\n\r\n")
+                .expect("refuse first target");
+            drop(refused);
+
+            let (mut accepted, _) = listener.accept().expect("accept fallback attempt");
+            accepted
+                .set_read_timeout(Some(Duration::from_secs(1)))
+                .expect("set fallback read timeout");
+            requests.push(read_blocking_header(&mut accepted));
+            std::io::Write::write_all(
+                &mut accepted,
+                b"HTTP/1.1 200 Connection Established\r\n\r\nhello",
+            )
+            .expect("approve fallback target");
+            let mut upload = [0_u8; 4];
+            std::io::Read::read_exact(&mut accepted, &mut upload).expect("read tunnel upload");
+            assert_eq!(&upload, b"ping");
+            std::io::Write::write_all(&mut accepted, b"pong").expect("write tunnel download");
+            std::io::Read::read_to_end(&mut accepted, &mut Vec::new())
+                .expect("observe upload shutdown");
+            requests_tx.send(requests).expect("send CONNECT requests");
+        });
+        (address, requests_rx, server)
+    }
+
     fn start_local_dns(
         expected_queries: usize,
         respond: fn(&[u8]) -> Vec<u8>,
@@ -1854,6 +1910,18 @@ mod tests {
                 .send(hostname.to_owned())
                 .expect("capture resolver hostname");
             Box::pin(async { Ok(vec![IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)]) })
+        }
+    }
+
+    impl TestResolver for CapturingAnswerResolver {
+        fn lookup<'a>(
+            &'a self,
+            hostname: &'a str,
+        ) -> Pin<Box<dyn Future<Output = io::Result<Vec<IpAddr>>> + Send + 'a>> {
+            self.captured
+                .send(hostname.to_owned())
+                .expect("capture resolver hostname");
+            Box::pin(async { Ok(self.answers.clone()) })
         }
     }
 
@@ -2083,6 +2151,84 @@ mod tests {
             *attempts.lock().expect("attempt list poisoned"),
             vec![first, second]
         );
+    }
+
+    #[test]
+    fn upstream_proxy_refusal_falls_back_without_another_lookup() {
+        let first: SocketAddr = "192.0.2.1:443".parse().expect("first target");
+        let second: SocketAddr = "192.0.2.2:443".parse().expect("second target");
+        let (upstream_proxy, requests_rx, server) = start_refusing_upstream();
+
+        let (hostname_tx, hostname_rx) = mpsc::channel();
+        let resolver = Arc::new(CapturingAnswerResolver {
+            captured: hostname_tx,
+            answers: vec![first.ip(), second.ip()],
+        });
+        let proxy = Proxy::start_with_test_resolver(
+            ProxyConfig::default().with_upstream_proxy(upstream_proxy),
+            resolver,
+        )
+        .expect("start proxy");
+        let policy = Policy::builder()
+            .allow_host("fallback.test")
+            .expect("valid hostname")
+            .allow_network("192.0.2.0/24".parse().expect("test network"))
+            .allow_port(443)
+            .build()
+            .expect("valid policy");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                policy,
+            )
+            .expect("attach localhost");
+        let mut client =
+            std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect guest");
+        std::io::Write::write_all(
+            &mut client,
+            b"CONNECT fallback.test:443 HTTP/1.1\r\nHost: fallback.test\r\n\r\n",
+        )
+        .expect("write guest CONNECT");
+        let mut response = [0_u8; 39];
+        std::io::Read::read_exact(&mut client, &mut response).expect("read CONNECT success");
+        assert_eq!(&response, CONNECT_SUCCESS_RESPONSE);
+        let mut greeting = [0_u8; 5];
+        std::io::Read::read_exact(&mut client, &mut greeting).expect("read greeting");
+        assert_eq!(&greeting, b"hello");
+        std::io::Write::write_all(&mut client, b"ping").expect("write tunnel upload");
+        let mut pong = [0_u8; 4];
+        std::io::Read::read_exact(&mut client, &mut pong).expect("read tunnel download");
+        assert_eq!(&pong, b"pong");
+        std::net::TcpStream::shutdown(&client, std::net::Shutdown::Write)
+            .expect("finish tunnel upload");
+        std::io::Read::read_to_end(&mut client, &mut Vec::new()).expect("read tunnel shutdown");
+        server.join().expect("join upstream proxy");
+
+        assert_eq!(
+            hostname_rx.recv().expect("receive lookup"),
+            "fallback.test."
+        );
+        assert!(hostname_rx.try_recv().is_err(), "unexpected second lookup");
+        assert_eq!(
+            requests_rx.recv().expect("receive CONNECT requests"),
+            vec![
+                format!("CONNECT {first} HTTP/1.1\r\nHost: {first}\r\n\r\n").into_bytes(),
+                format!("CONNECT {second} HTTP/1.1\r\nHost: {second}\r\n\r\n").into_bytes(),
+            ]
+        );
+        let usage = lease
+            .close(Instant::now() + Duration::from_secs(2))
+            .expect("certified close")
+            .usage();
+        assert_eq!(usage.accepted_connections, 1);
+        assert_eq!(usage.completed_connections, 1);
+        assert_eq!(usage.denied_connections, 0);
+        assert_eq!(usage.uploaded_bytes, 4);
+        assert_eq!(usage.downloaded_bytes, 9);
+        assert_eq!(usage.active_connections, 0);
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(2))
+            .expect("proxy shutdown");
     }
 
     #[test]

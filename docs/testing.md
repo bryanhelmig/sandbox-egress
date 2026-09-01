@@ -427,6 +427,13 @@ upstream response, proves exactly two upstream negotiations exist for 200
 milliseconds, and requires certified close to cancel both active negotiations
 and both queued permit waits.
 
+Upstream fallback has an end-to-end controlled-resolver proof. One absolute
+hostname lookup returns two explicitly approved addresses; the local upstream
+proxy refuses the first numeric CONNECT and accepts the second. The guest then
+exchanges bytes through the tunnel, the upstream never receives the hostname,
+no second DNS lookup occurs, and certified close reports one accepted and
+completed connection with exact byte counters.
+
 The connection Criterion suite also measures one complete upstream-proxy
 negotiation beside direct allowed CONNECT. The local peer consumes and verifies
 the exact numeric CONNECT request before replying, so the measurement includes

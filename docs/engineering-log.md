@@ -4336,3 +4336,29 @@ and finished at 5,800 KiB, four descriptors, and two threads. The rootless
 176/176 image is
 `sha256:0b95259bdfb24767fc3c28678a2ced6708054828189d220f35923ada331b66a7`
 (40,880,595 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — compare validated-address fallback
+
+The OpenShell upstream-proxy review exposed a proof-level gap: Sandbox Egress
+already retried validated addresses, but its fallback test stopped at an
+internal connector while the public upstream tests used one address. A new
+shared-listener case performs one absolute hostname lookup, receives two
+explicitly approved test-network addresses, and captures two operator-proxy
+requests. The first numeric CONNECT receives 502, the second receives 200 with
+coalesced tunnel bytes, and neither request contains the hostname. The guest
+then completes a bidirectional exchange and certified close returns one
+accepted, one completed, zero denied, zero active, and exact byte counts.
+
+The focused case passed ten consecutive runs. Production source and the hot
+path are unchanged, so no performance benchmark is warranted. Whole-tree SCC
+4.0.0 complexity moves from 741/2,200 to 744/2,208 structural/cognitive,
+entirely in controlled resolver and upstream-server conformance code.
+
+The native and exact Rust 1.88 Linux factories passed 177 deterministic cases,
+six doctests, documentation, package verification, benchmark smoke, and all
+six Linux resource lanes; native dependency policy checks also passed. Linux's
+TLS lane peaked at 14,804 KiB RSS, 265 descriptors, and six threads, recovered
+to 11,092 KiB, eight descriptors, and five threads, and finished at 5,944 KiB,
+four descriptors, and two threads. The rootless 177/177 image is
+`sha256:aceae73647d83eade3bfaa3751e3f572f5ca0cb1d10af614be2bec37ca58ffce`
+(40,888,181 bytes) and runs as UID/GID 65534.

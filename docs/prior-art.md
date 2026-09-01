@@ -109,6 +109,14 @@ resolution-aware bypass rules. Those features introduce separate secret and
 trust-root contracts and remain explicit follow-up work rather than ambient
 `HTTP_PROXY`, `HTTPS_PROXY`, or `NO_PROXY` behavior a guest could influence.
 
+OpenShell separately proves that refusal of one validated numeric CONNECT
+target falls through to the next locally approved address. Sandbox Egress pins
+the same behavior through its shared listener and lease boundary: exactly one
+absolute hostname lookup returns two approved addresses, the upstream proxy
+sees only those two numeric authorities in order, and a refusal followed by a
+successful tunnel remains one accepted and completed guest connection. This
+does not adopt OpenShell's hostname-target escape hatch.
+
 ## Host-cage capability boundary
 
 The current Lens cage review corrected a subtle deployment assumption around
