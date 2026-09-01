@@ -221,9 +221,11 @@ docker build -t sandbox-egress:dev .
 docker run --rm sandbox-egress:dev
 ```
 
-The image is pinned to Rust 1.88, runs the normal factory plus a small Linux
-resource smoke while building, and runs the hostile conformance lane by
-default. Tests remain local and do not call public network services.
+The build stage is pinned to Rust 1.88 and runs the normal factory plus a small
+Linux resource smoke. The final image contains only the stripped conformance
+executables and runs all 94 deterministic cases as an unprivileged user. It
+does not ship Cargo, the compiler, source tree, or build cache. Tests remain
+local and do not call public network services.
 
 Start with [AGENTS.md](AGENTS.md). The deeper project record is split into:
 

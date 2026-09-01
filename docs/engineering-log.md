@@ -1769,3 +1769,46 @@ four descriptors and two threads, and finished at 4,052 KiB RSS. A first Linux
 export exhausted Docker's internal disk after the checks had passed; the older
 project image and two disposable build containers were removed, then a clean
 rebuild and serialized run proved that the tagged image contained all 94 cases.
+
+## 2026-08-31 — serialize a small conformance image
+
+### Finding
+
+The Docker factory correctly pinned Rust 1.88, ran the complete check lane and
+resource smoke, and reran conformance from the resulting tag. But that tag was
+the factory itself: it included Rust, Cargo's registry, source, documentation,
+and the entire debug and release target trees. Docker reported
+1,129,028,857 bytes of image content, and repeated 5 GB virtual build layers
+were the direct cause of the local disk-pressure failures seen during exact
+rebuilds.
+
+The first multi-stage attempt copied the five stripped test executables into a
+minimal runner. Its 62 library cases passed as an unprivileged user, but both
+CLI cases failed because the integration test embeds Cargo's absolute path to
+the standalone `sandbox-egress` executable. Dropping those cases would have
+made the smaller artifact weaker, so that attempt was not accepted.
+
+### Result
+
+The Rust factory stage is unchanged: it still runs format, compile, lint, all
+targets, doctests, documentation, package assembly, dependency policy when
+available, and the 500-lease Linux resource smoke. A small checked script now
+asks Cargo for each selected test artifact in JSON form, filters by target
+kind, requires exactly one match, copies and strips it. The standalone CLI is
+also placed at the exact path embedded in its integration test. The final
+Debian stage contains only these files and runs as UID/GID 65534; it has no
+compiler, Cargo registry, source tree, or build cache.
+
+The serialized image passes the same 94 deterministic cases, including both
+process-level CLI cases. Docker's content-size field fell from 1,129,028,857 to
+40,301,120 bytes, a 96.4% reduction. The final exact build's 500-lease smoke
+held eight descriptors and five threads while live, returned to four
+descriptors and two threads, and finished at 4,076 KiB RSS. Rust source
+complexity remains 439 structural / 1,283 cognitive; the change is isolated to
+the factory and two POSIX shell helpers.
+
+Two rebuilds exhausted Docker's internal disk while committing already-passed
+factory layers. Only inspected Sandbox Egress containers and intermediate
+images from this session were removed. The last clean build selected artifacts
+without probing unrelated executables, completed without noisy side effects,
+and reproduced the unprivileged 94-case run from the tagged image.

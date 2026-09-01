@@ -1,4 +1,4 @@
-FROM rust:1.88.0-slim-bookworm
+FROM rust:1.88.0-slim-bookworm AS factory
 
 ENV RUSTUP_TOOLCHAIN=1.88.0
 
@@ -22,6 +22,17 @@ RUN printf '# Sandbox Egress dependency cache\n' > README.md \
 
 COPY . .
 
-RUN find src tests benches -type f -exec touch {} + && ./scripts/check-container.sh
+RUN find src tests benches -type f -exec touch {} + \
+    && ./scripts/check-container.sh \
+    && ./scripts/collect-conformance-binaries.sh /conformance
 
-CMD ["./scripts/test-conformance.sh"]
+FROM debian:bookworm-slim AS conformance
+
+COPY --from=factory /conformance/bin /conformance/bin
+COPY --from=factory /conformance/run.sh /conformance/run.sh
+COPY --from=factory /conformance/sandbox-egress /workspace/target/debug/sandbox-egress
+
+WORKDIR /conformance
+USER 65534:65534
+
+CMD ["./run.sh"]

@@ -5,6 +5,9 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Serialize only the stripped conformance executables into the unprivileged
+  Docker runner, reducing the verified image content size by 96.4% without
+  dropping any of its 94 deterministic cases.
 - Let a surviving lease consume the final counters already certified by a
   successful proxy-wide shutdown, including runtime-disconnect races.
 - Divide the remaining absolute handshake budget fairly across sequential
