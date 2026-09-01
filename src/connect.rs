@@ -237,6 +237,50 @@ mod tests {
     }
 
     #[test]
+    fn rejects_control_and_parser_differential_shapes() {
+        for (request, reason) in [
+            (
+                &b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\nX-Test: one\r\n two\r\n\r\n"[..],
+                "malformed-header",
+            ),
+            (
+                &b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\nX\0: value\r\n\r\n"[..],
+                "malformed-header",
+            ),
+            (
+                &b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\nX-Test: val\0ue\r\n\r\n"[..],
+                "malformed-header",
+            ),
+            (
+                &b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\nX-Test: val\x1fue\r\n\r\n"[..],
+                "malformed-header",
+            ),
+            (
+                &b"CONNECT ex\xc3\xa4mple.com:443 HTTP/1.1\r\nHost: example.com\r\n\r\n"[..],
+                "invalid-authority",
+            ),
+            (
+                &b"CONNECT example.com:443 HTTP/1.1\r\nHost: ex\xc3\xa4mple.com\r\n\r\n"[..],
+                "invalid-host-header",
+            ),
+            (
+                &b"CONNECT example.com:443 HTTP/1.1\r\n Host: example.com\r\n\r\n"[..],
+                "malformed-header",
+            ),
+            (
+                &b"CONNECT example.com:443 HTTP/1.1\r\nHost : example.com\r\n\r\n"[..],
+                "malformed-header",
+            ),
+        ] {
+            assert_eq!(
+                parse_connect(request).unwrap_err(),
+                reason,
+                "unexpected result for {request:?}"
+            );
+        }
+    }
+
+    #[test]
     fn header_count_boundary_is_explicit() {
         parse_connect(&connect_with_headers(MAX_CONNECT_HEADERS))
             .expect("the configured header slots fit the parser bound");

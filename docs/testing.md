@@ -51,7 +51,15 @@ deadline (`408 header-timeout`). Each case must close with one denial and no
 active connection; lease close during a still-pending header is tested
 separately. A parser boundary case accepts 64 fields and rejects field 65 with
 the stable `too-many-headers` response and diagnostic code, without copying
-attacker-controlled names or values into the event.
+attacker-controlled names or values into the event. The byte ceiling accepts a
+complete terminator whose last byte lands exactly at the configured limit and
+rejects the same terminator shifted one byte beyond it.
+
+A fixed parser matrix rejects obsolete field folding, NUL and other control
+bytes, whitespace before a field name or colon, and non-ASCII CONNECT or Host
+authority spellings. The mature request parser may identify UTF-8 in the
+request target before the authority parser rejects it; the resulting stable
+reason is `invalid-authority`, not generic malformed syntax.
 
 The connection benchmark also sends a full 1 MiB header made from repeated
 `\r\n\rX` near matches. It must remain an ordinary bounded 431 denial and makes
@@ -138,10 +146,12 @@ the forbidden-address floor, and required to produce zero connector calls.
 
 Lease Drop is exercised while stack unwinding with a pending dial: cancellation
 must complete, the guest socket must become terminal, and the same identity
-must become attachable again after best-effort cleanup. A second case stops and
-joins the proxy runtime first, then requires lease Drop to remain non-panicking
-and release its final local state owner even though the command receiver is
-gone.
+must become attachable again after best-effort cleanup. Replacement attachment
+can precede processing of the pointer-checked stale release, so the proof waits
+separately and boundedly for the old state's final strong owner to disappear. A
+second case stops and joins the proxy runtime first, then requires lease Drop
+to remain non-panicking and release its final local state owner even though the
+command receiver is gone.
 
 A public lifecycle case records a real denied request, then forces three
 consecutive close deadlines. Every error must return the same lease ID, retain
@@ -163,7 +173,7 @@ exactly one executable for each conformance target, strips copies, and carries
 only those binaries into a Debian runner. The CLI's compile-time executable
 dependency is copied at its exact embedded path. The factory deletes its
 compilation tree only after collection, before committing the source-dependent
-layer. The final image runs as UID/GID 65534 and must reproduce all 116
+layer. The final image runs as UID/GID 65534 and must reproduce all 118
 deterministic cases without Cargo, source, or a build cache.
 
 Source-identity cases prove an IPv4 address and its mapped IPv6 transport

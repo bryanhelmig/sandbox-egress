@@ -2369,3 +2369,41 @@ descriptors and five threads to four and two, finishing at 4,012 KiB RSS in
 1,041 ms. The rootless runner reproduced 116/116 as UID/GID 65534; image
 `sha256:e2d9b5ef3769972bf8fba26903e87409eadf89bb7cc6a285d426f40f12e99fdb`
 measured 40,421,194 bytes.
+
+## 2026-09-01 — pin hostile CONNECT syntax and repair a racey proof
+
+The request parser now has a fixed eight-shape matrix covering obsolete field
+folding, NUL in names and values, another value control byte, whitespace before
+a field name or colon, and non-ASCII CONNECT and Host authorities. All fail
+closed. The test was written expecting UTF-8 request-target text to fail as
+generic malformed syntax; the first run instead returned `invalid-authority`
+because the mature HTTP parser accepted the target bytes and the stricter
+authority parser rejected them. The exact stable reason was updated without a
+production change.
+
+A separate reader boundary proof accepts a complete `\r\n\r\n` whose final byte
+lands exactly at the configured ceiling and rejects the same terminator shifted
+one byte beyond it. This removes ambiguity between the inclusive valid bound
+and the first invalid byte without adding another data-path branch.
+
+The first stripped-runner execution then exposed an unrelated scheduling race
+in the earlier unwind-time Lease Drop proof. Cancellation completed, the guest
+stopped, and replacement attachment succeeded, but the test immediately
+expected the old state's last `Arc` to be gone. A replacement may legally be
+installed after the old phase becomes closed but before the queued
+pointer-checked stale release is processed. The proof now waits independently
+and boundedly for that last owner. It still requires both identity reuse and
+eventual old-state destruction. The corrected focused case passed 25 native
+runs, and the complete rootless suite passed three additional repetitions.
+
+No production source changed and no data-path benchmark was run. Whole-tree
+SCC 4.0.0 complexity moved from 514/1,547 to 519/1,562
+structural/cognitive, entirely in deterministic conformance code.
+
+The native and corrected exact Rust 1.88 Linux factories passed all 118
+deterministic cases, doctests, documentation, and package verification; native
+dependency policy checks also passed. Linux's 500-lease lane returned from
+eight descriptors and five threads to four and two, finishing at 4,024 KiB RSS
+in 1,058 ms. The rootless runner reproduced 118/118 as UID/GID 65534; image
+`sha256:ab40985d6c486522a4eb80b1ef590e77b5bd599e8e1631a5ddf168d8402d97b5`
+measured 40,425,450 bytes.

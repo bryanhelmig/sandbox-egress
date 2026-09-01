@@ -2725,7 +2725,11 @@ mod tests {
                 result => panic!("identity did not recover after unwind: {result:?}"),
             }
         };
-        assert!(state.upgrade().is_none());
+        let release_deadline = Instant::now() + Duration::from_secs(1);
+        while state.strong_count() != 0 && Instant::now() < release_deadline {
+            thread::yield_now();
+        }
+        assert_eq!(state.strong_count(), 0);
         replacement
             .close(Instant::now() + Duration::from_secs(1))
             .expect("close replacement lease");
@@ -2903,5 +2907,27 @@ mod tests {
             following.extend_from_slice(input);
             assert_eq!(following, b"following", "split at byte {start}");
         }
+    }
+
+    #[test]
+    fn header_byte_limit_accepts_exactly_bounded_terminator() {
+        const LIMIT: usize = 1_024;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("test runtime");
+
+        let mut exact = vec![b'a'; LIMIT - 4];
+        exact.extend_from_slice(b"\r\n\r\n");
+        let header = runtime
+            .block_on(read_header(&mut exact.as_slice(), LIMIT))
+            .expect("terminator ending at the byte limit");
+        assert_eq!(header.end, LIMIT);
+
+        let mut over = vec![b'a'; LIMIT - 3];
+        over.extend_from_slice(b"\r\n\r\n");
+        let Err(error) = runtime.block_on(read_header(&mut over.as_slice(), LIMIT)) else {
+            panic!("accepted terminator ending beyond the byte limit");
+        };
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
     }
 }

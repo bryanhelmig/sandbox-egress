@@ -18,9 +18,6 @@ services may supplement research but must not become test dependencies.
 ## Request parsing and authority
 
 - Slowloris headers at every byte boundary and just below deadlines.
-- Header blocks at, below, and above the configured byte limit.
-- Excess header count, duplicate `Host`, obs-fold, NUL, control bytes, and
-  non-ASCII authority.
 - CONNECT authority with missing ports, zero, overflow, userinfo, fragments,
   paths, whitespace, IPv4 variants, and bracketed IPv6.
 - Absolute-form HTTP when only CONNECT is supported.

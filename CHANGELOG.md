@@ -5,6 +5,10 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Pin exact CONNECT header byte-limit behavior and reject folded fields,
+  controls, whitespace ambiguities, and non-ASCII authority spellings.
+- Make the unwind-time Lease Drop proof wait independently for queued stale
+  release processing after replacement attachment.
 - Prove visible-SNI mode gives valid no-SNI and non-TLS inputs distinct bounded
   denials while forwarding neither input upstream.
 - Reject ClientHello SNI lists with multiple hostnames and prove that no

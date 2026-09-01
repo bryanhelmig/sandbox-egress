@@ -134,7 +134,9 @@ contain exactly one syntactically valid Host field whose hostname agrees with
 the target; if Host supplies a port, that port must also agree. A missing,
 duplicate, malformed, or conflicting field is rejected before policy or DNS.
 HTTP/1.0 may omit Host. Host and all other guest headers are never identity or
-policy selectors. This follows the message requirements and authority-form
+policy selectors. Obsolete field folding, control bytes, whitespace-ambiguous
+field syntax, and non-ASCII authority text are rejected rather than
+normalized. This follows the message requirements and authority-form
 reconstruction rules in [RFC 9112 sections 3.2 and
 3.3](https://www.rfc-editor.org/rfc/rfc9112.html#section-3.2).
 
