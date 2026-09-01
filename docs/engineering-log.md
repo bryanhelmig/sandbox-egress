@@ -3328,6 +3328,51 @@ two threads; the TLS lane returned from 265/six to four/two. The rootless
 `sha256:c669bc5cb96beb81c33ae8e4b93424aa574c826354135cbdf81b7108bcae98c2`
 (40,717,343 bytes).
 
+## 2026-09-01 — soak certified close after bidirectional saturation
+
+One deterministic tunnel case proved that close terminates hostile writers in
+both directions, but a one-shot proof cannot expose accumulation across close,
+task teardown, and source-identity reuse. The resource target now repeats that
+state 64 times in four batches under one proxy. Each cycle attaches the same
+source identity, opens one real loopback tunnel, and starts one guest and one
+upstream writer while neither application reads.
+
+The first version merely waited for positive accounting. That did not prove
+the finite buffers had filled before close, so it was strengthened before
+retention. Both writers now use nonblocking sockets and must independently
+observe `WouldBlock`; the lease must also account positive bytes in each
+direction. Only then does the test call certified close. The resulting final
+snapshot must report exactly one accepted connection, no active, completed, or
+denied connection, and positive upload and download totals. Both writers must
+return a terminal socket error, and the newly certified source identity must
+attach again on the next iteration.
+
+Ten fresh native release processes completed the 64-cycle lane in 4.03–7.35
+seconds. The first saturated cycle used 9,056–9,168 KiB RSS, 18 descriptors,
+and seven threads. After the last close every run held 9,392–9,488 KiB, 13
+descriptors, and five threads; after shutdown they held 9,184–9,296 KiB, nine
+descriptors, and two threads. In the full six-lane native process, the first
+saturated cycle was 23,152 KiB and the last batch 23,216 KiB, a 64 KiB rise
+after earlier allocator high-water marks. RSS remains reported rather than
+asserted; exact ownership/counters and descriptor/thread recovery are gates.
+
+This lane adds 229 lines and moves whole-tree SCC 4.0.0 complexity from
+648/1,946 to 669/2,016 structural/cognitive, entirely in the opt-in resource
+target. That is larger than the other resource cases. It was retained because
+the two independent full-queue barriers, per-cycle certificate, source reuse,
+and process recovery are one distinct end-to-end ownership signal; none of the
+ordinary conformance tests substitute for its repeated state. Production code
+and the 155 deterministic cases are unchanged.
+
+The native factory and 23.65-second default resource run passed. Exact Rust
+1.88 Linux completed the pressure lane in 445 ms: 6,224 KiB RSS, 13
+descriptors, and seven threads at the first saturated cycle; 6,260 KiB,
+eight/five after 64 closes; and 5,784 KiB, four/two after shutdown. The rootless
+155/155 image remains byte-identical because only the opt-in resource target
+and documentation changed:
+`sha256:c669bc5cb96beb81c33ae8e4b93424aa574c826354135cbdf81b7108bcae98c2`
+(40,717,343 bytes).
+
 ## 2026-09-01 — make DNS memory defaults reflect decoded response size
 
 The returned-address ceiling bounds Sandbox Egress's own `Vec<IpAddr>`, but it

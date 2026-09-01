@@ -469,6 +469,235 @@ fn partial_large_client_hello() -> Vec<u8> {
 
 #[test]
 #[ignore = "resource soak is opt-in; run scripts/measure-resources.sh"]
+fn repeated_bidirectional_backpressure_releases_process_resources() {
+    let runs_per_batch = env_number("SANDBOX_EGRESS_BACKPRESSURE_RUNS", 16);
+    let batches = env_number("SANDBOX_EGRESS_BACKPRESSURE_BATCHES", 4);
+    assert!(runs_per_batch > 0 && batches > 0);
+    let runs = runs_per_batch.saturating_mul(batches);
+    assert!(runs < 0x00ff_ffff);
+
+    let process_start = Resources::sample();
+    let (port, accepted_rx, upstream_full_rx, upstream_stopped_rx, upstream) =
+        start_backpressure_upstream(runs);
+    let proxy =
+        Proxy::start(ProxyConfig::default().with_identity_reuse_quiet_period(Duration::ZERO))
+            .expect("start backpressure proxy");
+    thread::sleep(Duration::from_millis(25));
+    let active_start = Resources::sample();
+    let started = Instant::now();
+    let request = format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
+
+    for batch in 0..batches {
+        for offset in 0..runs_per_batch {
+            if let Some(peak) = run_backpressure_tunnel(
+                &proxy,
+                port,
+                request.as_bytes(),
+                &accepted_rx,
+                &upstream_full_rx,
+                &upstream_stopped_rx,
+                batch == 0 && offset == 0,
+            ) {
+                eprintln!(
+                    "backpressure_soak event=peak elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
+                    started.elapsed().as_millis(),
+                    peak.rss_kib,
+                    peak.descriptors,
+                    peak.threads,
+                );
+            }
+        }
+
+        let current = Resources::sample();
+        eprintln!(
+            "backpressure_soak event=batch batch={} completed={} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
+            batch + 1,
+            (batch + 1).saturating_mul(runs_per_batch),
+            started.elapsed().as_millis(),
+            current.rss_kib,
+            current.descriptors,
+            current.threads,
+        );
+        assert_stable_non_memory_resources(active_start, current);
+    }
+
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(2))
+        .expect("proxy shutdown");
+    upstream.join().expect("backpressure upstream thread");
+    thread::sleep(Duration::from_millis(25));
+    let finished = Resources::sample();
+    eprintln!(
+        "backpressure_soak event=finish completed={runs} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
+        started.elapsed().as_millis(),
+        finished.rss_kib,
+        finished.descriptors,
+        finished.threads,
+    );
+    assert_stable_non_memory_resources(process_start, finished);
+}
+
+fn run_backpressure_tunnel(
+    proxy: &Proxy,
+    port: u16,
+    request: &[u8],
+    accepted: &std::sync::mpsc::Receiver<()>,
+    upstream_full: &std::sync::mpsc::Receiver<()>,
+    upstream_stopped: &std::sync::mpsc::Receiver<std::io::ErrorKind>,
+    sample_peak: bool,
+) -> Option<Resources> {
+    let lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            Policy::builder()
+                .allow_network("127.0.0.0/8".parse::<IpNet>().expect("loopback CIDR"))
+                .allow_port(port)
+                .build()
+                .expect("valid backpressure policy"),
+        )
+        .expect("attach backpressure lease");
+    let mut client = open_soak_tunnel(lease.endpoint().socket_addr(), request);
+    let socket = SockRef::from(&client);
+    socket
+        .set_send_buffer_size(16 * 1024)
+        .expect("bound guest send buffer");
+    socket
+        .set_recv_buffer_size(16 * 1024)
+        .expect("bound guest receive buffer");
+    accepted
+        .recv_timeout(Duration::from_secs(2))
+        .expect("upstream accepted backpressure tunnel");
+    let (guest_full_tx, guest_full_rx) = std::sync::mpsc::sync_channel(1);
+    let (guest_stopped_tx, guest_stopped_rx) = std::sync::mpsc::sync_channel(1);
+    let guest_writer = thread::spawn(move || {
+        guest_stopped_tx
+            .send(write_until_terminal(&mut client, 0xa5, &guest_full_tx))
+            .expect("report guest writer stop");
+    });
+    guest_full_rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("guest send queue became full");
+    upstream_full
+        .recv_timeout(Duration::from_secs(2))
+        .expect("upstream send queue became full");
+    wait_for_bidirectional_bytes(&lease);
+    let peak = sample_peak.then(Resources::sample);
+
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(2))
+        .expect("close backpressured lease")
+        .usage();
+    assert_eq!(final_usage.accepted_connections, 1);
+    assert_eq!(final_usage.active_connections, 0);
+    assert_eq!(final_usage.completed_connections, 0);
+    assert_eq!(final_usage.denied_connections, 0);
+    assert!(final_usage.uploaded_bytes > 0);
+    assert!(final_usage.downloaded_bytes > 0);
+    assert_terminal_write_kind(
+        guest_stopped_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("guest writer stopped"),
+    );
+    assert_terminal_write_kind(
+        upstream_stopped
+            .recv_timeout(Duration::from_secs(2))
+            .expect("upstream writer stopped"),
+    );
+    guest_writer.join().expect("guest writer thread");
+    peak
+}
+
+fn start_backpressure_upstream(
+    runs: usize,
+) -> (
+    u16,
+    std::sync::mpsc::Receiver<()>,
+    std::sync::mpsc::Receiver<()>,
+    std::sync::mpsc::Receiver<std::io::ErrorKind>,
+    thread::JoinHandle<()>,
+) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind backpressure upstream");
+    let port = listener.local_addr().expect("backpressure address").port();
+    let (accepted_tx, accepted_rx) = std::sync::mpsc::sync_channel(1);
+    let (full_tx, full_rx) = std::sync::mpsc::sync_channel(1);
+    let (stopped_tx, stopped_rx) = std::sync::mpsc::sync_channel(1);
+    let upstream = thread::spawn(move || {
+        for _ in 0..runs {
+            let (mut stream, _) = listener.accept().expect("accept backpressure tunnel");
+            let socket = SockRef::from(&stream);
+            socket
+                .set_send_buffer_size(16 * 1024)
+                .expect("bound upstream send buffer");
+            socket
+                .set_recv_buffer_size(16 * 1024)
+                .expect("bound upstream receive buffer");
+            accepted_tx.send(()).expect("report upstream accept");
+            stopped_tx
+                .send(write_until_terminal(&mut stream, 0x5a, &full_tx))
+                .expect("report upstream writer stop");
+        }
+    });
+    (port, accepted_rx, full_rx, stopped_rx, upstream)
+}
+
+fn write_until_terminal(
+    stream: &mut TcpStream,
+    byte: u8,
+    full: &std::sync::mpsc::SyncSender<()>,
+) -> std::io::ErrorKind {
+    stream
+        .set_nonblocking(true)
+        .expect("make pressure writer nonblocking");
+    let block = [byte; 16 * 1024];
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut reported_full = false;
+    loop {
+        if Instant::now() >= deadline {
+            return std::io::ErrorKind::TimedOut;
+        }
+        match stream.write(&block) {
+            Ok(0) => return std::io::ErrorKind::WriteZero,
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                if !reported_full {
+                    full.send(()).expect("report full send queue");
+                    reported_full = true;
+                }
+                thread::yield_now();
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(error) => return error.kind(),
+        }
+    }
+}
+
+fn wait_for_bidirectional_bytes(lease: &sandbox_egress::Lease) {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let usage = lease.usage();
+        if usage.uploaded_bytes > 0 && usage.downloaded_bytes > 0 {
+            return;
+        }
+        assert!(Instant::now() < deadline, "tunnel never moved both ways");
+        thread::yield_now();
+    }
+}
+
+fn assert_terminal_write_kind(kind: std::io::ErrorKind) {
+    assert!(
+        matches!(
+            kind,
+            std::io::ErrorKind::BrokenPipe
+                | std::io::ErrorKind::ConnectionReset
+                | std::io::ErrorKind::ConnectionAborted
+                | std::io::ErrorKind::NotConnected
+        ),
+        "expected terminal writer, got {kind:?}"
+    );
+}
+
+#[test]
+#[ignore = "resource soak is opt-in; run scripts/measure-resources.sh"]
 fn terminal_connection_churn_releases_process_resources() {
     let runs_per_batch = env_number("SANDBOX_EGRESS_TERMINAL_RUNS", 500);
     let batches = env_number("SANDBOX_EGRESS_TERMINAL_BATCHES", 4);

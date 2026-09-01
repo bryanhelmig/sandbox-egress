@@ -285,7 +285,7 @@ scripts:
 ./scripts/check.sh              format, compile, lint, test, docs, package
 ./scripts/test-conformance.sh   hostile lifecycle and concurrency cases
 ./scripts/bench.sh              Criterion performance baseline
-./scripts/measure-resources.sh  lease, control, idle, TLS, and terminal resource soak
+./scripts/measure-resources.sh  lease, control, idle, TLS, pressure, terminal soak
 ./scripts/measure-complexity.sh source size and complexity trend report
 ./scripts/measure-load.sh       concurrent CONNECT capacity and tail latency
 ./scripts/measure-throughput.sh concurrent upload/download tunnel throughput

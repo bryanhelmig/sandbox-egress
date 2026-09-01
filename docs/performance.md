@@ -72,6 +72,32 @@ mark because the process allocator retained released pages, so RSS is reported
 rather than used as the cleanup oracle. Exact ownership/counters, terminal
 sockets, descriptors, and threads are enforced.
 
+## Repeated bidirectional-backpressure resource baseline
+
+Recorded 2026-09-01 on the same Apple M1 with Rust 1.97.1. One guest writer and
+one upstream writer use nonblocking sockets while neither application reads.
+Each must observe `WouldBlock`, and the lease must account positive traffic in
+both directions, before certified close. The same source identity is then
+reattached for the next cycle.
+
+```text
+command: cargo test --release --test resource_soak \
+  repeated_bidirectional_backpressure_releases_process_resources \
+  -- --ignored --nocapture --exact
+cycles: 16 per batch, 4 batches, 64 total
+fresh-process runs: 10
+elapsed through shutdown: 4.03 .. 7.35 s
+first active cycle: 9056 .. 9168 KiB RSS, 18 FDs, 7 threads
+after 64 closes:   9392 .. 9488 KiB RSS, 13 FDs, 5 threads
+after shutdown:    9184 .. 9296 KiB RSS,  9 FDs, 2 threads
+```
+
+Every cycle reports one accepted connection, zero active, completed, or denied
+connections, positive upload and download counters, and terminal errors from
+both writers. RSS is reported as an allocator high-water observation, while
+the exact lease state plus descriptor and thread return are enforced. This is
+a repeated cleanup baseline, not sustained-throughput evidence.
+
 ## Initial local connection-setup baseline
 
 Recorded 2026-08-31 on the same Apple M1:

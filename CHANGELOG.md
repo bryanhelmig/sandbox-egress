@@ -5,6 +5,9 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Repeat certified close and identity reuse after both tunnel send queues
+  observe backpressure, enforcing exact per-lease results and process resource
+  recovery across batches.
 - Give management-only and real-socket resource lanes independent run counts
   so the default local measurement does not accidentally become a same-tuple
   ephemeral-port ceiling test.
