@@ -310,6 +310,8 @@ while the proxy is forwarding an upstream response, already-read download
 bytes remain accounted even when the following write reaches a broken pipe.
 An upstream connection refusal happens before CONNECT success and is instead a
 bounded `dial-failed` policy denial; the proxy never sends a misleading 200.
+Simultaneous asymmetric upload and download preserve both independent byte
+totals and count one completion only after both directions end gracefully.
 
 Cumulative connection and byte counters use saturating atomic updates. They
 remain monotonic at the integer boundary instead of wrapping, and byte

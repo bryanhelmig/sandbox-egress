@@ -41,10 +41,6 @@ contributor instead of preserving solved work as apparent backlog.
 - Domain fronting and the exact difference between CONNECT, SNI, and
   application authority.
 
-## Tunnelling and accounting
-
-- Large full-duplex transfers and asymmetric traffic.
-
 ## Capacity and denial of service
 
 - Optional reserved-share or fair admission semantics between leases; the

@@ -4904,3 +4904,31 @@ raising aggregate setup throughput. No production tuning is retained. A small
 `measure-load-sweep.sh` wrapper records the standard six-point, three-repeat
 experiment so future changes can compare the whole curve rather than one
 favorable point.
+
+## 2026-09-01 — prove asymmetric full-duplex delivery
+
+The comparison rotation reviewed Raincoat `811c8330` and canister `27434158`.
+Both products own plain-HTTP framing and application-policy machinery that
+would materially widen this CONNECT-only crate. That state is not imported.
+The review instead exposed a gap in the shared tunnel core: performance cases
+moved bytes in one direction per run, while simultaneous backpressure cases
+proved cancellation but not successful complete delivery.
+
+A deterministic real-socket case now moves 1,048,699 patterned bytes from the
+guest while 3,145,771 different patterned bytes move from the upstream at the
+same time. Each peer verifies the complete payload. Certified close must then
+return the exact independent byte totals, one accepted and completed
+connection, and zero active or denied connections. Ten consecutive focused
+runs pass.
+
+Production source, dependencies, and public API are unchanged. The
+deterministic test count rises from 181 to 182; whole-tree SCC 4.0.0
+structural/cognitive complexity moves from 767/2,275 to 770/2,282, entirely in
+the integration proof.
+
+The complete native and pinned Rust 1.88 factories pass all 182 deterministic
+tests, eight Linux resource lanes, six documentation examples, formatting,
+lints, dependency policy, package verification, benchmark smoke, and release
+builds. The rootless 182/182 image is
+`sha256:aa074cc361cfb510cca4fd8c42c117fc37d112a38c83b2e89b68abd6596a00c4`
+(40,922,281 bytes) and runs as UID/GID 65534.

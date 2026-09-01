@@ -10,6 +10,7 @@ links remain upstream-owned and are not vendored.
 | [nono](https://github.com/nolabs-ai/nono) | `46867b2f` | supervisor-side proxy, credential boundary, audit | guest session token and accept-loop shutdown, not certified close |
 | [motosan-sandbox](https://github.com/motosan-dev/motosan-sandbox) | `13eab245` | small per-run CONNECT proxy and hard routing | one proxy per run; spawned tunnels are not a shared lease |
 | [ressrf](https://github.com/timescale/ressrf) | `52fc89cf` | generated forbidden ranges, DNS-pinned transports, adversarial parser cases | policy/transport components rather than lease ownership |
+| [Raincoat](https://github.com/zachgenius/raincoat) | `811c8330` | honest host-cage boundary and hostile plain-HTTP framing cases | sandbox product with per-process proxy ownership |
 | [canister](https://github.com/dergraf/canister) | `27434158` | hostile L7 contracts, body limits, DLP | sandbox product, not reusable lifecycle primitive |
 | [eavs](https://github.com/byteowlz/eavs) | `afa178a0` | transparent destination recovery and SNI/Host ACLs | no ephemeral run ownership |
 | [microsandbox](https://github.com/superradcompany/microsandbox) | `5b1c63d9` | network-layer DNS timeout/rebinding controls | microVM network subsystem, not forward-proxy lease API |
@@ -174,6 +175,24 @@ Egress additionally enforces per-tunnel byte ceilings, so it pins the adjacent
 ordering explicitly: an exact-boundary transport error is not relabeled as a
 policy denial, while a successfully observed excess byte is counted and denied
 before any later transport error.
+
+## Protocol-scope comparison
+
+Raincoat and canister both accept plain HTTP and consequently own request-body
+framing, ambiguous `Content-Length`/`Transfer-Encoding` rejection, interim
+responses, and response-delimitation behavior. Those are useful hostile cases,
+but importing them would materially widen this crate's authority promise and
+parser state. Sandbox Egress remains CONNECT-only: bytes after the one bounded
+CONNECT header belong to one already-selected tunnel and cannot select another
+destination.
+
+The comparison did expose a smaller transport-proof gap. The existing
+throughput harness moved data in one direction per run, while hostile shutdown
+tests applied simultaneous pressure without proving complete delivery. A real
+socket case now transfers approximately 1 MiB upward and 3 MiB downward at the
+same time, checks every byte at each peer, and requires exact final accounting
+and one graceful completion. This tests the common tunnel core without adding
+plain-HTTP policy or parser machinery.
 
 ## Host-cage capability boundary
 

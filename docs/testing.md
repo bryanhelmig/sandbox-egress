@@ -250,6 +250,10 @@ Two ordinary FIN cases prove tunnel directions remain independent. After a
 guest finishes upload, an upstream may still send a delayed response; after an
 upstream finishes download, the guest may still send a late upload. Both paths
 must preserve exact byte counters and count one normally completed tunnel. A
+separate asymmetric full-duplex case sends 1,048,699 patterned bytes upward and
+3,145,771 different patterned bytes downward concurrently on one real tunnel.
+Both peers must receive the complete payload, and certified close must return
+those exact counters with one completed connection and no denial. A
 certified-close case then holds the remaining direction open after the guest's
 upload FIN has propagated. Close must return without upstream cooperation,
 leave no active ownership, make the guest read terminal, and make a subsequently

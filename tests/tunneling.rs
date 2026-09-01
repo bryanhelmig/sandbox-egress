@@ -186,6 +186,77 @@ fn open_tunnel(endpoint: SocketAddr, port: u16) -> TcpStream {
 }
 
 #[test]
+fn asymmetric_full_duplex_transfer_is_complete_and_exactly_accounted() {
+    const UPLOAD_BYTES: usize = 1_048_699;
+    const DOWNLOAD_BYTES: usize = 3_145_771;
+
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind upstream");
+    let port = listener.local_addr().expect("upstream address").port();
+    let upstream = thread::spawn(move || {
+        let (mut reader, _) = listener.accept().expect("accept proxy");
+        reader
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("bound upstream read");
+        let mut writer = reader.try_clone().expect("clone upstream socket");
+        writer
+            .set_write_timeout(Some(Duration::from_secs(5)))
+            .expect("bound upstream write");
+        let download = thread::spawn(move || {
+            writer
+                .write_all(&vec![0x5a; DOWNLOAD_BYTES])
+                .expect("write download");
+            writer.shutdown(Shutdown::Write).expect("finish download");
+        });
+        let mut upload = Vec::new();
+        reader.read_to_end(&mut upload).expect("read upload");
+        assert_eq!(upload, vec![0xa5; UPLOAD_BYTES]);
+        download.join().expect("download writer");
+    });
+
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let lease = attach_for_ports(&proxy, &[port], None);
+    let mut reader = open_tunnel(lease.endpoint().socket_addr(), port);
+    reader
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .expect("bound guest read");
+    let mut writer = reader.try_clone().expect("clone guest socket");
+    writer
+        .set_write_timeout(Some(Duration::from_secs(5)))
+        .expect("bound guest write");
+    let upload = thread::spawn(move || {
+        writer
+            .write_all(&vec![0xa5; UPLOAD_BYTES])
+            .expect("write upload");
+        writer.shutdown(Shutdown::Write).expect("finish upload");
+    });
+    let mut download = Vec::new();
+    reader.read_to_end(&mut download).expect("read download");
+    assert_eq!(download, vec![0x5a; DOWNLOAD_BYTES]);
+    upload.join().expect("upload writer");
+    upstream.join().expect("upstream thread");
+
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close completed full-duplex tunnel")
+        .usage();
+    assert_eq!(final_usage.accepted_connections, 1);
+    assert_eq!(final_usage.active_connections, 0);
+    assert_eq!(final_usage.completed_connections, 1);
+    assert_eq!(final_usage.denied_connections, 0);
+    assert_eq!(
+        final_usage.uploaded_bytes,
+        u64::try_from(UPLOAD_BYTES).expect("upload size fits u64")
+    );
+    assert_eq!(
+        final_usage.downloaded_bytes,
+        u64::try_from(DOWNLOAD_BYTES).expect("download size fits u64")
+    );
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
 fn guest_upload_fin_keeps_the_download_direction_open() {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind upstream");
     let port = listener.local_addr().expect("upstream address").port();
