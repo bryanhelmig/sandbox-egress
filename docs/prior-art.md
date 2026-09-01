@@ -16,6 +16,7 @@ links remain upstream-owned and are not vendored.
 | [eavs](https://github.com/byteowlz/eavs) | `afa178a0` | transparent destination recovery and SNI/Host ACLs | no ephemeral run ownership |
 | [microsandbox](https://github.com/superradcompany/microsandbox) | `df4e1ead` | network-layer DNS timeout/rebinding controls | microVM network subsystem, not forward-proxy lease API |
 | [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) | `4ef84234` | operator-owned corporate proxy chaining after local SSRF validation | product supervisor with broader TLS/auth/bypass configuration |
+| [torkbot/sandbox](https://github.com/torkbot/sandbox) | `3dc0dd5c` | transparent per-flow grants bound to original destination, DNS evidence, and TLS metadata | one network service per VM; teardown is VM-owned rather than a reusable lease certificate |
 | [G3](https://github.com/bytedance/g3) | `79e99f76` | production user rate/concurrency limits, buffer controls, protocol breadth | daemon/user model rather than ephemeral certified leases |
 | [Rama](https://github.com/plabayo/rama) | `cde3aa85` | composable timeout, concurrency, and token-bucket policies | general framework rather than an opinionated sandbox boundary |
 
@@ -33,6 +34,7 @@ shape of an allowlist:
 | lens-sandbox-core | shared mutable proxy policy | detached process-lifetime handlers | proxy/process lifetime |
 | nono | sandbox session configuration and guest token flows | one proxy accept loop plus spawned handlers | accept-loop shutdown signal |
 | motosan-sandbox | one small proxy instance per sandbox run | spawned handlers under that instance | listener-task abort |
+| torkbot/sandbox | one host-created network service per microVM | the VM's transparent network worker | `Drop` signals and joins that worker |
 | Sandbox Egress | host-observed source IP plus one immutable `Policy` | one `Lease` tracker, cancellation token, and permits | fallible per-run close with final counters and retained ownership on failure |
 
 This is an architectural comparison, not a quality ranking. Process-wide drain
@@ -207,6 +209,23 @@ policy denial, while a successfully observed excess byte is counted and denied
 before any later transport error.
 
 ## Protocol-scope comparison
+
+Torkbot's Sandbox demonstrates the stronger authority promise that becomes
+possible when a product owns the transparent network path. It derives policy
+inputs from the original IP destination, guest-scoped accepted DNS answers,
+and visible TLS metadata; its HTTP path explicitly does not treat the guest's
+`Host` header as trusted authority. That is a useful reference for a future L7
+mode, but it is not evidence that a CONNECT tunnel enforces application
+authority.
+
+Sandbox Egress therefore retains its narrower, explicit promise: CONNECT
+authority plus visible SNI when configured, with ECH handled according to the
+immutable policy. It does not import transparent TCP/UDP interception, HTTPS
+MITM, credential injection, or guest DNS attribution into the core library.
+Those facilities require a wider host integration and trust-root boundary.
+The ownership distinction also remains material: Torkbot's network worker is
+created and destroyed with one VM, whereas this crate must certify one source
+identity's cleanup while its shared listener and other leases continue.
 
 Raincoat and canister both accept plain HTTP and consequently own request-body
 framing, ambiguous `Content-Length`/`Transfer-Encoding` rejection, interim

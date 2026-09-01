@@ -5459,3 +5459,21 @@ complexity: integration tests, resource lanes, benchmarks, and fixed TLS
 fixtures are included. Its purpose is to give the next simplification pass a
 stable same-tool comparison point. No threshold or implementation change is
 introduced.
+
+## 2026-09-01 — compare a transparent per-VM authority boundary
+
+Torkbot's Sandbox was reviewed at commit `3dc0dd5c`. Its host-owned transparent
+network service exposes default-deny per-flow policy over TCP, UDP, DNS, and
+HTTP-family traffic. The HTTP path binds its authority decision to original
+destination state, guest-scoped accepted DNS answers, and TLS metadata rather
+than trusting the guest's `Host` header. That is a concrete example of the
+stronger application-authority promise available to an implementation that
+owns interception and TLS termination.
+
+The lifecycle boundary is deliberately different: one `HostNetwork` belongs
+to one VM, and `Drop` sets a shutdown flag and joins its network worker. It does
+not need to detach and later reuse one source identity beneath a shared live
+listener. The comparison therefore changes no production code. It reinforces
+the current honest CONNECT-plus-visible-SNI promise and records transparent L7
+enforcement as a wider host-integration design, not a feature to imply through
+SNI inspection.
