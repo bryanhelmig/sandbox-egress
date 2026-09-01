@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Distinguish an enforced DNS deadline as `504 dns-timeout` from resolver
+  failures and DNS-capacity exhaustion, with zero-dial end-to-end proofs.
 - Pin exact CONNECT header byte-limit behavior and reject folded fields,
   controls, whitespace ambiguities, and non-ASCII authority spellings.
 - Make the unwind-time Lease Drop proof wait independently for queued stale

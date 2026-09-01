@@ -2407,3 +2407,34 @@ eight descriptors and five threads to four and two, finishing at 4,024 KiB RSS
 in 1,058 ms. The rootless runner reproduced 118/118 as UID/GID 65534; image
 `sha256:ab40985d6c486522a4eb80b1ef590e77b5bd599e8e1631a5ddf168d8402d97b5`
 measured 40,425,450 bytes.
+
+## 2026-09-01 — distinguish DNS deadline enforcement from resolver failure
+
+DNS permit acquisition, resolver execution, and the absolute handshake were
+already bounded, but an elapsed resolver deadline and an actual resolver I/O
+error both produced `502 dns-failed`. The configured DNS deadline is a
+first-class safety control, so collapsing those outcomes made diagnostics less
+useful than the implementation's behavior.
+
+The real-socket deadline proof was written first with a resolver future held
+pending and a connector that counts every call. Its first run failed exactly
+at the intended contract: the proxy returned `502 dns-failed` instead of the
+expected `504 dns-timeout`. The resolver path now uses one explicit match:
+permit starvation remains `503 dns-capacity`, a returned resolver error
+remains `502 dns-failed`, and elapsed execution returns `504 dns-timeout`. A
+second end-to-end proof pins the resolver-error neighbor. Both paths require
+one denial and zero dial attempts, and each passed ten consecutive focused
+runs.
+
+The successful lookup and dial path is unchanged, so no throughput claim or
+benchmark was made. Whole-tree SCC 4.0.0 structural complexity stayed at 519,
+while cognitive complexity fell from 1,562 to 1,560 because the explicit match
+replaced nested error mapping.
+
+The native and exact Rust 1.88 Linux factories passed all 120 deterministic
+cases, doctests, documentation, and package verification; native dependency
+policy checks also passed. Linux's 500-lease lane returned from eight
+descriptors and five threads to four and two, finishing at 3,956 KiB RSS in
+1,088 ms. The rootless runner reproduced 120/120 as UID/GID 65534; image
+`sha256:51287dfe25d9098bccf2176a1000de9357258a65744fc618b18e374fc7b02985`
+measured 40,428,701 bytes.

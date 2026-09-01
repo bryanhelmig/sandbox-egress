@@ -173,7 +173,7 @@ exactly one executable for each conformance target, strips copies, and carries
 only those binaries into a Debian runner. The CLI's compile-time executable
 dependency is copied at its exact embedded path. The factory deletes its
 compilation tree only after collection, before committing the source-dependent
-layer. The final image runs as UID/GID 65534 and must reproduce all 118
+layer. The final image runs as UID/GID 65534 and must reproduce all 120
 deterministic cases without Cargo, source, or a build cache.
 
 Source-identity cases prove an IPv4 address and its mapped IPv6 transport
@@ -237,6 +237,12 @@ host-authenticated policy with a guest-selected backend. Controlled resolver
 tests hold lookups pending, measure the exact concurrency ceiling, cancel both
 active and queued work, and deliver an answer after close to prove no dial
 consumer remains.
+
+A pending resolver that exceeds its configured deadline must yield `504
+dns-timeout`, release its active work, and make zero connector calls. A
+resolver that returns an I/O error remains `502 dns-failed` and likewise never
+reaches the connector. These complement the separate `503 dns-capacity` proof
+for work that cannot acquire a resolver permit in time.
 
 An oversized-answer case supplies one address beyond the default cardinality
 ceiling and uses a recording connector. It requires the bounded

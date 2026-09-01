@@ -1205,6 +1205,7 @@ impl Denial {
     const DNS_ANSWER_TOO_LARGE: Self = Self::new(502, "dns-answer-too-large");
     const DNS_EMPTY: Self = Self::new(502, "dns-empty");
     const DNS_FAILED: Self = Self::new(502, "dns-failed");
+    const DNS_TIMEOUT: Self = Self::new(504, "dns-timeout");
     const HOST_DENIED: Self = Self::new(403, "host-denied");
     const INVALID_HOSTNAME: Self = Self::new(400, "invalid-hostname");
     const IP_LITERAL_DENIED: Self = Self::new(403, "ip-literal-denied");
@@ -1270,9 +1271,11 @@ async fn resolve_addresses(
     )
     .await;
     drop(dns_permit);
-    let addresses = lookup
-        .map_err(|_| Denial::DNS_FAILED)?
-        .map_err(|_| Denial::DNS_FAILED)?;
+    let addresses = match lookup {
+        Ok(Ok(addresses)) => addresses,
+        Ok(Err(_)) => return Err(Denial::DNS_FAILED),
+        Err(_) => return Err(Denial::DNS_TIMEOUT),
+    };
     if addresses.is_empty() {
         return Err(Denial::DNS_EMPTY);
     }
@@ -1485,6 +1488,8 @@ mod tests {
 
     struct FixedAnswerResolver(Vec<IpAddr>);
 
+    struct FailingResolver;
+
     struct CapturingResolver(mpsc::Sender<String>);
 
     impl TestResolver for FixedAnswerResolver {
@@ -1493,6 +1498,15 @@ mod tests {
             _hostname: &'a str,
         ) -> Pin<Box<dyn Future<Output = io::Result<Vec<IpAddr>>> + Send + 'a>> {
             Box::pin(async move { Ok(self.0.clone()) })
+        }
+    }
+
+    impl TestResolver for FailingResolver {
+        fn lookup<'a>(
+            &'a self,
+            _hostname: &'a str,
+        ) -> Pin<Box<dyn Future<Output = io::Result<Vec<IpAddr>>> + Send + 'a>> {
+            Box::pin(async { Err(io::Error::other("controlled DNS failure")) })
         }
     }
 
@@ -1794,6 +1808,97 @@ mod tests {
         ));
 
         drop(clients);
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
+    }
+
+    #[test]
+    fn dns_deadline_has_a_distinct_denial_and_never_dials() {
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let resolver = Arc::new(PendingResolver {
+            entered: entered_tx,
+            active: Arc::clone(&active),
+        });
+        let dial_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let connector = Arc::new(RejectingConnector(Arc::clone(&dial_attempts)));
+        let proxy = Proxy::start_with_test_backends(ProxyConfig::default(), resolver, connector)
+            .expect("start DNS deadline proxy");
+        let policy = Policy::builder()
+            .allow_host("pending.test")
+            .expect("valid test hostname")
+            .allow_network("127.0.0.0/8".parse().expect("valid loopback test network"))
+            .allow_port(443)
+            .dns_timeout(Duration::from_millis(20))
+            .handshake_timeout(Duration::from_secs(1))
+            .build()
+            .expect("valid DNS deadline policy");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                policy,
+            )
+            .expect("attach DNS deadline lease");
+        let mut client =
+            std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+        std::io::Write::write_all(
+            &mut client,
+            b"CONNECT pending.test:443 HTTP/1.1\r\nHost: pending.test\r\n\r\n",
+        )
+        .expect("write CONNECT");
+        entered_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("lookup entered");
+
+        let mut response = String::new();
+        std::io::Read::read_to_string(&mut client, &mut response).expect("read DNS timeout denial");
+        assert!(response.starts_with("HTTP/1.1 504"), "{response}");
+        assert!(response.contains("dns-timeout"), "{response}");
+        assert_eq!(active.load(Ordering::Acquire), 0);
+        assert_eq!(dial_attempts.load(Ordering::Acquire), 0);
+        assert_eq!(lease.usage().denied_connections, 1);
+        lease
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("close DNS deadline lease");
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
+    }
+
+    #[test]
+    fn dns_resolver_failure_remains_distinct_and_never_dials() {
+        let dial_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let connector = Arc::new(RejectingConnector(Arc::clone(&dial_attempts)));
+        let proxy = Proxy::start_with_test_backends(
+            ProxyConfig::default(),
+            Arc::new(FailingResolver),
+            connector,
+        )
+        .expect("start DNS failure proxy");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                hostname_policy("failed.test", 443),
+            )
+            .expect("attach DNS failure lease");
+        let mut client =
+            std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+        std::io::Write::write_all(
+            &mut client,
+            b"CONNECT failed.test:443 HTTP/1.1\r\nHost: failed.test\r\n\r\n",
+        )
+        .expect("write CONNECT");
+
+        let mut response = String::new();
+        std::io::Read::read_to_string(&mut client, &mut response).expect("read DNS failure denial");
+        assert!(response.starts_with("HTTP/1.1 502"), "{response}");
+        assert!(response.contains("dns-failed"), "{response}");
+        assert_eq!(dial_attempts.load(Ordering::Acquire), 0);
+        assert_eq!(lease.usage().denied_connections, 1);
+        lease
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("close DNS failure lease");
         proxy
             .shutdown(Instant::now() + Duration::from_secs(1))
             .expect("proxy shutdown");
