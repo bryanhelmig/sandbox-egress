@@ -4840,3 +4840,23 @@ runs). The end-to-end socket cost made the shortcut unmeasurable. The branch
 was removed: the uniform accounting path is easier to read, and no performance
 claim is retained. Production source, test count, dependencies, and complexity
 are unchanged.
+
+## 2026-09-01 — freeze policy deadlines from one instant
+
+The simplification rotation found two separate `Instant::now()` calls while
+`PolicyBuilder::build` checked the handshake and optional idle durations.
+Policy freezing now captures one monotonic instant and validates both durations
+against it. This makes the construction decision internally consistent at a
+clock boundary, removes a redundant clock read, and leaves the public API and
+ordinary accepted policy set unchanged.
+
+The zero, ordering, handshake-overflow, and idle-overflow policy cases pass.
+Whole-tree structural/cognitive complexity remains 764/2,264. No dependency,
+task, allocation, connection-path, or deterministic test count changes.
+
+The native and pinned Rust 1.88 factories pass all 180 deterministic tests,
+eight Linux resource lanes, six documentation examples, formatting, lints,
+dependency policy, package verification, benchmark smoke, and release builds.
+The rootless 180/180 image is
+`sha256:5f9072aebb39b1ac66adbfc39eaae9da305deecf5ee62023d0261817aa71614e`
+(40,903,722 bytes) and runs as UID/GID 65534.

@@ -294,15 +294,13 @@ impl PolicyBuilder {
         if policy.dns_timeout > policy.handshake_timeout {
             return Err(PolicyError::DnsTimeoutExceedsHandshake);
         }
-        if Instant::now()
-            .checked_add(policy.handshake_timeout)
-            .is_none()
-        {
+        let now = Instant::now();
+        if now.checked_add(policy.handshake_timeout).is_none() {
             return Err(PolicyError::TimeoutTooLarge);
         }
         if policy
             .idle_timeout
-            .is_some_and(|timeout| Instant::now().checked_add(timeout).is_none())
+            .is_some_and(|timeout| now.checked_add(timeout).is_none())
         {
             return Err(PolicyError::TimeoutTooLarge);
         }
