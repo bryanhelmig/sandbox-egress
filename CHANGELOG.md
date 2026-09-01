@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Prove an allowed CNAME that resolves to a metadata address is rejected after
+  real wire alias following and never reaches the connector.
 - Extend resource measurement through repeated completed tunnels,
   transfer-limit denials, post-success resets, and pre-DNS denials, with exact
   accounting and per-batch descriptor/thread recovery.

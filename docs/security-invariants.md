@@ -128,6 +128,13 @@ that full-set validation, duplicate approved socket addresses are collapsed in
 first-seen order. Repeated records therefore consume one bounded answer slot
 each but cannot amplify sequential connection attempts.
 
+Resolver-followed aliases do not transfer trust from the allowed original
+hostname to their target addresses. Real-wire conformance follows an allowed
+CNAME through separate A and AAAA target questions to a link-local metadata
+address, then requires `resolved-address-denied` with zero connector calls.
+The CONNECT hostname remains the authority rule; every terminal address still
+passes the destination floor independently.
+
 Approved addresses retain resolver order and are dialed one at a time. Before
 each attempt, the remaining absolute handshake time is divided evenly across
 the addresses not yet tried. A pending early address therefore cannot consume

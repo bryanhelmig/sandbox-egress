@@ -1576,6 +1576,32 @@ mod tests {
         response
     }
 
+    fn local_cname_metadata_response(query: &[u8]) -> Vec<u8> {
+        const TARGET: &[u8] = b"\x08metadata\x04test\x00";
+
+        let question_end = local_dns_question_end(query);
+        let question_name = &query[12..question_end - 4];
+        let question_type = u16::from_be_bytes([query[question_end - 4], query[question_end - 3]]);
+        let answer_count = u8::from(question_name == TARGET && question_type == 1);
+        let mut response = Vec::with_capacity(question_end + 32);
+        response.extend_from_slice(&query[..2]);
+        response.extend_from_slice(&[0x81, 0x80]);
+        response.extend_from_slice(&[0, 1, 0, answer_count, 0, 0, 0, 0]);
+        response.extend_from_slice(&query[12..question_end]);
+        if question_name == TARGET {
+            if question_type == 1 {
+                response.extend_from_slice(&[
+                    0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 169, 254, 169, 254,
+                ]);
+            }
+        } else {
+            response[6..8].copy_from_slice(&[0, 1]);
+            response.extend_from_slice(&[0xc0, 0x0c, 0, 5, 0, 1, 0, 0, 0, 60, 0, 15]);
+            response.extend_from_slice(TARGET);
+        }
+        response
+    }
+
     fn local_nxdomain_response(query: &[u8]) -> Vec<u8> {
         let question_end = local_dns_question_end(query);
         let mut response = Vec::with_capacity(question_end + 36);
@@ -2188,6 +2214,48 @@ mod tests {
             assert_eq!(answer.answers()[0].data.to_string(), "127.0.0.1");
         });
         server.join().expect("join local DNS server");
+    }
+
+    #[test]
+    fn cname_to_metadata_is_rejected_before_dialing() {
+        let (address, server) = start_local_dns(4, local_cname_metadata_response);
+        let dial_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let connector = Arc::new(RejectingConnector(Arc::clone(&dial_attempts)));
+        let proxy = Proxy::start_with_test_connector(
+            ProxyConfig::default()
+                .with_dns_server(address)
+                .with_dns_cache(0, Duration::ZERO),
+            connector,
+        )
+        .expect("start explicit DNS proxy");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                hostname_policy("alias.test", 443),
+            )
+            .expect("attach DNS lease");
+        let mut client =
+            std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+        std::io::Write::write_all(
+            &mut client,
+            b"CONNECT alias.test:443 HTTP/1.1\r\nHost: alias.test\r\n\r\n",
+        )
+        .expect("write aliased CONNECT");
+        let mut response = String::new();
+        std::io::Read::read_to_string(&mut client, &mut response).expect("read aliased DNS denial");
+
+        assert!(response.starts_with("HTTP/1.1 403"), "{response}");
+        assert!(response.contains("resolved-address-denied"), "{response}");
+        assert_eq!(dial_attempts.load(Ordering::Acquire), 0);
+        let final_usage = lease
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("close DNS lease")
+            .usage();
+        assert_eq!(final_usage.denied_connections, 1);
+        server.join().expect("join local DNS server");
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
     }
 
     #[test]

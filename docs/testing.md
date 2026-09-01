@@ -310,6 +310,11 @@ A duplicate-answer case supplies the same approved address in all 64 default
 slots and requires exactly one dial attempt. The mixed allowed/metadata case
 uses the same recording connector and requires zero attempts, proving the
 entire set is validated before first-seen-order deduplication reaches dialing.
+A real UDP CNAME case allows the original hostname, observes Hickory's A and
+AAAA questions for both alias and target, returns `169.254.169.254` for the
+target, and requires the ordinary resolved-address denial with zero connector
+calls. This proves alias following cannot inherit hostname trust at the IP
+boundary.
 A deterministic failover case holds the first approved connector future
 pending under a 400 ms absolute deadline and maps the second address to a local
 listener. It must connect through the second address in resolver order; the old

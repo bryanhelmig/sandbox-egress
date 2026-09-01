@@ -2987,3 +2987,33 @@ exact Linux factories, package verification, and rootless 138/138 conformance
 run passed; the image remains
 `sha256:911cf1e1b00046aeed79dad19d252c52863ada036992da6a0b201b8494ab6e97`
 (40,555,530 bytes).
+
+## 2026-09-01 — reject forbidden addresses after real DNS aliases
+
+The resolver boundary now has a real DNS-wire proof for an allowed hostname
+whose CNAME terminates at the link-local metadata address. A first version of
+the fixture accidentally returned the original alias again when Hickory queried
+the CNAME target; that correctly ended at the bounded DNS deadline with no dial,
+but did not prove the intended address-floor behavior. The corrected fixture
+distinguishes question name and type. It observes A and AAAA questions for both
+`alias.test.` and `metadata.test.`, returns `169.254.169.254` only for the
+target's A question, and gives the target's AAAA question an empty successful
+answer.
+
+The original CONNECT hostname remains the immutable policy authority; the
+terminal address is independently checked against the special-purpose floor.
+The request is denied as `resolved-address-denied`, the test connector records
+zero attempts, and certified close reports exactly one denial. The focused case
+passed 25 consecutive runs. This establishes the one-hop forbidden-address
+case without claiming coverage of longer chains, loops, or malformed replies.
+
+Production code is unchanged. Whole-tree SCC 4.0.0 complexity moved from
+582/1,764 to 590/1,790 structural/cognitive, entirely in deterministic test
+code. The native and exact Rust 1.88 Linux factories passed 139 deterministic
+cases, documentation, and package verification. Linux's 64-caller control lane
+peaked at 5,332 KiB RSS and returned to four descriptors and two threads at
+4,844 KiB in 175 ms. The 500-lease lane returned to four and two at 4,860 KiB
+in 1,060 ms. The 2,000-connection terminal lane returned to four and two at
+5,160 KiB in 436 ms. The rootless 139/139 conformance image is
+`sha256:ed2e8ed16d0d4667e8084c8c8bbd777a3ad74ce3762516142c332ed45fc5fd70`
+(40,557,141 bytes).

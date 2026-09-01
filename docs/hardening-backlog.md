@@ -22,7 +22,8 @@ contributor instead of preserving solved work as apparent backlog.
 
 ## DNS, IP policy, and SSRF
 
-- CNAME chains, loops, large answer sets, truncation, and malformed packets.
+- CNAME loops and longer chains, plus malformed DNS packets; a one-hop alias to
+  a forbidden terminal address is already pinned on the real wire path.
 - Resolver memory behavior while parsing large but cardinality-bounded answers.
 
 ## TLS and application authority
