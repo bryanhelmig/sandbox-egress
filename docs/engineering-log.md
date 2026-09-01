@@ -3044,3 +3044,32 @@ ms. The 2,000-connection terminal lane returned to four and two at 5,180 KiB
 in 433 ms. The rootless 140/140 conformance image is
 `sha256:44d85c05ace8552dd073130eada044287415097f5dc5dd293b647d14e60c21df`
 (40,558,939 bytes).
+
+## 2026-09-01 — bound CNAME cycles and isolate wire conformance
+
+A real UDP authority now alternates valid CNAME answers between `loop.test.`
+and `target.test.`. Supplying only four replies left the production resolver
+active until the lease deadline, yielding the expected no-dial `dns-timeout`
+but not the desired chain-bound proof. Inspection of the pinned Hickory 0.26.1
+source identified its maintained eight-hop CNAME depth. Supplying the complete
+A and AAAA paths produces exactly 16 questions, then `502 dns-failed`, zero
+connector attempts, and one certified denial. The focused case passed 25
+consecutive runs.
+
+The alias-to-metadata, incomplete-header, and CNAME-cycle fixtures moved into
+`src/proxy/tests/dns_wire.rs`. Their shared listener and packet framing remain
+in the parent test module; production visibility and behavior are unchanged.
+This removes 123 lines from `proxy.rs` and moves its measured
+structural/cognitive complexity from 238/815 to 230/789. With the new cycle
+proof included, whole-tree complexity moves from 590/1,790 to 593/1,788. The
+small cognitive decrease is a file-boundary property of SCC's estimate, not a
+runtime optimization claim.
+
+The native and exact Rust 1.88 Linux factories passed 141 deterministic cases,
+documentation, and package verification. Linux's 64-caller control lane peaked
+at 5,344 KiB RSS and returned to four descriptors and two threads at 4,856 KiB
+in 177 ms. The 500-lease lane returned to four and two at 4,868 KiB in 1,088
+ms. The 2,000-connection terminal lane returned to four and two at 5,132 KiB
+in 453 ms. The rootless 141/141 conformance image is
+`sha256:8be96646ef39241618e47f579291fe4444d635712b5e11b62f4e5dea63c2df15`
+(40,561,917 bytes).

@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Bound a real two-name CNAME cycle to 16 A/AAAA questions and a no-dial
+  `dns-failed` denial, and isolate DNS-wire conformance from the proxy test body.
 - Pin an incomplete DNS wire reply to six bounded resolver questions, an
   immediate `dns-failed` denial, zero dial attempts, and exact lease cleanup.
 - Prove an allowed CNAME that resolves to a metadata address is rejected after

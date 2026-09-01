@@ -135,6 +135,11 @@ address, then requires `resolved-address-denied` with zero connector calls.
 The CONNECT hostname remains the authority rule; every terminal address still
 passes the destination floor independently.
 
+A two-name CNAME cycle is also finite. The production resolver follows its
+eight-hop bound independently for A and AAAA, producing exactly 16 local wire
+questions before `dns-failed`. No address reaches the connector, and close
+certifies the denial.
+
 Malformed resolver input cannot fall through to dialing. A real UDP fixture
 returns only the query transaction identifier, omitting even the DNS header.
 The maintained resolver makes six bounded A/AAAA attempts, after which the

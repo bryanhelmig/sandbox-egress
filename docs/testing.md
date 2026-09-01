@@ -315,6 +315,12 @@ AAAA questions for both alias and target, returns `169.254.169.254` for the
 target, and requires the ordinary resolved-address denial with zero connector
 calls. This proves alias following cannot inherit hostname trust at the IP
 boundary.
+A two-name CNAME cycle receives valid alias replies through the production
+resolver and requires exactly 16 A/AAAA questions: the resolver's eight-hop
+bound for each family. It then returns `dns-failed`, never calls the connector,
+and closes with one denial. The alias, cycle, and incomplete-reply cases live in
+`src/proxy/tests/dns_wire.rs`, keeping wire construction out of the proxy's
+main conformance body.
 An incomplete-wire case answers each A/AAAA attempt with only the two-byte
 transaction identifier. It requires exactly six questions, a bounded
 `dns-failed` response, zero connector calls, and exact final denial accounting.
