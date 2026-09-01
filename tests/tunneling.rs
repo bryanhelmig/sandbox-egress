@@ -292,6 +292,81 @@ fn upstream_reset_is_terminal_but_not_completed_or_denied() {
 }
 
 #[test]
+fn refused_upstream_is_denied_before_connect_success() {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind refused address");
+    let port = listener.local_addr().expect("refused address").port();
+    drop(listener);
+
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let lease = attach_for_ports(&proxy, &[port], None);
+    let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+    client
+        .write_all(
+            format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").as_bytes(),
+        )
+        .expect("write CONNECT");
+    let mut response = String::new();
+    client
+        .read_to_string(&mut response)
+        .expect("read dial refusal");
+
+    assert!(response.starts_with("HTTP/1.1 502"), "{response}");
+    assert!(response.contains("dial-failed"), "{response}");
+    assert!(
+        !response.contains("200 Connection Established"),
+        "{response}"
+    );
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close refused tunnel")
+        .usage();
+    assert_eq!(final_usage.accepted_connections, 1);
+    assert_eq!(final_usage.active_connections, 0);
+    assert_eq!(final_usage.completed_connections, 0);
+    assert_eq!(final_usage.denied_connections, 1);
+    assert_eq!(final_usage.uploaded_bytes, 0);
+    assert_eq!(final_usage.downloaded_bytes, 0);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
+fn guest_reset_preserves_bytes_read_before_broken_pipe() {
+    let (port, accepted, writer_stopped, peer_thread) = start_flooding_peer();
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let lease = attach_for_ports(&proxy, &[port], None);
+    let client = open_tunnel(lease.endpoint().socket_addr(), port);
+    accepted
+        .recv_timeout(Duration::from_secs(1))
+        .expect("upstream accepted proxy");
+    wait_for_bytes(|| lease.usage().downloaded_bytes);
+
+    SockRef::from(&client)
+        .set_linger(Some(Duration::ZERO))
+        .expect("arm guest reset");
+    drop(client);
+    assert_terminal_write(
+        writer_stopped
+            .recv_timeout(Duration::from_secs(1))
+            .expect("upstream writer stopped"),
+    );
+    peer_thread.join().expect("upstream writer thread");
+
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close broken-pipe tunnel")
+        .usage();
+    assert_eq!(final_usage.active_connections, 0);
+    assert_eq!(final_usage.completed_connections, 0);
+    assert_eq!(final_usage.denied_connections, 0);
+    assert!(final_usage.downloaded_bytes > 0);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
 fn zero_download_limit_never_forwards_upstream_payload() {
     let (port, sender) = start_sender(b"secret");
     let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");

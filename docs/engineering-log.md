@@ -2845,3 +2845,34 @@ threads at 4,772 KiB in 174 ms. The following 500-lease lane returned to four
 and two at 4,764 KiB in 1,104 ms. The rootless 134/134 conformance image is
 `sha256:88e887c52519019718f7febf43e5a50d8ed84672257d99880833661b1b5053ad`
 (40,529,915 bytes), 1,766 bytes smaller than the pre-extraction image.
+
+## 2026-09-01 — pin both sides of CONNECT success under transport failure
+
+The tunnel suite already proved an upstream reset after five uploaded bytes,
+but two backlog edges were still implicit. A new pre-establishment case binds
+and releases a local destination, then requires the proxy to return the stable
+502 `dial-failed` denial without ever emitting `200 Connection Established`.
+Final usage is exactly one accepted, one denied, zero completed, zero active,
+and zero bytes. A refused destination therefore remains a bounded policy
+outcome rather than masquerading as an established tunnel.
+
+The symmetric post-establishment case uses a continuously writing local
+upstream. It waits until the proxy's download counter advances, arms an
+immediate guest reset, and requires the upstream writer to observe a terminal
+socket error. Certified close then preserves nonzero bytes already read while
+reporting neither completion nor policy denial. This pins the documented
+accounting boundary: counters measure bytes read by the proxy, including bytes
+whose following write reaches a broken pipe; they do not claim application
+delivery.
+
+Both cases passed 25 consecutive focused runs. Production code is unchanged.
+Whole-tree SCC 4.0.0 complexity moved from 564/1,716 to 568/1,724
+structural/cognitive, entirely in conformance code. The native and exact Rust
+1.88 Linux factories passed all 136 deterministic cases, three README compile
+examples, documentation, and package verification; native dependency policy
+checks also passed. Linux's 64-caller control lane peaked at 5,324 KiB RSS and
+returned to four descriptors and two threads at 4,796 KiB in 171 ms. The
+following 500-lease lane returned to four and two at 4,816 KiB in 1,066 ms.
+The rootless 136/136 conformance image is
+`sha256:e815594c685173018879d705817342fef924bf255ede92a241c19548215f6dcf`
+(40,535,243 bytes).

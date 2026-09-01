@@ -50,7 +50,6 @@ services may supplement research but must not become test dependencies.
 - Counter behavior on cancellation, denial, reset, timeout, and normal EOF.
 - Integer overflow and monotonic snapshot behavior.
 - Large full-duplex transfers and asymmetric traffic.
-- Broken-pipe accounting and upstream refusal before and after CONNECT success.
 - File-descriptor release after every terminal path.
 
 ## Capacity and denial of service

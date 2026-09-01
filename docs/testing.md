@@ -181,8 +181,8 @@ exactly one executable for each conformance target, strips copies, and carries
 only those binaries into a Debian runner. The CLI's compile-time executable
 dependency is copied at its exact embedded path. The factory deletes its
 compilation tree only after collection, before committing the source-dependent
-layer. The final image runs as UID/GID 65534 and must reproduce all 128
-deterministic cases without Cargo, source, or a build cache.
+layer. The final image runs as UID/GID 65534 and must reproduce every
+deterministic case without Cargo, source, or a build cache.
 
 Source-identity cases prove an IPv4 address and its mapped IPv6 transport
 spelling collide in the registry. A real dual-stack listener routes an IPv4
@@ -199,7 +199,11 @@ guest finishes upload, an upstream may still send a delayed response; after an
 upstream finishes download, the guest may still send a late upload. Both paths
 must preserve exact byte counters and count one normally completed tunnel. A
 separate upstream RST case proves delivered upload bytes remain accounted while
-the tunnel is neither completed nor classified as a policy denial.
+the tunnel is neither completed nor classified as a policy denial. The mirror
+case waits until download accounting advances, resets the guest, and requires
+the upstream writer to hit a terminal error while the read bytes remain in the
+final counters. A refused local destination separately requires a bounded 502
+`dial-failed` denial before any CONNECT-success response.
 
 Counter boundary tests seed cumulative atomics immediately below `u64::MAX`,
 then require accepted, completed, denied, upload, and download totals to
@@ -239,9 +243,10 @@ can be adjusted with `SANDBOX_EGRESS_CONTROL_CONCURRENCY` and
 The committed tunnel conformance lane currently checks graceful half-close in
 both directions, upstream reset classification, zero and exact download
 ceilings, independent per-tunnel budgets, idle tunnel shutdown, an uploader
-whose upstream never reads, and a downloader whose guest never reads. Terminal
-socket assertions reject timeouts: a peer that merely remains blocked is not
-accepted as evidence of revocation.
+whose upstream never reads, a downloader whose guest never reads, guest-reset
+broken-pipe accounting, and refusal before CONNECT success. Terminal socket
+assertions reject timeouts: a peer that merely remains blocked is not accepted
+as evidence of revocation.
 
 A simultaneous-backpressure case makes the guest and upstream write
 continuously while neither reads. Both accounting directions must advance

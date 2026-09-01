@@ -190,7 +190,11 @@ An ordinary EOF is directional. The proxy propagates it as a write-half
 shutdown and continues the reverse copy until that direction also ends. Only
 two graceful direction endings count as a completed tunnel. A connection reset
 ends the owned task and preserves bytes already read, but does not become a
-completion or a policy denial.
+completion or a policy denial. This applies symmetrically: if the guest resets
+while the proxy is forwarding an upstream response, already-read download
+bytes remain accounted even when the following write reaches a broken pipe.
+An upstream connection refusal happens before CONNECT success and is instead a
+bounded `dial-failed` policy denial; the proxy never sends a misleading 200.
 
 Cumulative connection and byte counters use saturating atomic updates. They
 remain monotonic at the integer boundary instead of wrapping, and byte

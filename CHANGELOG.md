@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Pin upstream refusal before CONNECT success and guest-reset broken-pipe
+  accounting after success, including exact completion and denial semantics.
 - Isolate resolver construction and bounded lookup in a small internal module
   without changing the public API or total complexity.
 - Prove certified lease close cancels Hickory's real wire lookup so late DNS
