@@ -262,9 +262,13 @@ for work that cannot acquire a resolver permit in time.
 
 Resolver construction tests inspect Hickory's effective options and require
 the configured response-count ceiling plus the same maximum TTL for positive
-and negative entries. Configuration can narrow the built-in 8,192-entry and
-24-hour limits but cannot widen them. An identity-reuse case gives two runs the
-same hostname and repeated loopback answer: the first policy explicitly grants
+and negative entries, as well as TCP recovery after a failed UDP exchange.
+Configuration can narrow the built-in 8,192-entry and 24-hour limits but cannot
+widen them. Explicit server tests use a nonstandard loopback port, require the
+hosts file to be disabled, and complete a UDP-truncated response over a real
+TCP DNS connection. More than eight distinct servers, port zero, and scoped
+IPv6 addresses fail validation. An identity-reuse case gives two runs the same
+hostname and repeated loopback answer: the first policy explicitly grants
 loopback and reaches the connector, while the replacement policy does not and
 must deny without another connector call.
 

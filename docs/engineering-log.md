@@ -2726,3 +2726,43 @@ Because the change only adds documentation and a maintainer script, the
 rootless 128/128 conformance image remained byte-identical at
 `sha256:1b29c3f1c3fc757112dc4e4591ee011ee5fbfe5d9aaefa96095d359f9db80b5d`
 (40,491,607 bytes).
+
+## 2026-09-01 — pin trusted recursive DNS configuration and TCP recovery
+
+The production resolver previously always snapshotted the host operating
+system configuration. That is a reasonable default but leaves a Firecracker
+supervisor unable to bind proxy resolution to its own controlled recursive
+service. `ProxyConfig::with_dns_server` now adds trusted process-wide socket
+addresses before startup. At least one explicit server bypasses both host
+resolver configuration and the hosts file; every configured port is used for
+UDP and TCP. The guest and individual leases have no resolver-selection input.
+
+The list deduplicates exact socket addresses and startup rejects more than
+eight, port zero, or a scoped IPv6 address. The scope rejection is deliberate:
+Hickory's name-server configuration stores an `IpAddr` and cannot faithfully
+carry `SocketAddrV6::scope_id`. Silently discarding it could route a link-local
+server differently from the operator's request. The default system-configured
+mode remains unchanged except that UDP errors are now allowed to retry over
+TCP.
+
+Tests were written red first for the public configuration and resolver route.
+A controlled recursive server on a nonstandard loopback port proves explicit
+mode resolves without a host configuration or hosts-file path. A second local
+server returns a valid truncated UDP response, accepts Hickory's length-prefixed
+TCP retry on the same port, and returns the complete A answer. That transport
+case passed ten consecutive focused runs and has a two-second bounded accept
+failure rather than hanging if fallback regresses. Validation cases pin
+deduplication and every new startup bound.
+
+Whole-tree SCC 4.0.0 complexity moved from 539/1,613 to 554/1,667
+structural/cognitive. The production cost is one bounded configuration vector,
+validation, and one resolver-construction branch; most of the increase is the
+dual-protocol test server. The native and exact Rust 1.88 Linux factories
+passed all 133 deterministic cases, three README compile examples,
+documentation, and package verification; native dependency policy checks also
+passed. Linux's 64-caller control lane peaked at 5,268 KiB RSS and returned to
+four descriptors and two threads at 4,732 KiB in 196 ms. The following
+500-lease lane returned to four and two at 4,740 KiB in 1,087 ms. The rootless
+133/133 conformance image is
+`sha256:c9579b68fd0652097bcc5c2dcb6bd43d4e4bd5c0497e3eceb97a24595f4e9f9f`
+(40,524,986 bytes).

@@ -584,9 +584,34 @@ enum ResolverBackend {
 }
 
 fn build_system_resolver(config: &ProxyConfig) -> Result<TokioResolver, String> {
-    let mut builder = TokioResolver::builder_tokio().map_err(|error| error.to_string())?;
+    let mut builder = if config.dns_servers.is_empty() {
+        TokioResolver::builder_tokio().map_err(|error| error.to_string())?
+    } else {
+        let name_servers = config
+            .dns_servers
+            .iter()
+            .copied()
+            .map(configured_name_server)
+            .collect();
+        let resolver_config =
+            hickory_resolver::config::ResolverConfig::from_parts(None, Vec::new(), name_servers);
+        let mut builder = TokioResolver::builder_with_config(
+            resolver_config,
+            hickory_resolver::net::runtime::TokioRuntimeProvider::default(),
+        );
+        builder.options_mut().use_hosts_file = hickory_resolver::config::ResolveHosts::Never;
+        builder
+    };
     apply_resolver_cache_options(builder.options_mut(), config);
     builder.build().map_err(|error| error.to_string())
+}
+
+fn configured_name_server(address: SocketAddr) -> hickory_resolver::config::NameServerConfig {
+    let mut udp = hickory_resolver::config::ConnectionConfig::udp();
+    udp.port = address.port();
+    let mut tcp = hickory_resolver::config::ConnectionConfig::tcp();
+    tcp.port = address.port();
+    hickory_resolver::config::NameServerConfig::new(address.ip(), true, vec![udp, tcp])
 }
 
 fn apply_resolver_cache_options(
@@ -596,6 +621,7 @@ fn apply_resolver_cache_options(
     options.cache_size = config.dns_cache_entries;
     options.positive_max_ttl = Some(config.dns_cache_max_ttl);
     options.negative_max_ttl = Some(config.dns_cache_max_ttl);
+    options.try_tcp_on_error = true;
 }
 
 impl ResolverBackend {
@@ -1526,6 +1552,74 @@ mod tests {
         (address, server)
     }
 
+    fn start_truncated_udp_dns() -> (SocketAddr, thread::JoinHandle<()>) {
+        use std::io::{Read as _, Write as _};
+
+        let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .expect("bind local TCP DNS server");
+        listener
+            .set_nonblocking(true)
+            .expect("configure TCP DNS server");
+        let address = listener.local_addr().expect("local TCP DNS address");
+        let socket = std::net::UdpSocket::bind(address).expect("bind matching UDP DNS server");
+        socket
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .expect("set UDP DNS server timeout");
+
+        let server = thread::spawn(move || {
+            let mut udp_query = [0_u8; 2_048];
+            let (length, peer) = socket
+                .recv_from(&mut udp_query)
+                .expect("receive UDP DNS query");
+            let question_end = local_dns_question_end(&udp_query[..length]);
+            let mut truncated = Vec::with_capacity(question_end);
+            truncated.extend_from_slice(&udp_query[..2]);
+            truncated.extend_from_slice(&[0x83, 0x80]);
+            truncated.extend_from_slice(&[0, 1, 0, 0, 0, 0, 0, 0]);
+            truncated.extend_from_slice(&udp_query[12..question_end]);
+            socket
+                .send_to(&truncated, peer)
+                .expect("send truncated UDP DNS response");
+
+            let accept_deadline = Instant::now() + Duration::from_secs(2);
+            let (mut stream, _) = loop {
+                match listener.accept() {
+                    Ok(connection) => break connection,
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                        assert!(
+                            Instant::now() < accept_deadline,
+                            "TCP DNS fallback was not attempted"
+                        );
+                        thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("accept TCP DNS fallback: {error}"),
+                }
+            };
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .expect("set TCP DNS read timeout");
+            stream
+                .set_write_timeout(Some(Duration::from_secs(2)))
+                .expect("set TCP DNS write timeout");
+            let mut length_bytes = [0_u8; 2];
+            stream
+                .read_exact(&mut length_bytes)
+                .expect("read TCP DNS query length");
+            let query_length = usize::from(u16::from_be_bytes(length_bytes));
+            let mut tcp_query = vec![0_u8; query_length];
+            stream
+                .read_exact(&mut tcp_query)
+                .expect("read TCP DNS query");
+            let response = local_a_response(&tcp_query);
+            let response_length = u16::try_from(response.len()).expect("bounded DNS response");
+            stream
+                .write_all(&response_length.to_be_bytes())
+                .expect("write TCP DNS response length");
+            stream.write_all(&response).expect("write TCP DNS response");
+        });
+        (address, server)
+    }
+
     fn local_a_response(query: &[u8]) -> Vec<u8> {
         let question_end = local_dns_question_end(query);
         let mut response = Vec::with_capacity(question_end + 16);
@@ -2097,6 +2191,48 @@ mod tests {
             resolver.options().negative_max_ttl,
             Some(Duration::from_secs(19))
         );
+        assert!(resolver.options().try_tcp_on_error);
+    }
+
+    #[test]
+    fn explicit_dns_server_bypasses_host_configuration() {
+        let (address, server) = start_local_dns(1, local_a_response);
+        let config = ProxyConfig::default().with_dns_server(address);
+        let resolver = build_system_resolver(&config).expect("build explicit resolver");
+        assert_eq!(
+            resolver.options().use_hosts_file,
+            hickory_resolver::config::ResolveHosts::Never
+        );
+        assert!(resolver.options().try_tcp_on_error);
+
+        let runtime = tokio::runtime::Runtime::new().expect("start resolver test runtime");
+        runtime.block_on(async {
+            let answer = resolver
+                .ipv4_lookup("explicit-resolver.test.")
+                .await
+                .expect("resolve through configured DNS server");
+            assert_eq!(answer.answers().len(), 1);
+            assert_eq!(answer.answers()[0].data.to_string(), "127.0.0.1");
+        });
+        server.join().expect("join local DNS server");
+    }
+
+    #[test]
+    fn explicit_dns_server_retries_truncated_udp_over_tcp() {
+        let (address, server) = start_truncated_udp_dns();
+        let config = ProxyConfig::default().with_dns_server(address);
+        let resolver = build_system_resolver(&config).expect("build explicit resolver");
+        let runtime = tokio::runtime::Runtime::new().expect("start resolver test runtime");
+
+        runtime.block_on(async {
+            let answer = resolver
+                .ipv4_lookup("tcp-fallback.test.")
+                .await
+                .expect("retry truncated response over TCP");
+            assert_eq!(answer.answers().len(), 1);
+            assert_eq!(answer.answers()[0].data.to_string(), "127.0.0.1");
+        });
+        server.join().expect("join local DNS server");
     }
 
     #[test]

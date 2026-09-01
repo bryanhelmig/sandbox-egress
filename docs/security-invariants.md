@@ -92,6 +92,16 @@ Permit starvation, resolver failure, and deadline enforcement are distinct
 bounded denials: `503 dns-capacity`, `502 dns-failed`, and `504 dns-timeout`.
 None can start a dial.
 
+Without explicit servers, resolver construction snapshots the host operating
+system configuration at proxy startup. When the host supplies one or more DNS
+server socket addresses, construction does not consult the operating system's
+resolver configuration or hosts file. Explicit servers use their configured
+port over UDP and retry truncated or failed UDP responses over TCP. This is
+process configuration fixed before the listener starts; neither a guest nor an
+attached lease can choose a resolver. At most eight distinct servers are
+accepted, port zero is invalid, and scoped IPv6 server addresses fail startup
+because their scope cannot be represented faithfully by the resolver backend.
+
 The shared resolver cache defaults to at most 8,192 responses, each with at
 most 24 hours of validity; the host may narrow either bound or disable storage
 with zero entries. Cached data is proxy-owned, not lease-owned work. Every

@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Add trusted process-wide explicit DNS server configuration, bounded to eight
+  socket addresses, with hosts-file isolation and UDP-to-TCP recovery.
 - Add an opt-in IANA registry-drift check with reviewed IPv4 and IPv6 CSV
   hashes, without adding a public-network dependency to tests or generation.
 - Add a direct loopback TCP control beside the allowed CONNECT benchmark so

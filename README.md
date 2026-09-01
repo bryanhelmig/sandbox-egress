@@ -138,6 +138,8 @@ The current vertical slice provides:
 - a process-wide resolver cache explicitly bounded to 8,192 responses and a
   24-hour TTL ceiling by default; the host may narrow either bound or disable
   caching;
+- optional host-pinned recursive DNS servers with UDP plus truncated-response
+  TCP recovery, independent of host resolver and hosts-file changes;
 - bounded DNS answer cardinality, with oversized sets rejected before dialing;
 - direct dialing of a checked `SocketAddr`, with no second lookup;
 - sequential address failover with a fair share of the remaining absolute
@@ -180,8 +182,26 @@ checks only the visible outer SNI. It cannot know the encrypted inner name.
 Neither mode terminates TLS or checks the application authority inside the
 encrypted tunnel, so Sandbox Egress does not claim to eliminate every form of
 domain fronting. Plain HTTP forwarding, transparent interception,
-and configurable resolver backends are also not yet implemented. These gaps
-are tracked rather than hidden.
+arbitrary resolver backends, and configurable destination-range tables are also
+not yet implemented. These gaps are tracked rather than hidden.
+
+By default the proxy snapshots the host's resolver configuration when it
+starts. A sandbox supervisor can instead pin one or more recursive servers;
+explicit mode never reads the hosts file or host resolver configuration and
+uses each configured port for both UDP and TCP:
+
+```rust,no_run
+# use sandbox_egress::ProxyConfig;
+let config = ProxyConfig::default()
+    .with_dns_server("10.0.0.2:53".parse()?)
+    .with_dns_server("10.0.0.3:53".parse()?);
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+This is trusted process configuration, not a per-lease or guest-selected
+resolver. Up to eight distinct servers are accepted. Scoped IPv6 server
+addresses are rejected because the underlying resolver cannot preserve their
+scope identifier.
 
 If the proxy host uses DNS64/NAT64 with a network-specific prefix, register the
 actual routed prefix in `ProxyConfig` before starting the proxy:

@@ -9,6 +9,7 @@ use crate::diagnostic::DiagnosticConfig;
 
 pub(crate) const MAX_DNS_CACHE_ENTRIES: u64 = 8_192;
 pub(crate) const MAX_DNS_CACHE_TTL: Duration = Duration::from_secs(86_400);
+pub(crate) const MAX_DNS_SERVERS: usize = 8;
 
 /// Process-wide proxy configuration.
 #[derive(Clone, Debug)]
@@ -19,6 +20,7 @@ pub struct ProxyConfig {
     pub(crate) max_concurrent_dns: usize,
     pub(crate) dns_cache_entries: u64,
     pub(crate) dns_cache_max_ttl: Duration,
+    pub(crate) dns_servers: Vec<SocketAddr>,
     pub(crate) max_resolved_addresses: usize,
     pub(crate) max_header_bytes: usize,
     pub(crate) max_client_hello_bytes: usize,
@@ -46,6 +48,18 @@ impl ProxyConfig {
             .any(|prefix| !matches!(prefix.prefix_len(), 32 | 40 | 48 | 56 | 64 | 96))
         {
             return Err("NAT64 prefix length must be 32, 40, 48, 56, 64, or 96");
+        }
+        if self.dns_servers.len() > MAX_DNS_SERVERS {
+            return Err("too many explicit DNS servers");
+        }
+        if self.dns_servers.iter().any(|server| server.port() == 0) {
+            return Err("explicit DNS server port must be nonzero");
+        }
+        if self.dns_servers.iter().any(|server| match server {
+            SocketAddr::V4(_) => false,
+            SocketAddr::V6(server) => server.scope_id() != 0,
+        }) {
+            return Err("scoped IPv6 DNS servers are not supported");
         }
         Ok(())
     }
@@ -80,6 +94,23 @@ impl ProxyConfig {
     pub fn with_dns_cache(mut self, entries: u64, max_ttl: Duration) -> Self {
         self.dns_cache_entries = entries.min(MAX_DNS_CACHE_ENTRIES);
         self.dns_cache_max_ttl = max_ttl.min(MAX_DNS_CACHE_TTL);
+        self
+    }
+
+    /// Add an explicit recursive DNS server for this proxy process.
+    ///
+    /// When at least one server is supplied, the resolver does not read the
+    /// host's resolver configuration or hosts file. Each server is contacted
+    /// over UDP with TCP available for responses that require fallback. The
+    /// address and port are host-controlled process configuration, never a
+    /// guest or lease policy selector.
+    ///
+    /// Duplicate socket addresses are ignored. [`Proxy::start`](crate::Proxy::start)
+    /// rejects more than eight distinct servers and scoped IPv6 addresses.
+    pub fn with_dns_server(mut self, server: SocketAddr) -> Self {
+        if !self.dns_servers.contains(&server) {
+            self.dns_servers.push(server);
+        }
         self
     }
 
@@ -167,6 +198,7 @@ impl Default for ProxyConfig {
             max_concurrent_dns: 128,
             dns_cache_entries: MAX_DNS_CACHE_ENTRIES,
             dns_cache_max_ttl: MAX_DNS_CACHE_TTL,
+            dns_servers: Vec::new(),
             max_resolved_addresses: 64,
             max_header_bytes: 32 * 1_024,
             max_client_hello_bytes: 64 * 1_024,
@@ -235,6 +267,52 @@ mod tests {
         let clamped = ProxyConfig::default().with_dns_cache(u64::MAX, Duration::MAX);
         assert_eq!(clamped.dns_cache_entries, 8_192);
         assert_eq!(clamped.dns_cache_max_ttl, Duration::from_secs(86_400));
+    }
+
+    #[test]
+    fn explicit_dns_servers_are_deduplicated_and_bounded() {
+        let first = "127.0.0.1:53".parse().expect("valid DNS server");
+        let mut config = ProxyConfig::default()
+            .with_dns_server(first)
+            .with_dns_server(first);
+        assert_eq!(config.dns_servers, vec![first]);
+
+        let server_limit = u16::try_from(MAX_DNS_SERVERS).expect("small DNS server ceiling");
+        for port in 54..=(53 + server_limit) {
+            config = config.with_dns_server(SocketAddr::new(Ipv4Addr::LOCALHOST.into(), port));
+        }
+        assert!(config.validate().is_err());
+        assert!(matches!(
+            crate::Proxy::start(config),
+            Err(crate::ProxyError::Initialization(_))
+        ));
+    }
+
+    #[test]
+    fn explicit_scoped_ipv6_dns_server_is_rejected() {
+        let server = SocketAddr::V6(std::net::SocketAddrV6::new(
+            "fe80::1".parse().expect("valid link-local address"),
+            53,
+            0,
+            7,
+        ));
+        assert!(
+            ProxyConfig::default()
+                .with_dns_server(server)
+                .validate()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn explicit_dns_server_requires_a_destination_port() {
+        let server = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 0);
+        assert!(
+            ProxyConfig::default()
+                .with_dns_server(server)
+                .validate()
+                .is_err()
+        );
     }
 
     #[test]

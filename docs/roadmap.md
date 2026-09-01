@@ -34,7 +34,8 @@
 - Plain HTTP absolute-form forwarding.
 - Optional transparent ingress adapter.
 - Host-authenticated identities beyond source IP.
-- Configurable resolver and destination-range tables.
+- Arbitrary resolver backends and configurable destination-range tables;
+  explicit recursive server addresses are implemented.
 - Thin production daemon configuration and metrics export.
 
 ## Release gates
