@@ -5516,7 +5516,7 @@ prohibited Rust blocks, or prohibited test-harness references. Every shell
 entry point parses and is executable, the package list remains 69 files, and
 the commit graph passes full object verification. One unreachable blob from a
 discarded experiment remains in the local object database; it is not reachable
-from the 187-commit history or package and has no release effect.
+from the committed history or package and has no release effect.
 
 ## 2026-09-01 — retain explicit Rustls TLS 1.2 support
 
