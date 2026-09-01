@@ -20,7 +20,7 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tokio_util::task::task_tracker::TaskTrackerToken;
 
-use crate::connect::{ConnectRequest, parse_connect};
+use crate::connect::{ConnectRequest, find_header_end, parse_connect};
 use crate::diagnostic::{DenialReason, DiagnosticReporter};
 use crate::policy::canonical_hostname;
 use crate::resolver::{ResolverBackend, build_system_resolver};
@@ -1491,13 +1491,6 @@ where
             return Ok(HeaderBlock { bytes, end });
         }
     }
-}
-
-fn find_header_end(bytes: &[u8], scan_from: usize) -> Option<usize> {
-    bytes[scan_from..]
-        .windows(4)
-        .position(|window| window == b"\r\n\r\n")
-        .map(|index| scan_from + index + 4)
 }
 
 async fn deny(

@@ -6,6 +6,8 @@ use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::TcpStream;
 
+use crate::connect::find_header_end;
+
 const MAX_RESPONSE_HEADER_BYTES: usize = 32 * 1_024;
 const MAX_RESPONSE_HEADERS: usize = 64;
 
@@ -65,13 +67,6 @@ pub(crate) async fn connect_via(
     validate_response(&bytes[..end])?;
     let prefix = bytes.split_off(end);
     Ok(UpstreamStream::with_prefix(stream, prefix))
-}
-
-fn find_header_end(bytes: &[u8], scan_from: usize) -> Option<usize> {
-    bytes[scan_from..]
-        .windows(4)
-        .position(|window| window == b"\r\n\r\n")
-        .map(|index| scan_from + index + 4)
 }
 
 fn validate_response(bytes: &[u8]) -> io::Result<()> {

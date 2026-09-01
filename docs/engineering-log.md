@@ -4308,3 +4308,31 @@ finished at 5,960 KiB, four descriptors, and two threads. The rootless 176/176
 image is
 `sha256:edef1e2f9de754b1e690dfea53a8bf2421b6d889632fdf85cf02a90aebde09a8`
 (40,881,035 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — share HTTP header framing
+
+This simplification rotation moved the identical four-byte HTTP header boundary
+search into the CONNECT parsing module and reused it from both the guest and
+upstream response readers. Their protocol-specific byte ceilings, read sizes,
+errors, parser limits, and lifecycle ownership remain local. Production code
+drops five lines; whole-tree SCC 4.0.0 moves from 742/2,203 to 741/2,200
+structural/cognitive.
+
+An initial unannotated shared helper produced unstable code generation: its
+third A/B pair reached 190.90–216.42 versus 176.50–189.97 microseconds upstream
+and 704.94–744.33 versus 662.43–719.05 microseconds on the 1 MiB guest case.
+The shared pure primitive is now an explicit inline boundary. Three fresh
+alternating comparisons against exact parent `69c9d1a` overlap on both paths:
+the candidate spans 168.68–201.40 versus 174.40–198.46 microseconds upstream,
+and 660.46–677.47 versus 650.75–704.19 microseconds for the guest reader. No
+performance change is claimed.
+
+The native and exact Rust 1.88 Linux factories passed the unchanged 176
+deterministic cases, six doctests, documentation, package verification,
+benchmark smoke, and all six Linux resource lanes; native dependency policy
+checks also passed. Linux's TLS lane peaked at 15,156 KiB RSS, 265 descriptors,
+and six threads, recovered to 10,524 KiB, eight descriptors, and five threads,
+and finished at 5,800 KiB, four descriptors, and two threads. The rootless
+176/176 image is
+`sha256:0b95259bdfb24767fc3c28678a2ced6708054828189d220f35923ada331b66a7`
+(40,880,595 bytes) and runs as UID/GID 65534.
