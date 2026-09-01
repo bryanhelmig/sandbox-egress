@@ -68,7 +68,7 @@ whose temporary accept-error path starts at a 5 millisecond delay, doubles to a
 one-second ceiling, and resets after a successful accept. At the reviewed Lens
 pin, [both proxy listeners](https://github.com/lensapp/lens-sandbox-core/blob/2bc4ecc5d92a3dac985d28fbdfe0c1c0e1db4ffc/crates/lens-sandbox-core/src/proxy.rs#L510-L550)
 warn and immediately continue after an accept error. Current nono commit
-`46867b2f` [does the same](https://github.com/nolabs-ai/nono/blob/46867b2fd073e324d13448304e80d3a5725e9788/crates/nono-proxy/src/server.rs#L1370-L1405)
+`d3c6f6b0` [does the same](https://github.com/nolabs-ai/nono/blob/d3c6f6b009fa97fe3985dbf5bfb1b1a8ea6b3d27/crates/nono-proxy/src/server.rs#L1375-L1402)
 in its proxy loop. [Motosan](https://github.com/motosan-dev/motosan-sandbox/blob/13eab245e25100638db091381f24fe51d23d9e78/crates/motosan-sandbox-proxy/src/lib.rs#L53-L70)
 instead warns and ends its small per-run accept task.
 
@@ -124,7 +124,7 @@ reviewed in the same comparison are already inside the default link-local or
 non-global IPv6 floor; importing provider domain lists or broad internal DNS
 suffixes would duplicate the resolve-and-check guarantee and was not retained.
 
-A follow-up against current nono `46867b2f` and ressrf `52fc89cf` found no
+A follow-up against nono `46867b2f` and ressrf `52fc89cf` found no
 additional default address class to import. Nono's proxy inventory names AWS
 IPv4 and IPv6 metadata plus Google and Azure metadata hostnames. Ressrf's cloud
 tier additionally names the ECS task endpoint `169.254.170.2` and Azure

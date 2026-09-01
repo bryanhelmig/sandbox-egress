@@ -5175,3 +5175,22 @@ hosts, host denials, network grants, and network denials. It passed 25
 consecutive focused runs plus formatting and all-target Clippy. Public policy
 semantics and the deterministic test count remain unchanged at 187;
 whole-tree structural/cognitive complexity remains 776/2,300.
+
+## 2026-09-01 — compare layered capacity and dial deadlines
+
+The comparison rotation revisited Smokescreen's current request-concurrency
+and CONNECT-tunnel limiters and nono's direct connector. Smokescreen keeps a
+request-processing budget separate from a long-lived-tunnel budget. Nono gives
+each resolved address its own fixed connect timeout. Both are reasonable at
+their daemon boundaries, but neither is a stronger default for a run lease.
+
+Sandbox Egress's global and per-lease connection permits deliberately span
+headers, DNS, dialing, optional ClientHello inspection, and the live tunnel;
+every admitted socket therefore stays bounded and owned until terminal. Its
+separate dial semaphore is released after establishment, and sequential
+addresses share one absolute handshake deadline with a bounded fair slice.
+A second tunnel-only ceiling would add configuration and counters without
+closing an unbounded phase, while per-address deadlines could multiply one
+guest's total handshake time. Neither behavior is imported. The nono accept
+loop citation is refreshed to its reviewed `d3c6f6b0` pin; production code and
+the 187-case suite are unchanged.
