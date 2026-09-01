@@ -2532,3 +2532,34 @@ descriptors and five threads to four and two, finishing at 4,036 KiB RSS in
 1,070 ms. The rootless runner reproduced 126/126 as UID/GID 65534; image
 `sha256:ee432090b710a2dba21e2115f1b451be0295d08778440c38c18b7bfeb0c09efa`
 measured 40,465,442 bytes.
+
+## 2026-09-01 — keep diagnostic loss outside the close boundary
+
+The diagnostic reporter already used a bounded caller-owned channel,
+`try_send`, static reason codes, a process-wide hard rate ceiling, and
+saturating suppression accounting. Unit proofs showed those mechanisms in
+isolation. They did not prove that contention on the public denial path could
+not delay lease task completion and therefore certified close.
+
+A new real-socket concurrency case holds a zero-capacity diagnostic channel
+open without receiving. Sixty-four clients synchronize, send valid CONNECT
+requests denied by hostname policy, and require the stable `403 host-denied`
+response. Every request must terminate; `Lease::close` must then succeed within
+its deadline with exactly 64 accepted, 64 denied, zero completed, and zero
+active connections. The channel must remain empty. This passed ten consecutive
+focused native runs and the exact Linux factory.
+
+The first full factory rejected a direct `usize`-to-`u32` cast in the test under
+the project's strict Clippy profile. The case now uses a checked conversion;
+no lint exemption or production change was retained. Whole-tree SCC 4.0.0
+complexity moved from 524/1,577 to 527/1,584 structural/cognitive, entirely in
+the public conformance proof. No data path changed, so no throughput claim or
+benchmark was made.
+
+The native and exact Rust 1.88 Linux factories passed all 127 deterministic
+cases, doctests, documentation, and package verification; native dependency
+policy checks also passed. Linux's 500-lease lane returned from eight
+descriptors and five threads to four and two, finishing at 3,960 KiB RSS in
+1,073 ms. The rootless runner reproduced 127/127 as UID/GID 65534; image
+`sha256:363646ffdc786d3b2057edad46211b0f9a3fac68f0a1d767d2a91106bba71de6`
+measured 40,486,738 bytes.

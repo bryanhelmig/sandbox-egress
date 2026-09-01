@@ -2,7 +2,7 @@
 
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, TcpStream};
-use std::sync::{Arc, Barrier};
+use std::sync::{Arc, Barrier, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -76,6 +76,78 @@ fn global_capacity_is_reserved_and_accounted_before_spawn() {
     assert_eq!(usage.accepted_connections, 1);
     assert_eq!(usage.denied_connections, 1);
     assert_eq!(usage.active_connections, 0);
+}
+
+#[test]
+fn full_diagnostic_channel_cannot_block_concurrent_denials_or_close() {
+    const CLIENTS: usize = 64;
+
+    let (diagnostic_tx, diagnostic_rx) = mpsc::sync_channel(0);
+    let proxy = Proxy::start(
+        ProxyConfig::default()
+            .with_max_connections(CLIENTS)
+            .with_diagnostic_channel(
+                diagnostic_tx,
+                u32::try_from(CLIENTS).expect("client count fits diagnostic rate"),
+            ),
+    )
+    .expect("start proxy");
+    let lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            Policy::builder()
+                .allow_port(443)
+                .max_connections(CLIENTS)
+                .expect("positive lease limit")
+                .build()
+                .expect("valid policy"),
+        )
+        .expect("attach lease");
+    let endpoint = lease.endpoint().socket_addr();
+    let barrier = Arc::new(Barrier::new(CLIENTS));
+    let mut clients = Vec::with_capacity(CLIENTS);
+
+    for _ in 0..CLIENTS {
+        let barrier = Arc::clone(&barrier);
+        clients.push(thread::spawn(move || {
+            let mut stream = TcpStream::connect(endpoint).expect("connect proxy");
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .expect("set denial timeout");
+            barrier.wait();
+            stream
+                .write_all(b"CONNECT denied.test:443 HTTP/1.1\r\nHost: denied.test\r\n\r\n")
+                .expect("write denied request");
+            let mut response = String::new();
+            stream
+                .read_to_string(&mut response)
+                .expect("read denied response");
+            assert!(response.starts_with("HTTP/1.1 403"), "{response}");
+            assert!(response.contains("host-denied"), "{response}");
+        }));
+    }
+    for client in clients {
+        client.join().expect("denied client thread");
+    }
+
+    let close_started = Instant::now();
+    let usage = lease
+        .close(Instant::now() + Duration::from_secs(2))
+        .expect("close after diagnostic backpressure")
+        .usage();
+    assert!(close_started.elapsed() < Duration::from_secs(2));
+    assert_eq!(usage.accepted_connections, CLIENTS as u64);
+    assert_eq!(usage.denied_connections, CLIENTS as u64);
+    assert_eq!(usage.completed_connections, 0);
+    assert_eq!(usage.active_connections, 0);
+    assert!(matches!(
+        diagnostic_rx.try_recv(),
+        Err(mpsc::TryRecvError::Empty)
+    ));
+
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
 }
 
 #[test]

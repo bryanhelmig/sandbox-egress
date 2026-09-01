@@ -63,7 +63,8 @@ services may supplement research but must not become test dependencies.
 - Runtime command-channel flooding and synchronous caller contention.
 - Stable RSS, threads, tasks, sockets, and descriptors under soak.
 - Allocation and copy overhead per connection and per transferred byte.
-- Structured diagnostic cardinality and attacker-controlled log volume.
+- Long-duration downstream diagnostic retention and aggregation behavior; the
+  proxy-side reason cardinality, emission rate, and channel work are bounded.
 
 ## Deployment and integration
 

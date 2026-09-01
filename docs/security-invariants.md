@@ -262,4 +262,6 @@ channel cannot block proxy work. A process-wide one-second window bounds
 attempted delivery, and the configured rate has a hard ceiling. Rate- and
 channel-suppressed events accumulate with saturation and are reported on the
 next event the channel accepts. Diagnostic loss never weakens enforcement or
-denial accounting.
+denial accounting. A public real-socket concurrency case holds a zero-capacity
+channel full throughout a 64-connection denial storm, then requires certified
+close and exact final counters.

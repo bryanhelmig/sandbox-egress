@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Prove a permanently full diagnostic channel cannot block 64 concurrent
+  policy denials or certified close, while preserving exact final counters.
 - Add local UDP DNS conformance proving zero cache capacity requeries and the
   configured TTL ceiling expires both positive and negative answers.
 - Pin positive and negative resolver-cache count and TTL ceilings, expose a
