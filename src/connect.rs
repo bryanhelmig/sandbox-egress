@@ -23,19 +23,18 @@ pub(crate) struct HeaderBlock {
 // Whole-program LTO otherwise coupled its loop layout to unrelated policy
 // constructor changes; the committed 1 MiB benchmark reproduced the effect.
 #[inline(never)]
-pub(crate) async fn read_bounded_header<R>(
+pub(crate) async fn read_bounded_header<const CHUNK_BYTES: usize, R>(
     stream: &mut R,
     max: usize,
-    chunk_bytes: usize,
 ) -> io::Result<HeaderBlock>
 where
     R: AsyncRead + Unpin,
 {
-    debug_assert!((1..=4_096).contains(&chunk_bytes));
+    debug_assert!(CHUNK_BYTES > 0);
     // Keep ordinary CONNECT headers in one allocation without reserving a
     // full read chunk for every concurrent handshake.
     let mut bytes = Vec::with_capacity(max.min(256));
-    let mut chunk = [0_u8; 4_096];
+    let mut chunk = [0_u8; CHUNK_BYTES];
     loop {
         if bytes.len() >= max {
             return Err(io::Error::new(
@@ -43,7 +42,7 @@ where
                 "header too large",
             ));
         }
-        let allowed = (max - bytes.len()).min(chunk_bytes);
+        let allowed = (max - bytes.len()).min(chunk.len());
         let read = stream.read(&mut chunk[..allowed]).await?;
         if read == 0 {
             return Err(io::Error::new(

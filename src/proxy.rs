@@ -1422,7 +1422,9 @@ async fn read_connect_header<R>(
 where
     R: AsyncRead + Unpin,
 {
-    match complete_before_deadline(deadline, read_bounded_header(client, max_bytes, 4_096)).await {
+    match complete_before_deadline(deadline, read_bounded_header::<4_096, _>(client, max_bytes))
+        .await
+    {
         Some(Ok(header)) => Ok(header),
         Some(Err(error)) if error.kind() == io::ErrorKind::InvalidData => {
             Err(Denial::HEADER_TOO_LARGE)
@@ -4174,7 +4176,7 @@ mod tests {
             wire.extend_from_slice(b"\r\n\r\nfollowing");
             let mut input = wire.as_slice();
             let header = runtime
-                .block_on(read_bounded_header(&mut input, 8_192, 4_096))
+                .block_on(read_bounded_header::<4_096, _>(&mut input, 8_192))
                 .expect("boundary-spanning terminator");
 
             assert_eq!(header.end, start + 4);
@@ -4194,13 +4196,17 @@ mod tests {
         let mut exact = vec![b'a'; LIMIT - 4];
         exact.extend_from_slice(b"\r\n\r\n");
         let header = runtime
-            .block_on(read_bounded_header(&mut exact.as_slice(), LIMIT, 4_096))
+            .block_on(read_bounded_header::<4_096, _>(
+                &mut exact.as_slice(),
+                LIMIT,
+            ))
             .expect("terminator ending at the byte limit");
         assert_eq!(header.end, LIMIT);
 
         let mut over = vec![b'a'; LIMIT - 3];
         over.extend_from_slice(b"\r\n\r\n");
-        let Err(error) = runtime.block_on(read_bounded_header(&mut over.as_slice(), LIMIT, 4_096))
+        let Err(error) =
+            runtime.block_on(read_bounded_header::<4_096, _>(&mut over.as_slice(), LIMIT))
         else {
             panic!("accepted terminator ending beyond the byte limit");
         };

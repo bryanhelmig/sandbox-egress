@@ -40,7 +40,7 @@ pub(crate) async fn connect_via(
     stream.write_all(request.as_bytes()).await?;
 
     let HeaderBlock { mut bytes, end } =
-        read_bounded_header(&mut stream, MAX_RESPONSE_HEADER_BYTES, 1_024).await?;
+        read_bounded_header::<1_024, _>(&mut stream, MAX_RESPONSE_HEADER_BYTES).await?;
     validate_response(&bytes[..end])?;
     let prefix = bytes.split_off(end);
     Ok(ConnectedStream::with_prefix(stream, prefix))

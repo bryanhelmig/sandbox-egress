@@ -86,7 +86,8 @@ attachment and socket acceptance canonicalize an IPv4-mapped IPv6 peer to the
 equivalent IPv4 identity before registry lookup. Admission is reserved before
 a task is spawned. One internal incremental framer enforces the byte ceiling
 and terminator boundary for both guest CONNECT requests and upstream-proxy
-responses; the two callers retain distinct limits and read chunk sizes.
+responses; a compile-time chunk size lets the two callers retain distinct
+limits and exact read-buffer footprints without duplicating source.
 `httparse` parses each bounded header block. HTTP/1.1 requires
 one valid Host field consistent with the CONNECT request-target, but only the
 request-target supplies authority to policy, DNS, and dialing. The policy then

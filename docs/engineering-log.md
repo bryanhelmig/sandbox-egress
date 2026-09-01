@@ -4760,3 +4760,34 @@ KiB, eight descriptors, and five threads, and finished at 5,936 KiB, four
 descriptors, and two threads. The rootless 180/180 image is
 `sha256:352afe0968c2a281386adfdd6f7122385b6267b26ce59acf274d81449a90225c`
 (40,904,544 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — keep shared framing buffers exact
+
+The simplification follow-up audited the memory shape introduced by the shared
+header framer. Its runtime `chunk_bytes` parameter preserved 1 KiB upstream
+reads, but the async future always contained the function's 4 KiB array. That
+quietly added 3 KiB of task state to every concurrent upstream-proxy handshake
+even though the I/O contract and heap allocation were unchanged.
+
+The chunk size is now a const generic. Guest and upstream callers still share
+one source implementation, while the compiler emits futures with their exact
+4 KiB and 1 KiB arrays. A temporary size measurement, run in both debug and
+optimized builds and then removed, reported 4,184 bytes for the guest future
+and 1,112 bytes for the upstream future: exactly 3,072 bytes apart. At 256
+concurrent upstream negotiations this avoids roughly 768 KiB of unnecessary
+task state.
+
+Focused guest and upstream boundary suites pass. No public API, I/O behavior,
+heap allocation, task count, dependency, deterministic test count, or
+whole-tree 756/2,246 structural/cognitive complexity changes.
+
+The complete native and exact Rust 1.88 factories pass: 180 deterministic
+tests, seven opt-in resource lanes, six documentation examples, all feature
+sets, formatting, lints, dependency duplication, package verification, and
+release builds. On Linux, the 128 partial-header lane peaked at 7,328 KiB,
+264 descriptors, and five threads before recovering to 6,440 KiB, eight
+descriptors, and five threads. The 64 partial-ClientHello lane peaked at
+14,820 KiB, 265 descriptors, and six threads before recovering to 9,824 KiB,
+eight descriptors, and five threads. The rootless 180/180 image is
+`sha256:39500504c0ae7f3bd6fd96b709e1e89a5b76e15e3f6c1d43eb01003607805678`
+(40,904,092 bytes) and runs as UID/GID 65534.
