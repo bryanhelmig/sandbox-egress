@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Give the fixed 64-header CONNECT parser ceiling its own bounded
+  `too-many-headers` response and diagnostic reason.
 - Let a close retry immediately certify an already-quiesced lease without
   repeating the identity-reuse quiet period or changing its final counters.
 - Commit final counters under the lease lifecycle lock before close success,

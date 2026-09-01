@@ -200,6 +200,29 @@ fn oversized_header_has_a_distinct_denial() {
 }
 
 #[test]
+fn excess_header_count_has_a_distinct_denial() {
+    let (diagnostic_tx, diagnostic_rx) = mpsc::sync_channel(1);
+    let mut request = b"CONNECT example.com:443 HTTP/1.1\r\n".to_vec();
+    for index in 0..65 {
+        request.extend_from_slice(format!("attacker-{index}: secret-{index}\r\n").as_bytes());
+    }
+    request.extend_from_slice(b"\r\n");
+
+    let response = header_denial(
+        ProxyConfig::default().with_diagnostic_channel(diagnostic_tx, 1),
+        &request,
+        false,
+    );
+    assert!(response.starts_with("HTTP/1.1 400"), "{response}");
+    assert!(response.contains("too-many-headers"), "{response}");
+    let diagnostic = diagnostic_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("header-count diagnostic");
+    assert_eq!(diagnostic.reason.as_str(), "too-many-headers");
+    assert!(!format!("{diagnostic:?}").contains("secret"));
+}
+
+#[test]
 fn early_header_eof_has_a_distinct_denial() {
     let response = header_denial(ProxyConfig::default(), b"CONNECT incomplete", true);
     assert!(response.starts_with("HTTP/1.1 400"), "{response}");

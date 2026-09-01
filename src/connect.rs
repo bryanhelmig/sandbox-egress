@@ -1,5 +1,7 @@
 use http::uri::Authority;
 
+const MAX_CONNECT_HEADERS: usize = 64;
+
 #[derive(Debug)]
 pub(crate) struct ConnectRequest {
     pub(crate) host: String,
@@ -7,11 +9,12 @@ pub(crate) struct ConnectRequest {
 }
 
 pub(crate) fn parse_connect(bytes: &[u8]) -> Result<ConnectRequest, &'static str> {
-    let mut headers = [httparse::EMPTY_HEADER; 64];
+    let mut headers = [httparse::EMPTY_HEADER; MAX_CONNECT_HEADERS];
     let mut request = httparse::Request::new(&mut headers);
     match request.parse(bytes) {
         Ok(httparse::Status::Complete(_)) => {}
         Ok(httparse::Status::Partial) => return Err("incomplete-header"),
+        Err(httparse::Error::TooManyHeaders) => return Err("too-many-headers"),
         Err(_) => return Err("malformed-header"),
     }
     if request.method != Some("CONNECT") {
@@ -46,6 +49,15 @@ pub(crate) fn parse_connect(bytes: &[u8]) -> Result<ConnectRequest, &'static str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn connect_with_headers(count: usize) -> Vec<u8> {
+        let mut request = b"CONNECT example.com:443 HTTP/1.1\r\n".to_vec();
+        for index in 0..count {
+            request.extend_from_slice(format!("x-{index}: value\r\n").as_bytes());
+        }
+        request.extend_from_slice(b"\r\n");
+        request
+    }
 
     #[test]
     fn accepts_connect_authority() {
@@ -102,5 +114,15 @@ mod tests {
                 "accepted ambiguous authority {authority:?}"
             );
         }
+    }
+
+    #[test]
+    fn header_count_boundary_is_explicit() {
+        parse_connect(&connect_with_headers(MAX_CONNECT_HEADERS))
+            .expect("the configured header slots fit the parser bound");
+        assert_eq!(
+            parse_connect(&connect_with_headers(MAX_CONNECT_HEADERS + 1)).unwrap_err(),
+            "too-many-headers"
+        );
     }
 }

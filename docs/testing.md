@@ -27,7 +27,9 @@ Header conformance distinguishes a byte-ceiling violation (`431
 header-too-large`), early EOF (`400 header-eof`), and the absolute slow-header
 deadline (`408 header-timeout`). Each case must close with one denial and no
 active connection; lease close during a still-pending header is tested
-separately.
+separately. A parser boundary case accepts 64 fields and rejects field 65 with
+the stable `too-many-headers` response and diagnostic code, without copying
+attacker-controlled names or values into the event.
 
 Paired capacity cases hold one admitted slow header open, then prove the next
 socket is terminal under either the global or per-lease ceiling. The rejected

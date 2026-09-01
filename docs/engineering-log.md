@@ -1134,3 +1134,29 @@ live, returned to four descriptors and two threads, and finished at 3,940 KiB
 RSS. Repeated prior image layers filled Docker's internal disk during the first
 save attempt; removing only stopped and dangling Sandbox Egress build output
 and the reproducible stale image made the clean rebuild succeed.
+
+## 2026-08-31 — distinguish the CONNECT header-count ceiling
+
+### Finding
+
+CONNECT parsing already used `httparse` with a fixed 64-element header array,
+so the work and stack space were bounded. Header 65 failed closed, but the
+generic error arm labeled `httparse::Error::TooManyHeaders` as
+`malformed-header`. That hid the intentional resource ceiling from both the
+wire response and structured diagnostics.
+
+### Result
+
+The parser now names its 64-header constant and maps only that mature-parser
+error to the bounded `too-many-headers` reason. A unit boundary accepts 64 and
+rejects 65. A real listener case sends guest-controlled field names and values,
+then requires one denial, the stable response reason, and the same diagnostic
+code with none of those values copied into the event. It passed 20 consecutive
+runs.
+
+The native factory and dependency audit passed 68 deterministic cases. The
+exact Rust 1.88 image passed the same factory and its serialized hostile lane.
+Its 500-lease Linux smoke held eight descriptors and five threads while live,
+returned to four descriptors and two threads, and finished at 3,996 KiB RSS.
+The constant, one production match arm, and boundary evidence move whole-tree
+structural/cognitive complexity from 367/1,079 to 369/1,084.
