@@ -4495,3 +4495,16 @@ cases, six doctests, documentation, package verification, benchmark smoke, and
 all six Linux resource lanes. The rootless 178/178 conformance image is
 `sha256:26ec942dfca2d4cb451913598f404a28c56271f579e49f05d4d4c659e7544cd4`
 (40,893,554 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — reject single-allocation denial responses
+
+The next performance rotation tested constructing a denial response in one
+formatted allocation instead of first formatting its body separately. Three
+baseline denied-CONNECT intervals were 73.68–79.11, 71.09–88.42, and
+75.24–90.38 microseconds. Three candidate intervals were 71.90–79.23,
+70.52–73.50, and 71.06–78.51 microseconds.
+
+The candidate trended lower but every comparison overlapped and Criterion
+detected no change. It was discarded: one fewer small allocation is not enough
+evidence to alter the denial path. Production source, complexity, and behavior
+remain unchanged.
