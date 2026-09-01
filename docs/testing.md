@@ -173,7 +173,7 @@ exactly one executable for each conformance target, strips copies, and carries
 only those binaries into a Debian runner. The CLI's compile-time executable
 dependency is copied at its exact embedded path. The factory deletes its
 compilation tree only after collection, before committing the source-dependent
-layer. The final image runs as UID/GID 65534 and must reproduce all 120
+layer. The final image runs as UID/GID 65534 and must reproduce all 123
 deterministic cases without Cargo, source, or a build cache.
 
 Source-identity cases prove an IPv4 address and its mapped IPv6 transport
@@ -243,6 +243,14 @@ dns-timeout`, release its active work, and make zero connector calls. A
 resolver that returns an I/O error remains `502 dns-failed` and likewise never
 reaches the connector. These complement the separate `503 dns-capacity` proof
 for work that cannot acquire a resolver permit in time.
+
+Resolver construction tests inspect Hickory's effective options and require
+the configured response-count ceiling plus the same maximum TTL for positive
+and negative entries. Configuration can narrow the built-in 8,192-entry and
+24-hour limits but cannot widen them. An identity-reuse case gives two runs the
+same hostname and repeated loopback answer: the first policy explicitly grants
+loopback and reaches the connector, while the replacement policy does not and
+must deny without another connector call.
 
 An oversized-answer case supplies one address beyond the default cardinality
 ceiling and uses a recording connector. It requires the bounded

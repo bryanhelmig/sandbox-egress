@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Pin positive and negative resolver-cache count and TTL ceilings, expose a
+  narrowing host configuration, and recheck repeated answers after reuse.
 - Distinguish an enforced DNS deadline as `504 dns-timeout` from resolver
   failures and DNS-capacity exhaustion, with zero-dial end-to-end proofs.
 - Pin exact CONNECT header byte-limit behavior and reject folded fields,

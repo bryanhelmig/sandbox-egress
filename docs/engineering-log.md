@@ -2438,3 +2438,43 @@ descriptors and five threads to four and two, finishing at 3,956 KiB RSS in
 1,088 ms. The rootless runner reproduced 120/120 as UID/GID 65534; image
 `sha256:51287dfe25d9098bccf2176a1000de9357258a65744fc618b18e374fc7b02985`
 measured 40,428,701 bytes.
+
+## 2026-09-01 — make shared DNS cache bounds an explicit host contract
+
+The shared Hickory resolver cached responses, but Sandbox Egress inherited the
+dependency's defaults without naming them in `ProxyConfig`: 8,192 responses
+and an 86,400-second maximum TTL for both positive and negative entries. A
+dependency update could therefore change process memory or freshness behavior
+without changing this crate's API. In contrast, Smokescreen resolves each
+outbound request and retains the selected address only on that request before
+dialing it directly.
+
+The first configuration proof failed to compile because no cache API existed.
+`ProxyConfig::with_dns_cache` now lets the host narrow, but never widen, the
+8,192-entry and 24-hour process ceilings. Zero entries disables storage. A
+zero TTL is documented only as the narrowest validity window: Hickory treats
+an entry as current at its exact expiry instant, so TTL zero is not advertised
+as the cache-disable switch. Resolver construction explicitly applies the same
+maximum TTL to positive and negative entries; a unit proof inspects Hickory's
+effective options rather than merely checking the configuration fields.
+
+Cache data remains proxy-owned rather than lease-owned, and cached answers do
+not carry policy. A real-socket identity-reuse proof gives two sequential runs
+the same hostname and loopback answer. The first policy explicitly grants
+loopback and reaches the connector; the replacement policy omits that grant,
+returns `resolved-address-denied`, and leaves the connector count unchanged.
+That proof passed ten consecutive runs. Real-resolver expiry remains a separate
+integration-test item.
+
+Default behavior is unchanged, so no throughput claim or benchmark was made.
+Whole-tree SCC 4.0.0 complexity moved from 519/1,560 to 520/1,562
+structural/cognitive; the only new production branch is resolver-construction
+error propagation.
+
+The native and exact Rust 1.88 Linux factories passed all 123 deterministic
+cases, doctests, documentation, and package verification; native dependency
+policy checks also passed. Linux's 500-lease lane returned from eight
+descriptors and five threads to four and two, finishing at 4,044 KiB RSS in
+1,064 ms. The rootless runner reproduced 123/123 as UID/GID 65534; image
+`sha256:fc358fe7339c8ee16dc2031808b99cfbeb50dd42ce0ef535966744552a23b7e8`
+measured 40,436,156 bytes.

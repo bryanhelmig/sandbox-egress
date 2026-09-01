@@ -87,6 +87,12 @@ Permit starvation, resolver failure, and deadline enforcement are distinct
 bounded denials: `503 dns-capacity`, `502 dns-failed`, and `504 dns-timeout`.
 None can start a dial.
 
+The shared resolver cache defaults to at most 8,192 responses, each with at
+most 24 hours of validity; the host may narrow either bound or disable storage
+with zero entries. Cached data is proxy-owned, not lease-owned work. Every
+returned address, including a cache hit after identity reuse, is rechecked
+under the current lease's immutable policy before it can reach the connector.
+
 DNS address cardinality is process-configured and has a hard upper bound. The
 system resolver collects at most one entry beyond that ceiling, solely to
 detect overflow. An oversized answer is rejected as a whole before address

@@ -135,6 +135,9 @@ The current vertical slice provides:
   mapped implicitly;
 - source-IP identity derived from the accepted socket;
 - one DNS resolution followed by checks on every returned address;
+- a process-wide resolver cache explicitly bounded to 8,192 responses and a
+  24-hour TTL ceiling by default; the host may narrow either bound or disable
+  caching;
 - bounded DNS answer cardinality, with oversized sets rejected before dialing;
 - direct dialing of a checked `SocketAddr`, with no second lookup;
 - sequential address failover with a fair share of the remaining absolute
@@ -248,7 +251,7 @@ The build stage is pinned to Rust 1.88, warms locked dependencies, then runs the
 normal factory and a small Linux resource smoke with Cargo offline. After the
 checked executables are collected, its compilation tree is discarded before
 the layer is committed. The final image contains only the stripped conformance
-executables and runs all 120 deterministic cases as an unprivileged user. It
+executables and runs all 123 deterministic cases as an unprivileged user. It
 does not ship Cargo, the compiler, source tree, or build cache. Tests remain
 local and do not call public network services.
 

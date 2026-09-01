@@ -583,6 +583,15 @@ enum ResolverBackend {
     Test(Arc<dyn TestResolver>),
 }
 
+fn build_system_resolver(config: &ProxyConfig) -> Result<TokioResolver, String> {
+    let mut builder = TokioResolver::builder_tokio().map_err(|error| error.to_string())?;
+    let options = builder.options_mut();
+    options.cache_size = config.dns_cache_entries;
+    options.positive_max_ttl = Some(config.dns_cache_max_ttl);
+    options.negative_max_ttl = Some(config.dns_cache_max_ttl);
+    builder.build().map_err(|error| error.to_string())
+}
+
 impl ResolverBackend {
     async fn lookup(&self, hostname: &str, max_addresses: usize) -> io::Result<Vec<IpAddr>> {
         let absolute_hostname = format!("{hostname}.");
@@ -728,9 +737,7 @@ async fn run_proxy(
 ) {
     let resolver = match resolver {
         Some(resolver) => Arc::new(resolver),
-        None => match TokioResolver::builder_tokio()
-            .and_then(hickory_resolver::ResolverBuilder::build)
-        {
+        None => match build_system_resolver(&config) {
             Ok(resolver) => Arc::new(ResolverBackend::System(Box::new(resolver))),
             Err(error) => {
                 let _ = ready.send(Err(format!("resolver initialization failed: {error}")));
@@ -1988,6 +1995,93 @@ mod tests {
         lease
             .close(Instant::now() + Duration::from_secs(1))
             .expect("close lease");
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
+    }
+
+    #[test]
+    fn system_resolver_uses_the_configured_cache_bounds() {
+        let config = ProxyConfig::default().with_dns_cache(17, Duration::from_secs(19));
+        let resolver = build_system_resolver(&config).expect("build system resolver");
+        assert_eq!(resolver.options().cache_size, 17);
+        assert_eq!(
+            resolver.options().positive_max_ttl,
+            Some(Duration::from_secs(19))
+        );
+        assert_eq!(
+            resolver.options().negative_max_ttl,
+            Some(Duration::from_secs(19))
+        );
+    }
+
+    #[test]
+    fn resolver_answers_are_rechecked_after_identity_reuse() {
+        let resolver = Arc::new(FixedAnswerResolver(vec![IpAddr::V4(
+            std::net::Ipv4Addr::LOCALHOST,
+        )]));
+        let dial_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let connector = Arc::new(RejectingConnector(Arc::clone(&dial_attempts)));
+        let proxy = Proxy::start_with_test_backends(
+            ProxyConfig::default().with_identity_reuse_quiet_period(Duration::ZERO),
+            resolver,
+            connector,
+        )
+        .expect("start identity-reuse proxy");
+        let identity = PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
+        let first_policy = Policy::builder()
+            .allow_host("reused.test")
+            .expect("valid hostname")
+            .allow_network("127.0.0.0/8".parse().expect("valid loopback network"))
+            .allow_port(443)
+            .build()
+            .expect("valid first policy");
+        let first = proxy
+            .attach(identity.clone(), first_policy)
+            .expect("attach first lease");
+        let endpoint = first.endpoint().socket_addr();
+        let mut first_client = std::net::TcpStream::connect(endpoint).expect("connect first lease");
+        std::io::Write::write_all(
+            &mut first_client,
+            b"CONNECT reused.test:443 HTTP/1.1\r\nHost: reused.test\r\n\r\n",
+        )
+        .expect("write first CONNECT");
+        let mut first_response = String::new();
+        std::io::Read::read_to_string(&mut first_client, &mut first_response)
+            .expect("read first denial");
+        assert!(first_response.contains("dial-failed"), "{first_response}");
+        assert_eq!(dial_attempts.load(Ordering::Acquire), 1);
+        first
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("close first lease");
+
+        let second_policy = Policy::builder()
+            .allow_host("reused.test")
+            .expect("valid hostname")
+            .allow_port(443)
+            .build()
+            .expect("valid second policy");
+        let second = proxy
+            .attach(identity, second_policy)
+            .expect("attach second lease");
+        let mut second_client =
+            std::net::TcpStream::connect(endpoint).expect("connect second lease");
+        std::io::Write::write_all(
+            &mut second_client,
+            b"CONNECT reused.test:443 HTTP/1.1\r\nHost: reused.test\r\n\r\n",
+        )
+        .expect("write second CONNECT");
+        let mut second_response = String::new();
+        std::io::Read::read_to_string(&mut second_client, &mut second_response)
+            .expect("read second denial");
+        assert!(
+            second_response.contains("resolved-address-denied"),
+            "{second_response}"
+        );
+        assert_eq!(dial_attempts.load(Ordering::Acquire), 1);
+        second
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("close second lease");
         proxy
             .shutdown(Instant::now() + Duration::from_secs(1))
             .expect("proxy shutdown");
