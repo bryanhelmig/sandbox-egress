@@ -8,6 +8,7 @@ use crate::PolicyError;
 
 /// How a visible `ClientHello` is related to CONNECT authority.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum TlsAuthority {
     /// Do not inspect tunnel bytes after CONNECT.
     #[default]
@@ -21,6 +22,7 @@ pub enum TlsAuthority {
 
 /// Handling for TLS Encrypted `ClientHello` (ECH).
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum EchPolicy {
     /// Reject ECH because its inner authority is not visible to the proxy.
     #[default]

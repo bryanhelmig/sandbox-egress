@@ -30,6 +30,7 @@ impl fmt::Display for DenialReason {
 
 /// A nonblocking operational event emitted for a denied connection.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub struct DiagnosticEvent {
     /// Proxy-assigned sequence that distinguishes reuse of the same identity.
     pub lease_id: u64,

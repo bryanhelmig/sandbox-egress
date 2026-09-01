@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Keep usage snapshots, diagnostic events, and TLS/ECH policy modes extensible
+  without requiring avoidable downstream SemVer breaks.
 - Make an already-expired close deadline begin revocation before returning the
   still-owning error, so it cannot become a momentary admission escape hatch.
 - Reject destination port zero while freezing a policy, rather than accepting

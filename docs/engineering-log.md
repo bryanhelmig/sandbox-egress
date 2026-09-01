@@ -5415,3 +5415,19 @@ scripts, README, Dockerfile, or CI workflow. The updated ordinary factory
 passes all 188 deterministic tests, six doctests, benchmark smoke,
 documentation, package verification, and dependency policy without modifying
 the lockfile.
+
+## 2026-09-01 — preserve room in the pre-release public API
+
+The API simplification review found four externally exhaustive types at likely
+extension points. `Usage` and `DiagnosticEvent` have public readable fields,
+while `TlsAuthority` and `EchPolicy` expose the deliberately small current mode
+set. Without an extension marker, adding a counter, bounded diagnostic field,
+or future protocol mode would unnecessarily break downstream struct literals
+or exhaustive matches.
+
+All four are now non-exhaustive, consistent with `PeerIdentity` and the public
+error enums. Existing fields, defaults, access, equality, and policy variant
+construction remain available. The change is made before publication, when it
+does not disrupt a released API. Formatting, all-target compilation, six
+doctests, and warning-denied rustdoc pass on the locked dependency graph;
+runtime behavior and measured complexity are unchanged.

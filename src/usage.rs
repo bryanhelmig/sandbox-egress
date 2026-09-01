@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Cumulative counters are monotonic and saturate at [`u64::MAX`]. The active
 /// connection gauge rises and falls with admitted work.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
 pub struct Usage {
     /// Connections admitted to this lease.
     pub accepted_connections: u64,
