@@ -2313,3 +2313,31 @@ descriptors and five threads to four and two, finishing at 3,960 KiB RSS in
 1,073 ms. The rootless runner reproduced 113/113 as UID/GID 65534; image
 `sha256:84b775c525dfe9a244fdc20238ea49a797bd0c1697358a3e3a5ac15fbfe59cd3`
 measured 40,413,030 bytes.
+
+## 2026-09-01 — reject ambiguous SNI hostname lists
+
+[RFC 6066 section 3](https://www.rfc-editor.org/rfc/rfc6066.html#section-3)
+prohibits more than one SNI name of the same type: a client cannot reliably
+learn which name the server selected. Accepting the first hostname would
+therefore make the proxy's authority decision depend on an interpretation that
+another TLS implementation need not share.
+
+The deterministic ClientHello builder can now emit multiple hostname entries.
+One parser case pins Rustls's mature-parser rejection, and one real proxy case
+proves the full consequence: an allowed first name plus a disallowed second
+name closes the guest, records one denial, leaves final active ownership at
+zero, and forwards exactly zero bytes to the already-connected upstream. The
+focused end-to-end case passed ten consecutive runs.
+
+Production behavior already held this invariant; the fixture and proofs are
+test-only, so no data-path benchmark was run. Whole-tree SCC 4.0.0 complexity
+moved from 510/1,535 to 513/1,545 structural/cognitive, entirely in test and
+fixture code.
+
+The native and exact Rust 1.88 Linux factories passed all 115 deterministic
+cases, doctests, documentation, and package verification; native dependency
+policy checks also passed. Linux's 500-lease lane returned from eight
+descriptors and five threads to four and two, finishing at 3,932 KiB RSS in
+1,073 ms. The rootless runner reproduced 115/115 as UID/GID 65534; image
+`sha256:dfcd57a000466a33516c7274e438f787fbcb6041f78ca8c32dff2d0549834c3a`
+measured 40,414,382 bytes.

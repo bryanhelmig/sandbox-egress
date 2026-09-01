@@ -179,11 +179,14 @@ pub(crate) mod fixtures {
     }
 
     pub(crate) fn client_hello(hostname: Option<&str>, ech: bool) -> Vec<u8> {
-        client_hello_with_padding(hostname, ech, 0)
+        match hostname {
+            Some(hostname) => build_client_hello(&[hostname], ech, 0, false),
+            None => build_client_hello(&[], ech, 0, false),
+        }
     }
 
     pub(crate) fn client_hello_with_grease(hostname: &str) -> Vec<u8> {
-        build_client_hello(Some(hostname), false, 0, true)
+        build_client_hello(&[hostname], false, 0, true)
     }
 
     pub(crate) fn client_hello_with_padding(
@@ -191,27 +194,32 @@ pub(crate) mod fixtures {
         ech: bool,
         padding: usize,
     ) -> Vec<u8> {
-        build_client_hello(hostname, ech, padding, false)
+        match hostname {
+            Some(hostname) => build_client_hello(&[hostname], ech, padding, false),
+            None => build_client_hello(&[], ech, padding, false),
+        }
     }
 
-    fn build_client_hello(
-        hostname: Option<&str>,
-        ech: bool,
-        padding: usize,
-        grease: bool,
-    ) -> Vec<u8> {
+    pub(crate) fn client_hello_with_server_names(hostnames: &[&str]) -> Vec<u8> {
+        build_client_hello(hostnames, false, 0, false)
+    }
+
+    fn build_client_hello(hostnames: &[&str], ech: bool, padding: usize, grease: bool) -> Vec<u8> {
         let mut extensions = Vec::new();
         if grease {
             extensions.extend_from_slice(&extension(0x0a0a, &[]));
         }
-        if let Some(hostname) = hostname {
-            let mut server_name = vec![0];
-            push_u16(&mut server_name, hostname.len());
-            server_name.extend_from_slice(hostname.as_bytes());
+        if !hostnames.is_empty() {
             let mut server_name_list = Vec::new();
-            push_u16(&mut server_name_list, server_name.len());
-            server_name_list.extend_from_slice(&server_name);
-            extensions.extend_from_slice(&extension(0, &server_name_list));
+            for hostname in hostnames {
+                server_name_list.push(0);
+                push_u16(&mut server_name_list, hostname.len());
+                server_name_list.extend_from_slice(hostname.as_bytes());
+            }
+            let mut server_name = Vec::new();
+            push_u16(&mut server_name, server_name_list.len());
+            server_name.extend_from_slice(&server_name_list);
+            extensions.extend_from_slice(&extension(0, &server_name));
         }
         extensions.extend_from_slice(&extension(43, &[2, 3, 4]));
         extensions.extend_from_slice(&extension(13, &[0, 2, 4, 3]));
@@ -273,8 +281,8 @@ pub(crate) mod fixtures {
 #[cfg(test)]
 mod tests {
     use super::fixtures::{
-        client_hello, client_hello_with_grease, client_hello_with_padding, fragment_record,
-        fragment_records,
+        client_hello, client_hello_with_grease, client_hello_with_padding,
+        client_hello_with_server_names, fragment_record, fragment_records,
     };
     use super::*;
 
@@ -317,6 +325,12 @@ mod tests {
             .expect("valid outer ECH ClientHello");
         assert_eq!(ech.server_name.as_deref(), Some("public.example"));
         assert!(ech.ech_present);
+    }
+
+    #[test]
+    fn rejects_multiple_sni_hostnames() {
+        let hello = client_hello_with_server_names(&["allowed.test", "other.test"]);
+        assert_eq!(inspect(&hello).unwrap_err(), ClientHelloError::Invalid);
     }
 
     #[test]

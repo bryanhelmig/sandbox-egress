@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Reject ClientHello SNI lists with multiple hostnames and prove that no
+  ambiguous handshake bytes reach the upstream.
 - Prove certified close terminates both hostile writers when upload and
   download are simultaneously backpressured.
 - Add a reproducible 1 MiB near-terminator header benchmark; measurement

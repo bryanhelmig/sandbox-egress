@@ -163,7 +163,7 @@ exactly one executable for each conformance target, strips copies, and carries
 only those binaries into a Debian runner. The CLI's compile-time executable
 dependency is copied at its exact embedded path. The factory deletes its
 compilation tree only after collection, before committing the source-dependent
-layer. The final image runs as UID/GID 65534 and must reproduce all 113
+layer. The final image runs as UID/GID 65534 and must reproduce all 115
 deterministic cases without Cargo, source, or a build cache.
 
 Source-identity cases prove an IPv4 address and its mapped IPv6 transport
@@ -263,10 +263,12 @@ The TLS conformance module uses Rustls to accept incrementally fragmented
 ClientHello records, plus a focused extension walk only after syntactic
 acceptance to detect ECH. Real proxy tests prove that a matching coalesced
 CONNECT and ClientHello arrives upstream byte-for-byte, while mismatched SNI
-and strict ECH send zero tunnel bytes upstream. Separate phase tests hold a
-partial ClientHello open and prove that both lease close and the absolute
-handshake deadline end the client, upstream socket, parser work, and active
-connection count.
+and strict ECH send zero tunnel bytes upstream. A syntactically ambiguous SNI
+list with two hostname entries must fail mature parsing, close the guest, count
+one denial, and send zero bytes upstream. Separate phase tests hold a partial
+ClientHello open and prove that both lease close and the absolute handshake
+deadline end the client, upstream socket, parser work, and active connection
+count.
 
 A fixed valid ClientHello includes a GREASE cipher-suite value and a GREASE
 extension before SNI. Rustls must accept it, the focused extension walk must

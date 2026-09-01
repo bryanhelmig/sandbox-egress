@@ -10,7 +10,8 @@ use tokio::net::TcpStream;
 
 use crate::proxy::{TestConnector, TestResolver};
 use crate::tls::fixtures::{
-    client_hello, client_hello_with_grease, client_hello_with_padding, fragment_records,
+    client_hello, client_hello_with_grease, client_hello_with_padding,
+    client_hello_with_server_names, fragment_records,
 };
 use crate::{EchPolicy, Lease, PeerIdentity, Policy, Proxy, ProxyConfig, TlsAuthority};
 
@@ -219,6 +220,35 @@ fn mismatched_tls_sni_is_never_forwarded_upstream() {
     let final_usage = lease
         .close(Instant::now() + Duration::from_secs(1))
         .expect("close denied lease")
+        .usage();
+    assert_eq!(final_usage.uploaded_bytes, hello.len() as u64);
+    assert_eq!(final_usage.downloaded_bytes, 0);
+    assert_eq!(final_usage.denied_connections, 1);
+    assert_eq!(final_usage.active_connections, 0);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
+fn multiple_tls_sni_names_are_never_forwarded_upstream() {
+    let hello = client_hello_with_server_names(&["allowed.test", "other.test"]);
+    let (port, observed_rx, target) = start_tls_denial_observer();
+    let (proxy, lease) = start_tls_proxy("allowed.test", port, EchPolicy::Reject);
+    let mut client = open_tls_tunnel(&lease, "allowed.test", port);
+    std::io::Write::write_all(&mut client, &hello).expect("write ambiguous ClientHello");
+    assert_tunnel_closed(&mut client);
+    assert_eq!(
+        observed_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("observed ambiguous target"),
+        0
+    );
+    target.join().expect("ambiguous TLS target");
+
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close ambiguous lease")
         .usage();
     assert_eq!(final_usage.uploaded_bytes, hello.len() as u64);
     assert_eq!(final_usage.downloaded_bytes, 0);

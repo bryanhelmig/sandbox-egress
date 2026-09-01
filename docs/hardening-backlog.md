@@ -43,7 +43,7 @@ services may supplement research but must not become test dependencies.
 
 - Fragmented and coalesced TLS records around `ClientHello`.
 - Malformed lengths, oversized handshakes, unknown versions, and GREASE.
-- Missing SNI, multiple names, visible SNI mismatch, and non-TLS tunnels.
+- Missing SNI, visible SNI mismatch, and non-TLS tunnels.
 - ECH present, absent, malformed, or unsupported by policy.
 - Domain fronting and the exact difference between CONNECT, SNI, and
   application authority.
