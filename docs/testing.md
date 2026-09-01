@@ -59,6 +59,12 @@ original deadline; it returns only after a new full interval and includes the
 rejected socket in final usage. This proves observed backlog activity extends
 both explicit close and the shared dropped-lease cleanup barrier.
 
+The public lifecycle case connects an old-source socket during revocation and
+sets the caller deadline between the original and restarted completion times.
+It requires `DeadlineExceeded`, recovers the still-owning lease, observes the
+denial, gets `IdentityInUse` from replacement attachment, then retries close
+successfully only after old traffic stops.
+
 Post-establishment upload and download ceiling cases send bytes across a
 zero-byte budget, prove the peer receives none, preserve attempted-byte
 accounting, and require exactly one policy denial. This is separate from socket

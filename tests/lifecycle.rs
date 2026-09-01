@@ -7,7 +7,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use ipnet::IpNet;
-use sandbox_egress::{CloseErrorKind, PeerIdentity, Policy, Proxy, ProxyConfig};
+use sandbox_egress::{AttachError, CloseErrorKind, PeerIdentity, Policy, Proxy, ProxyConfig};
 
 fn local_policy(port: u16) -> Policy {
     Policy::builder()
@@ -241,24 +241,38 @@ fn header_deadline_has_a_distinct_denial() {
 }
 
 #[test]
-fn failed_close_returns_the_still_owning_lease() {
+fn arrivals_that_prevent_quiet_close_return_the_owning_lease() {
     let config =
-        ProxyConfig::default().with_identity_reuse_quiet_period(Duration::from_millis(100));
+        ProxyConfig::default().with_identity_reuse_quiet_period(Duration::from_millis(200));
     let proxy = Proxy::start(config).expect("start proxy");
     let lease = attach_local(&proxy, Policy::builder().build().expect("valid policy"));
+    let endpoint = lease.endpoint().socket_addr();
+    let old_arrival = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(75));
+        let mut client = TcpStream::connect(endpoint).expect("connect old queued socket");
+        client
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .expect("old socket read timeout");
+        let mut byte = [0];
+        assert!(matches!(client.read(&mut byte), Ok(0)));
+    });
 
     let error = lease
-        .close(Instant::now() + Duration::from_millis(1))
-        .expect_err("quiet-period close should time out");
+        .close(Instant::now() + Duration::from_millis(225))
+        .expect_err("continued old arrivals must prevent quiet-period close");
+    old_arrival.join().expect("old queued socket");
     assert_eq!(error.kind(), CloseErrorKind::DeadlineExceeded);
     let lease = error.into_lease();
+    assert_eq!(lease.usage().denied_connections, 1);
+    let replacement = proxy
+        .attach(
+            PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            Policy::builder().build().expect("valid policy"),
+        )
+        .expect_err("failed close must retain identity ownership");
     assert!(
-        proxy
-            .attach(
-                PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-                Policy::builder().build().expect("valid policy"),
-            )
-            .is_err()
+        matches!(replacement, AttachError::IdentityInUse),
+        "unexpected replacement result: {replacement}"
     );
 
     lease

@@ -1375,6 +1375,13 @@ missed, waits another full interval, includes the denial in final usage, and
 passed five concurrent repetitions at 0.41 seconds each. The existing close,
 retry, counter-freeze, DNS, dial, TLS, and blocked-tunnel cases remain green.
 
+The public lifecycle fixture now adds a real old-source socket during
+revocation and places the caller deadline between the original and restarted
+completion points. It requires `DeadlineExceeded`, recovers the lease with the
+new denial visible, receives exactly `IdentityInUse` when it attempts a
+replacement, and closes successfully after arrivals stop. Five concurrent
+runs passed before retention.
+
 This does not claim to identify arbitrary late packets: TCP carries no run
 generation. The host must still fence the old namespace/NAT/conntrack path
 before close, and must not reassign the source address until close succeeds.
@@ -1383,8 +1390,8 @@ contract. Criterion found no empty-lease regression at 1.3543–1.3684
 milliseconds (`p=0.88`).
 
 The lifecycle code and proof move whole-tree structural/cognitive complexity
-from 383/1,122 to 392/1,147. The native and exact Rust 1.88 factories passed all
+from 383/1,122 to 393/1,149. The native and exact Rust 1.88 factories passed all
 75 deterministic cases and verified the assembled crate; the serialized Linux
 lane passed the same set. Its 500-lease smoke returned from eight descriptors
 and five threads while live to four descriptors and two threads, finishing at
-4,056 KiB RSS.
+4,076 KiB RSS.
