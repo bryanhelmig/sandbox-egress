@@ -1395,3 +1395,37 @@ from 383/1,122 to 393/1,149. The native and exact Rust 1.88 factories passed all
 lane passed the same set. Its 500-lease smoke returned from eight descriptors
 and five threads while live to four descriptors and two threads, finishing at
 4,076 KiB RSS.
+
+## 2026-08-31 — do not reinterpret bracketed hosts
+
+### Finding
+
+The maintained HTTP URI parser validates bracket placement and character
+shape, but deliberately does not prove that bracket contents are IPv6. The
+CONNECT layer unconditionally stripped a surrounding pair. A failing
+regression demonstrated that `CONNECT [example.com]:443` therefore became the
+ordinary DNS hostname `example.com`; bracketed IPv4 and IPvFuture text had the
+same class ambiguity. Later hostname and address policy still applied, so this
+was not a broad SSRF bypass, but it violated the crate's precise authority
+promise and could make an operator's syntax mistake mean something else.
+
+The surrounding hostname audit found no second defect: policy, CONNECT, and
+visible SNI share ASCII lowercase/trailing-dot canonicalization; wildcard
+matching requires a dot boundary and excludes the apex; resolver names are
+absolute; and every answer remains post-checked. A fresh comparison with the
+official IANA IPv4 and IPv6 special-purpose registries found the conservative
+address floor current, including the 2025 dummy IPv6 prefix.
+
+### Result
+
+After generic authority parsing, bracketed host contents must parse as
+`Ipv6Addr` before brackets are removed. DNS names, IPv4, IPvFuture, and scoped
+zone syntax fail with `invalid-ipv6-literal`; ordinary hostname and bracketed
+IPv6 behavior is unchanged. Unit cases pin all four rejected classes and a
+real listener case pins the bounded 400 denial reason.
+
+The change moves whole-tree structural/cognitive complexity from 393/1,149 to
+397/1,160. The native and exact Rust 1.88 factories passed all 77 deterministic
+cases and verified the assembled crate; the serialized Linux lane passed the
+same set. Its 500-lease smoke returned from eight descriptors and five threads
+while live to four descriptors and two threads, finishing at 4,132 KiB RSS.

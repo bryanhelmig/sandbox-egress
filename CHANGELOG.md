@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Reject bracketed CONNECT hosts unless their contents are a supported IPv6
+  literal, instead of reinterpreting bracketed DNS or IPvFuture text.
 - Restart the identity-reuse quiet period whenever another socket is rejected
   for a revoking lease, including best-effort dropped-lease cleanup.
 - Start each connection's absolute handshake and header deadlines when the

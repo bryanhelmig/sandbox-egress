@@ -1,3 +1,5 @@
+use std::net::Ipv6Addr;
+
 use http::uri::Authority;
 
 const MAX_CONNECT_HEADERS: usize = 64;
@@ -30,10 +32,16 @@ pub(crate) fn parse_connect(bytes: &[u8]) -> Result<ConnectRequest, &'static str
     let authority: Authority = target.parse().map_err(|_| "invalid-authority")?;
     let port = authority.port_u16().ok_or("missing-port")?;
     let host = authority.host();
-    let host = host
+    let host = if let Some(host) = host
         .strip_prefix('[')
         .and_then(|host| host.strip_suffix(']'))
-        .unwrap_or(host);
+    {
+        host.parse::<Ipv6Addr>()
+            .map_err(|_| "invalid-ipv6-literal")?;
+        host
+    } else {
+        host
+    };
     if host.is_empty() {
         return Err("missing-host");
     }
@@ -90,6 +98,23 @@ mod tests {
             .expect("valid IPv6 CONNECT");
         assert_eq!(request.host, "2001:db8::1");
         assert_eq!(request.port, 443);
+    }
+
+    #[test]
+    fn rejects_bracketed_hosts_that_are_not_ipv6() {
+        for authority in [
+            "[example.com]:443",
+            "[127.0.0.1]:443",
+            "[v1.example]:443",
+            "[fe80::1%25lo]:443",
+        ] {
+            let request = format!("CONNECT {authority} HTTP/1.1\r\n\r\n");
+            assert_eq!(
+                parse_connect(request.as_bytes()).unwrap_err(),
+                "invalid-ipv6-literal",
+                "unexpected result for {authority:?}"
+            );
+        }
     }
 
     #[test]

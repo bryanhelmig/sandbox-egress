@@ -75,6 +75,11 @@ or being mislabeled as malformed syntax. Header terminator search scans only
 new bytes plus the three-byte boundary overlap, so raising the trusted byte
 ceiling does not give a guest quadratic parser work.
 
+CONNECT authority parsing requires a nonzero decimal port. Square brackets are
+accepted only around a value that parses as IPv6; bracketed DNS names, IPv4,
+IPvFuture, and scoped-zone forms fail as `invalid-ipv6-literal` rather than
+being stripped and reinterpreted as another host class.
+
 Configuration and immutable policy construction reject durations too large for
 the platform clock to represent as deadlines. The connection path also uses
 checked deadline arithmetic, so elapsed startup time or a platform clock edge

@@ -34,6 +34,10 @@ separately. A parser boundary case accepts 64 fields and rejects field 65 with
 the stable `too-many-headers` response and diagnostic code, without copying
 attacker-controlled names or values into the event.
 
+Authority cases require bracketed IPv6 to remain accepted while bracketed DNS,
+IPv4, and IPvFuture text return the exact `invalid-ipv6-literal` reason. A real
+listener case verifies that reason is preserved in the bounded 400 response.
+
 A unit boundary case places the four-byte header terminator at every split
 around the proxy's 4 KiB read boundary and proves buffered tunnel bytes are
 preserved. The connection benchmark sends a full 1 MiB unterminated header and

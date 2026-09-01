@@ -223,6 +223,17 @@ fn excess_header_count_has_a_distinct_denial() {
 }
 
 #[test]
+fn bracketed_non_ipv6_host_has_a_distinct_denial() {
+    let response = header_denial(
+        ProxyConfig::default(),
+        b"CONNECT [example.com]:443 HTTP/1.1\r\n\r\n",
+        false,
+    );
+    assert!(response.starts_with("HTTP/1.1 400"), "{response}");
+    assert!(response.contains("invalid-ipv6-literal"), "{response}");
+}
+
+#[test]
 fn early_header_eof_has_a_distinct_denial() {
     let response = header_denial(ProxyConfig::default(), b"CONNECT incomplete", true);
     assert!(response.starts_with("HTTP/1.1 400"), "{response}");
