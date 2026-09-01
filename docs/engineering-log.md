@@ -4825,3 +4825,18 @@ descriptors, and five threads, and shutdown returned to four descriptors and
 two threads. The rootless 180/180 image is
 `sha256:e42a64d0567d618a444c577c2365c4a022b08019b8cf71623e400fa6c46902c0`
 (40,904,086 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — reject a zero-byte forwarding shortcut
+
+The next performance rotation tested an early return from uninspected initial
+upload forwarding when the CONNECT header ended exactly at the read boundary.
+The candidate avoided one saturating atomic update and one empty `write_all`
+future on the ordinary no-pipelined-upload path.
+
+Five baseline `connect_allowed_loopback` intervals spanned 112.25–145.00
+microseconds. Five candidate intervals spanned 111.91–148.05 microseconds, and
+every Criterion comparison crossed zero (`p=0.38..0.81` in the candidate
+runs). The end-to-end socket cost made the shortcut unmeasurable. The branch
+was removed: the uniform accounting path is easier to read, and no performance
+claim is retained. Production source, test count, dependencies, and complexity
+are unchanged.
