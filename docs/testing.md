@@ -415,11 +415,13 @@ avoiding platform-dependent assumptions about unroutable addresses.
 The upstream-proxy lane uses a real local HTTP CONNECT peer. It requires that
 the peer receive only the already-approved numeric target, preserves payload
 bytes coalesced with the peer's 2xx response, and checks exact guest byte
-accounting. Separate cases pin a distinct denial for a 407 refusal, reject a
-response header that reaches the 32 KiB ceiling, reject configuring the shared
-listener as its own upstream, and certify lease revocation while the peer
-withholds its response. The last case requires both guest and upstream sockets
-to become terminal without releasing the peer first.
+accounting. A one-byte download ceiling separately requires a six-byte
+coalesced payload to account all six bytes while forwarding exactly the first
+byte and denying the tunnel. Other cases pin a distinct denial for a 407
+refusal, reject a response header that reaches the 32 KiB ceiling, reject
+configuring the shared listener as its own upstream, and certify lease
+revocation while the peer withholds its response. The last case requires both
+guest and upstream sockets to become terminal without releasing the peer first.
 
 The connection Criterion suite also measures one complete upstream-proxy
 negotiation beside direct allowed CONNECT. The local peer consumes and verifies

@@ -4164,3 +4164,32 @@ doctests, documentation, package verification, benchmark smoke, and all six
 Linux resource lanes. Production behavior and the deterministic conformance
 count remain unchanged, so the assembled rootless image remains
 `sha256:5bdd4c12676d03f833666a25f080eeda6c28a5a8fefaf09f6325f70ac9cac00e`.
+
+## 2026-09-01 — coalesced upstream payload ceiling proof
+
+This security follow-up examined the boundary between upstream CONNECT
+negotiation and metered tunnelling. A cooperative or hostile upstream may send
+tunnel payload in the same socket read as its successful response. Those bytes
+have already entered the proxy before the tunnel copier starts, so retaining
+them outside the ordinary download ceiling would create a small policy leak.
+
+A new real-socket case sends `secret` immediately after the upstream response
+header while the lease permits one downloaded byte. The guest receives exactly
+`s`, final accounting records all six observed bytes, the connection is denied
+rather than completed, and active ownership reaches zero. The case passed 25
+consecutive runs.
+
+Production behavior already held the invariant because the prefix-aware stream
+sits inside the same metered reader as later socket bytes. No production source
+or dependency changed and no performance benchmark was run. Whole-tree SCC
+4.0.0 complexity moves from 729/2,171 to 730/2,173 structural/cognitive,
+entirely in the public conformance proof.
+
+The native and exact Rust 1.88 Linux factories passed 174 deterministic cases,
+six doctests, documentation, package verification, benchmark smoke, and all six
+Linux resource lanes; native dependency policy checks also passed. Linux's TLS
+lane peaked at 14,988 KiB RSS, 265 descriptors, and six threads, recovered to
+11,148 KiB, eight descriptors, and five threads, and finished at 6,620 KiB,
+four descriptors, and two threads. The rootless 174/174 image is
+`sha256:a08585327c02a6d62b347e5d5564de9a4ca1622193efd5de1891987f8948a65d`
+(40,865,285 bytes) and runs as UID/GID 65534.

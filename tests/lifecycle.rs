@@ -252,6 +252,61 @@ fn upstream_proxy_receives_only_the_approved_numeric_destination() {
 }
 
 #[test]
+fn upstream_proxy_coalesced_payload_obeys_the_download_ceiling() {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind upstream proxy");
+    let upstream_proxy = listener.local_addr().expect("upstream proxy address");
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept upstream proxy connection");
+        read_blocking_header(&mut stream);
+        stream
+            .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\nsecret")
+            .expect("approve CONNECT with coalesced payload");
+        stream
+            .read_to_end(&mut Vec::new())
+            .expect("observe proxy teardown");
+    });
+
+    let target: SocketAddr = "127.0.0.2:443".parse().expect("numeric target");
+    let proxy = Proxy::start(ProxyConfig::default().with_upstream_proxy(upstream_proxy))
+        .expect("start proxy");
+    let policy = Policy::builder()
+        .allow_network("127.0.0.0/8".parse::<IpNet>().expect("loopback CIDR"))
+        .allow_port(target.port())
+        .max_download_bytes(1)
+        .build()
+        .expect("valid policy");
+    let lease = attach_local(&proxy, policy);
+    let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+    client
+        .write_all(format!("CONNECT {target} HTTP/1.1\r\nHost: {}\r\n\r\n", target.ip()).as_bytes())
+        .expect("write guest CONNECT");
+    let mut response = [0_u8; 39];
+    client
+        .read_exact(&mut response)
+        .expect("read guest CONNECT response");
+    assert_eq!(&response, b"HTTP/1.1 200 Connection Established\r\n\r\n");
+    let mut payload = Vec::new();
+    client
+        .read_to_end(&mut payload)
+        .expect("read bounded tunnel payload");
+    assert_eq!(payload, b"s");
+    server.join().expect("join upstream proxy");
+
+    let usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("certified close")
+        .usage();
+    assert_eq!(usage.accepted_connections, 1);
+    assert_eq!(usage.completed_connections, 0);
+    assert_eq!(usage.denied_connections, 1);
+    assert_eq!(usage.downloaded_bytes, 6);
+    assert_eq!(usage.active_connections, 0);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
 fn upstream_proxy_refusal_has_a_distinct_bounded_denial() {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind upstream proxy");
     let upstream_proxy = listener.local_addr().expect("upstream proxy address");
