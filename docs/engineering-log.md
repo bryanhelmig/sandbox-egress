@@ -4932,3 +4932,29 @@ lints, dependency policy, package verification, benchmark smoke, and release
 builds. The rootless 182/182 image is
 `sha256:aa074cc361cfb510cca4fd8c42c117fc37d112a38c83b2e89b68abd6596a00c4`
 (40,922,281 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — prove guest headers cannot select a lease
+
+The next hardening rotation revisited CONNECT authority comparisons and found
+no second destination selector in the parser. It did find that the stronger
+identity promise—host-observed source address, never a guest header—was stated
+but lacked a public real-socket proof.
+
+The new case attaches a restrictive policy to `127.0.0.1` and a more permissive
+policy to `127.0.0.2`. A real client observed as the first identity sends the
+second address in `X-Run-ID` while requesting a destination only the second
+policy would allow. The request receives the first policy's
+`ip-literal-denied`, the destination accepts no connection, the observed lease
+owns the one accepted and denied request, and the claimed lease remains at
+zero. Ten consecutive focused runs pass.
+
+Production source, dependencies, public API, and whole-tree SCC 4.0.0
+structural/cognitive complexity remain unchanged at 770/2,282. The
+deterministic test count rises from 182 to 183.
+
+The complete native and pinned Rust 1.88 factories pass all 183 deterministic
+tests, eight Linux resource lanes, six documentation examples, formatting,
+lints, dependency policy, package verification, benchmark smoke, and release
+builds. The rootless 183/183 image is
+`sha256:5fb495f20016082b25062a8fdcb811bc8fed4c3ff9e751562fb24c4b0e2f5cb9`
+(40,923,086 bytes) and runs as UID/GID 65534.

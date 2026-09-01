@@ -736,6 +736,62 @@ fn hostname_policy_denies_before_dns() {
 }
 
 #[test]
+fn guest_header_cannot_select_another_identity_or_policy() {
+    let (port, captured, capture) = start_capture();
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let observed_lease = attach_local(
+        &proxy,
+        Policy::builder()
+            .allow_port(port)
+            .build()
+            .expect("restrictive observed policy"),
+    );
+    let claimed_identity = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2));
+    let claimed_lease = proxy
+        .attach(PeerIdentity::SourceIp(claimed_identity), local_policy(port))
+        .expect("attach more permissive claimed identity");
+
+    let mut client =
+        TcpStream::connect(observed_lease.endpoint().socket_addr()).expect("connect proxy");
+    client
+        .write_all(
+            format!(
+                "CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Run-ID: {claimed_identity}\r\n\r\n"
+            )
+            .as_bytes(),
+        )
+        .expect("write forged identity header");
+    let mut response = String::new();
+    client.read_to_string(&mut response).expect("read denial");
+    assert!(response.starts_with("HTTP/1.1 403"), "{response}");
+    assert!(response.contains("ip-literal-denied"), "{response}");
+
+    assert!(
+        captured
+            .recv_timeout(Duration::from_secs(1))
+            .expect("capture result")
+            .is_empty(),
+        "forged identity selected the permissive policy"
+    );
+    capture.join().expect("capture thread");
+    let observed_usage = observed_lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close observed lease")
+        .usage();
+    assert_eq!(observed_usage.accepted_connections, 1);
+    assert_eq!(observed_usage.denied_connections, 1);
+    let claimed_usage = claimed_lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close claimed lease")
+        .usage();
+    assert_eq!(claimed_usage.accepted_connections, 0);
+    assert_eq!(claimed_usage.denied_connections, 0);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
 fn proxy_listener_cannot_be_a_tunnel_destination() {
     let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
     let endpoint = proxy.endpoint().socket_addr();

@@ -234,6 +234,10 @@ Source-identity cases prove an IPv4 address and its mapped IPv6 transport
 spelling collide in the registry. A real dual-stack listener routes an IPv4
 client to that canonical lease, while the IPv6 CONNECT case uses an IPv6
 listener, IPv6 source identity, checked IPv6 destination, and IPv6 upstream.
+A separate real-socket case attaches restrictive and permissive policies to
+two loopback source identities. A client observed as the restrictive identity
+sends the permissive address in `X-Run-ID`; it must still be denied before dial,
+and the claimed lease must retain zero accepted and denied connections.
 
 Post-establishment upload and download ceiling cases send bytes across a
 zero-byte budget, prove the peer receives none, preserve attempted-byte

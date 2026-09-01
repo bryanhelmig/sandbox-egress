@@ -50,6 +50,15 @@ resource lane holds many partial headers concurrently and proves certified
 release of every socket and permit. Reserved shares remain a separate,
 optional scheduling design.
 
+Several sandbox-local proxies accept a guest token, header, or per-process
+listener as their run selector. Sandbox Egress deliberately does not generalize
+that mechanism. A real-socket proof installs a restrictive policy for the
+actual loopback peer and a permissive policy for another attached source
+address, then sends the other address in `X-Run-ID`. The request is denied by
+the observed peer's policy, the destination is never dialed, and the claimed
+lease records no connection. This preserves the host-authenticated identity
+boundary even when a familiar guest header is present.
+
 ## Listener failure comparison
 
 Smokescreen delegates serving to Go's

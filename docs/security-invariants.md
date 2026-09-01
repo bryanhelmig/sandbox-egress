@@ -260,6 +260,8 @@ field syntax, and non-ASCII authority text are rejected rather than
 normalized. This follows the message requirements and authority-form
 reconstruction rules in [RFC 9112 sections 3.2 and
 3.3](https://www.rfc-editor.org/rfc/rfc9112.html#section-3.2).
+An attached lease named in a guest `X-Run-ID` header receives no traffic unless
+the socket's host-observed source address actually maps to that lease.
 
 Configuration and immutable policy construction reject durations too large for
 the platform clock to represent as deadlines. The connection path also uses
