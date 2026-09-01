@@ -1634,6 +1634,62 @@ mod tests {
             .expect("valid policy")
     }
 
+    struct PendingDialFixture {
+        proxy: Proxy,
+        lease: Lease,
+        client: std::net::TcpStream,
+        active: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    fn pending_dial_fixture(port: u16) -> PendingDialFixture {
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let connector = Arc::new(PendingConnector {
+            entered: entered_tx,
+            active: Arc::clone(&active),
+        });
+        let proxy = Proxy::start_with_test_connector(ProxyConfig::default(), connector)
+            .expect("start proxy");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                ip_policy(port, Duration::from_secs(2)),
+            )
+            .expect("attach lease");
+        let mut client =
+            std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+        std::io::Write::write_all(
+            &mut client,
+            format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").as_bytes(),
+        )
+        .expect("write CONNECT");
+        entered_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("dial entered");
+        PendingDialFixture {
+            proxy,
+            lease,
+            client,
+            active,
+        }
+    }
+
+    fn assert_client_stopped(mut client: std::net::TcpStream) {
+        client
+            .set_read_timeout(Some(Duration::from_millis(250)))
+            .expect("set client timeout");
+        let mut byte = [0_u8; 1];
+        match std::io::Read::read(&mut client, &mut byte) {
+            Ok(0) => {}
+            Err(error)
+                if !matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ) => {}
+            outcome => panic!("guest socket remained open: {outcome:?}"),
+        }
+    }
+
     #[test]
     fn pending_first_address_cannot_starve_a_reachable_second_address() {
         let target = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
@@ -2019,6 +2075,144 @@ mod tests {
             .expect("observe proxy-wide certificate")
             .usage();
         assert_eq!(usage.active_connections, 0);
+    }
+
+    #[test]
+    fn proxy_drop_racing_lease_close_preserves_the_certificate() {
+        let PendingDialFixture {
+            mut proxy,
+            lease,
+            client,
+            active,
+        } = pending_dial_fixture(19_446);
+
+        let runtime = proxy.thread.take().expect("runtime handle");
+        let barrier = Arc::new(std::sync::Barrier::new(3));
+        let proxy_barrier = Arc::clone(&barrier);
+        let proxy_drop = thread::spawn(move || {
+            proxy_barrier.wait();
+            drop(proxy);
+        });
+        let lease_barrier = Arc::clone(&barrier);
+        let lease_close = thread::spawn(move || {
+            lease_barrier.wait();
+            lease.close(Instant::now() + Duration::from_secs(2))
+        });
+
+        barrier.wait();
+        proxy_drop.join().expect("drop proxy");
+        let usage = lease_close
+            .join()
+            .expect("join lease close")
+            .expect("certified lease close")
+            .usage();
+        runtime.join().expect("join runtime");
+
+        assert_eq!(usage.active_connections, 0);
+        assert_eq!(active.load(Ordering::Acquire), 0);
+        assert_client_stopped(client);
+    }
+
+    #[test]
+    fn proxy_drop_racing_lease_drop_releases_all_ownership() {
+        let PendingDialFixture {
+            mut proxy,
+            lease,
+            client,
+            active,
+        } = pending_dial_fixture(19_447);
+        let state = Arc::downgrade(lease.state.as_ref().expect("lease state"));
+
+        let runtime = proxy.thread.take().expect("runtime handle");
+        let barrier = Arc::new(std::sync::Barrier::new(3));
+        let proxy_barrier = Arc::clone(&barrier);
+        let proxy_drop = thread::spawn(move || {
+            proxy_barrier.wait();
+            drop(proxy);
+        });
+        let lease_barrier = Arc::clone(&barrier);
+        let lease_drop = thread::spawn(move || {
+            lease_barrier.wait();
+            drop(lease);
+        });
+
+        barrier.wait();
+        proxy_drop.join().expect("drop proxy");
+        lease_drop.join().expect("drop lease");
+        runtime.join().expect("join runtime");
+
+        assert_eq!(active.load(Ordering::Acquire), 0);
+        assert!(state.upgrade().is_none());
+        assert_client_stopped(client);
+    }
+
+    #[test]
+    fn proxy_shutdown_racing_lease_close_preserves_both_certificates() {
+        let PendingDialFixture {
+            proxy,
+            lease,
+            client,
+            active,
+        } = pending_dial_fixture(19_448);
+        let barrier = Arc::new(std::sync::Barrier::new(3));
+        let proxy_barrier = Arc::clone(&barrier);
+        let proxy_shutdown = thread::spawn(move || {
+            proxy_barrier.wait();
+            proxy.shutdown(Instant::now() + Duration::from_secs(2))
+        });
+        let lease_barrier = Arc::clone(&barrier);
+        let lease_close = thread::spawn(move || {
+            lease_barrier.wait();
+            lease.close(Instant::now() + Duration::from_secs(2))
+        });
+
+        barrier.wait();
+        proxy_shutdown
+            .join()
+            .expect("join proxy shutdown")
+            .expect("certified proxy shutdown");
+        let usage = lease_close
+            .join()
+            .expect("join lease close")
+            .expect("certified lease close")
+            .usage();
+
+        assert_eq!(usage.active_connections, 0);
+        assert_eq!(active.load(Ordering::Acquire), 0);
+        assert_client_stopped(client);
+    }
+
+    #[test]
+    fn proxy_shutdown_racing_lease_drop_releases_all_ownership() {
+        let PendingDialFixture {
+            proxy,
+            lease,
+            client,
+            active,
+        } = pending_dial_fixture(19_449);
+        let state = Arc::downgrade(lease.state.as_ref().expect("lease state"));
+        let barrier = Arc::new(std::sync::Barrier::new(3));
+        let proxy_barrier = Arc::clone(&barrier);
+        let proxy_shutdown = thread::spawn(move || {
+            proxy_barrier.wait();
+            proxy.shutdown(Instant::now() + Duration::from_secs(2))
+        });
+        let lease_barrier = Arc::clone(&barrier);
+        let lease_drop = thread::spawn(move || {
+            lease_barrier.wait();
+            drop(lease);
+        });
+
+        barrier.wait();
+        proxy_shutdown
+            .join()
+            .expect("join proxy shutdown")
+            .expect("certified proxy shutdown");
+        lease_drop.join().expect("drop lease");
+
+        assert_eq!(active.load(Ordering::Acquire), 0);
+        assert!(state.upgrade().is_none());
+        assert_client_stopped(client);
     }
 
     #[test]

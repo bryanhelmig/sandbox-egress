@@ -2028,3 +2028,35 @@ its +0.01% to +2.58% change within the configured noise threshold. An immediate
 repeat measured 1.3373–1.3457 ms and reversed the apparent movement. This is
 host variance, not evidence of either a regression or an improvement, so no
 performance claim is attached to the change.
+
+## 2026-09-01 — close the proxy/lease race matrix
+
+The remaining proxy-shutdown race inventory had four meaningful combinations:
+explicit `Proxy::shutdown` and best-effort `Proxy::drop`, each concurrent with
+`Lease::close` and `Lease::drop`. Four barrier-synchronized cases now start a
+real proxy connection, hold its dial pending in a controllable connector, and
+release the two management operations together.
+
+Both explicit-shutdown combinations require a successful proxy certificate;
+the lease-close variant also requires its own zero-active certificate,
+regardless of command order. The best-effort combinations retain the runtime
+join handle only inside the unit-test boundary, then prove that the owned
+runtime terminates. Both lease-drop combinations additionally hold a weak
+lease-state reference and require its final strong owner to disappear. Every
+case requires the pending dial token to be destroyed and the guest socket to
+stop. The four-case set passed ten consecutive focused runs.
+
+No production source changed. Whole-tree SCC 4.0.0 complexity moved from
+480/1,447 to 490/1,479 structural/cognitive, entirely in the reusable pending
+dial fixture, strict terminal-socket assertion, and four lifecycle cases. A
+data-path benchmark was intentionally skipped because test-only code cannot
+support a throughput claim.
+
+The native factory passed all 106 deterministic cases, doctests,
+documentation, package verification, and dependency policy checks. Its full
+8,000-lease resource run returned from 13 descriptors and five threads while
+live to nine descriptors and two threads, finishing at 8,976 KiB RSS in
+11,608 ms. The exact Rust 1.88 Linux factory passed the same cases; its
+500-lease lane returned from eight descriptors and five threads to four and
+two, finishing at 3,968 KiB RSS in 1,080 ms. The serialized runner reproduced
+106/106 as UID/GID 65534 and measured 40,388,758 bytes.

@@ -119,12 +119,20 @@ the retained lease with a consumable closed snapshot. A separate case removes
 the success receiver before an empty shutdown; the runtime must remain alive in
 stopping state until a later caller actually receives the certificate.
 
+Four barrier-synchronized cases race explicit proxy shutdown and best-effort
+proxy drop against both certified lease close and lease drop while a dial is
+pending. Explicit shutdown must succeed in both cases; where lease close is
+present, it must succeed too, regardless of command order. Drop paths must
+still destroy the dial; best-effort proxy drop must join the owned runtime in
+the test boundary, and lease drop must release the final strong lease-state
+reference.
+
 The Docker factory is multi-stage. Rust 1.88 performs the complete check and
 resource lane in the builder. A checked collector reads Cargo's JSON artifact
 records, requires exactly one executable for each conformance target, strips
 copies, and carries only those binaries into a Debian runner. The CLI's
 compile-time executable dependency is copied at its exact embedded path. The
-final image runs as UID/GID 65534 and must reproduce all 102 deterministic
+final image runs as UID/GID 65534 and must reproduce all 106 deterministic
 cases without Cargo, source, or a build cache.
 
 Source-identity cases prove an IPv4 address and its mapped IPv6 transport
