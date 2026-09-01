@@ -28,6 +28,19 @@ fn assert_terminal_read(result: std::io::Result<usize>) {
     }
 }
 
+fn assert_terminal_write(kind: std::io::ErrorKind) {
+    assert!(
+        matches!(
+            kind,
+            std::io::ErrorKind::BrokenPipe
+                | std::io::ErrorKind::ConnectionReset
+                | std::io::ErrorKind::ConnectionAborted
+                | std::io::ErrorKind::NotConnected
+        ),
+        "expected terminal socket, got {kind:?}"
+    );
+}
+
 fn start_sender(payload: &'static [u8]) -> (u16, thread::JoinHandle<()>) {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind sender");
     let port = listener.local_addr().expect("sender address").port();
@@ -392,15 +405,11 @@ fn close_interrupts_an_uploader_when_upstream_never_reads() {
         .usage();
     assert!(started.elapsed() < Duration::from_millis(500));
     assert_eq!(final_usage.active_connections, 0);
-    assert!(matches!(
+    assert_terminal_write(
         writer_rx
             .recv_timeout(Duration::from_secs(1))
             .expect("uploader closure"),
-        std::io::ErrorKind::BrokenPipe
-            | std::io::ErrorKind::ConnectionReset
-            | std::io::ErrorKind::ConnectionAborted
-            | std::io::ErrorKind::NotConnected
-    ));
+    );
     writer.join().expect("uploader thread");
     release_peer.send(()).expect("release upstream");
     peer_thread.join().expect("nonreading peer thread");
@@ -427,16 +436,67 @@ fn close_interrupts_a_downloader_when_guest_never_reads() {
         .usage();
     assert!(started.elapsed() < Duration::from_millis(500));
     assert_eq!(final_usage.active_connections, 0);
-    assert!(matches!(
+    assert_terminal_write(
         writer_stopped
             .recv_timeout(Duration::from_secs(1))
             .expect("downloader closure"),
-        std::io::ErrorKind::BrokenPipe
-            | std::io::ErrorKind::ConnectionReset
-            | std::io::ErrorKind::ConnectionAborted
-            | std::io::ErrorKind::NotConnected
-    ));
+    );
     peer_thread.join().expect("flooding peer thread");
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
+fn close_interrupts_simultaneous_bidirectional_backpressure() {
+    let (port, accepted, upstream_stopped, peer_thread) = start_flooding_peer();
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let lease = attach_for_ports(&proxy, &[port], None);
+    let mut client = open_tunnel(lease.endpoint().socket_addr(), port);
+    client
+        .set_write_timeout(Some(Duration::from_secs(2)))
+        .expect("client write timeout");
+    accepted
+        .recv_timeout(Duration::from_secs(1))
+        .expect("upstream accepted proxy");
+
+    let (guest_stopped_tx, guest_stopped_rx) = mpsc::sync_channel(1);
+    let guest_thread = thread::spawn(move || {
+        let block = [0xa5_u8; 16 * 1024];
+        let error = loop {
+            if let Err(error) = client.write_all(&block) {
+                break error.kind();
+            }
+        };
+        guest_stopped_tx
+            .send(error)
+            .expect("report guest writer stop");
+    });
+    wait_for_bytes(|| lease.usage().uploaded_bytes);
+    wait_for_bytes(|| lease.usage().downloaded_bytes);
+
+    let started = Instant::now();
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close bidirectionally blocked tunnel")
+        .usage();
+    assert!(started.elapsed() < Duration::from_millis(500));
+    assert_eq!(final_usage.active_connections, 0);
+    assert!(final_usage.uploaded_bytes > 0);
+    assert!(final_usage.downloaded_bytes > 0);
+
+    assert_terminal_write(
+        guest_stopped_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("guest writer closure"),
+    );
+    assert_terminal_write(
+        upstream_stopped
+            .recv_timeout(Duration::from_secs(1))
+            .expect("upstream writer closure"),
+    );
+    guest_thread.join().expect("guest writer thread");
+    peer_thread.join().expect("upstream writer thread");
     proxy
         .shutdown(Instant::now() + Duration::from_secs(1))
         .expect("proxy shutdown");

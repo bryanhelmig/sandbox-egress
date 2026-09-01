@@ -248,7 +248,7 @@ The build stage is pinned to Rust 1.88, warms locked dependencies, then runs the
 normal factory and a small Linux resource smoke with Cargo offline. After the
 checked executables are collected, its compilation tree is discarded before
 the layer is committed. The final image contains only the stripped conformance
-executables and runs all 112 deterministic cases as an unprivileged user. It
+executables and runs all 113 deterministic cases as an unprivileged user. It
 does not ship Cargo, the compiler, source tree, or build cache. Tests remain
 local and do not call public network services.
 

@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Prove certified close terminates both hostile writers when upload and
+  download are simultaneously backpressured.
 - Add a reproducible 1 MiB near-terminator header benchmark; measurement
   supports retaining the existing linear scanner without added machinery.
 - Give controlled and system resolvers the same absolute DNS name, and pin the

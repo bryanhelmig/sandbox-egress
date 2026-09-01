@@ -2284,3 +2284,32 @@ in 1,065 ms. The rootless runner reproduced 112/112 as UID/GID 65534. Because
 the runtime runner excludes benchmark artifacts, its image remained
 `sha256:6a5c358fc6b0527485a9a27185a502b3a4d7db130664f55aa90565b4750e3aa4`
 at 40,410,919 bytes.
+
+## 2026-09-01 — close both directions under simultaneous backpressure
+
+The tunnel suite separately proved revocation while the guest continuously
+writes to an upstream that never reads and while an upstream continuously
+writes to a guest that never reads. Those cases did not prove the harder
+combined state: both kernel send paths backpressured at once while the
+bidirectional copy future owns both sockets.
+
+A new real-socket case starts both hostile writers, requires both upload and
+download counters to become nonzero, and then closes the lease. Certified close
+must return within 500 ms, final active ownership must be zero, and both writer
+threads must receive a terminal socket error. A write timeout is deliberately
+not accepted as cleanup evidence. The focused case passed ten consecutive
+runs.
+
+The implementation already held the invariant, so no production source or
+data-path benchmark changed. A small terminal-write assertion helper removes
+duplicated platform error matching from the two earlier one-direction cases.
+Whole-tree SCC 4.0.0 complexity moved from 505/1,522 to 510/1,535
+structural/cognitive, entirely in conformance code.
+
+The native and exact Rust 1.88 Linux factories passed all 113 deterministic
+cases, doctests, documentation, and package verification; native dependency
+policy checks also passed. Linux's 500-lease lane returned from eight
+descriptors and five threads to four and two, finishing at 3,960 KiB RSS in
+1,073 ms. The rootless runner reproduced 113/113 as UID/GID 65534; image
+`sha256:84b775c525dfe9a244fdc20238ea49a797bd0c1697358a3e3a5ac15fbfe59cd3`
+measured 40,413,030 bytes.

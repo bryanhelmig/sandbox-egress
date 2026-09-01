@@ -51,7 +51,6 @@ services may supplement research but must not become test dependencies.
 
 ## Tunnelling and accounting
 
-- Blocked uploader, blocked downloader, and simultaneous backpressure.
 - Byte ceilings at exact boundaries and across buffered post-header bytes.
 - Counter behavior on cancellation, denial, reset, timeout, and normal EOF.
 - Integer overflow and monotonic snapshot behavior.

@@ -163,7 +163,7 @@ exactly one executable for each conformance target, strips copies, and carries
 only those binaries into a Debian runner. The CLI's compile-time executable
 dependency is copied at its exact embedded path. The factory deletes its
 compilation tree only after collection, before committing the source-dependent
-layer. The final image runs as UID/GID 65534 and must reproduce all 112
+layer. The final image runs as UID/GID 65534 and must reproduce all 113
 deterministic cases without Cargo, source, or a build cache.
 
 Source-identity cases prove an IPv4 address and its mapped IPv6 transport
@@ -216,6 +216,11 @@ ceilings, independent per-tunnel budgets, idle tunnel shutdown, an uploader
 whose upstream never reads, and a downloader whose guest never reads. Terminal
 socket assertions reject timeouts: a peer that merely remains blocked is not
 accepted as evidence of revocation.
+
+A simultaneous-backpressure case makes the guest and upstream write
+continuously while neither reads. Both accounting directions must advance
+before certified close, both hostile writers must then observe a terminal
+socket error, and final active ownership must be zero.
 
 The resolver seam is internal to tests, so production callers cannot replace
 host-authenticated policy with a guest-selected backend. Controlled resolver
