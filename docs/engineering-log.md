@@ -5531,3 +5531,19 @@ variation. With no artifact benefit, removing the feature would only make the
 intended deployed TLS compatibility less explicit. The candidate was reverted;
 the normal dependency graph remains free of OpenSSL, native-tls, ring, AWS-LC,
 and an HTTP client/server framework.
+
+## 2026-09-01 — repeat every resource lane on the final tree
+
+All eight locked optimized resource lanes pass on arm64 macOS after the final
+dependency trial. The one-process sequence covers 8,000 attach/close identity
+cycles, 2,000 iterations of each terminal connection shape, 64 bidirectionally
+backpressured tunnels, 128 partial headers, 64 partial 60,020-byte
+ClientHellos, 128 partial upstream-proxy responses, and 128 simultaneous idle
+expiries.
+
+Every lane finishes at nine process descriptors and two threads. Peak RSS in
+the sequential test process reaches 23,136 KiB and finishes at 22,864 KiB;
+this records allocator retention rather than claiming that resident memory
+returns to its pre-allocation value. The existing isolated Linux lanes remain
+the cross-platform release comparison, while this repetition proves the exact
+final local tree releases live sockets and workers.
