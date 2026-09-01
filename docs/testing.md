@@ -32,6 +32,11 @@ socket is terminal under either the global or per-lease ceiling. The rejected
 connection must add one denial without adding an accepted, active, or spawned
 connection task.
 
+Post-establishment upload and download ceiling cases send bytes across a
+zero-byte budget, prove the peer receives none, preserve attempted-byte
+accounting, and require exactly one policy denial. This is separate from socket
+reset tests so transport failure cannot masquerade as policy enforcement.
+
 Performance gates begin as recorded baselines, not brittle absolute numbers.
 Benchmarks cover attach/close, policy matching, admission contention, and
 accounting overhead. Macrobenchmarks later report connections/sec, throughput,

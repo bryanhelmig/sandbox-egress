@@ -50,6 +50,11 @@ deadline capped by the lease handshake deadline. Oversize input, early EOF,
 timeout, and other socket read failure remain fail-closed and have distinct
 bounded reason codes.
 
+Per-tunnel byte ceilings count bytes read from the guest or upstream. Bytes in
+the read that crosses a ceiling are accounted but not forwarded. A ceiling
+violation is a policy denial, distinct from an ordinary tunnel I/O failure, and
+increments the lease denial counter exactly once.
+
 The forbidden-address floor applies IPv4 rules to both mapped and deprecated
 compatible IPv6 forms. The well-known NAT64 `/96` is decoded and the embedded
 IPv4 destination is checked. Local-use NAT64, Teredo, 6to4, and non-global

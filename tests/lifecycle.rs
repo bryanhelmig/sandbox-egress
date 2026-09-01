@@ -412,6 +412,7 @@ fn upload_limit_blocks_payload_sent_after_connect_response() {
         .expect("close upload-limited lease")
         .usage();
     assert!(final_usage.uploaded_bytes <= 6);
+    assert_eq!(final_usage.denied_connections, 1);
     proxy
         .shutdown(Instant::now() + Duration::from_secs(1))
         .expect("proxy shutdown");

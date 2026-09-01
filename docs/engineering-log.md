@@ -795,3 +795,34 @@ unit and 22 integration tests plus the hostile lane. Production `proxy.rs`
 complexity remained exactly 114 structural and 357 cognitive points; the
 whole-tree increase from 334/983 to 339/995 belongs to the new concurrency test
 helper and cases.
+
+## 2026-08-31 — byte-ceiling violations count as denials
+
+### Finding
+
+Upload and download ceilings correctly counted an over-limit read and stopped
+it before forwarding, but `copy_bidirectional` returned the violation as an
+ordinary I/O error. Final usage therefore reported zero denials even though an
+immutable run policy had ended the tunnel.
+
+### Result
+
+The existing real-socket zero-upload and zero-download cases were strengthened
+to require one denial. Both failed at zero before the fix. A private typed
+error now crosses the copy boundary, allowing the connection owner to count a
+policy denial without reclassifying connection resets, broken pipes, or other
+transport errors. The marker allocates only on the violation path.
+
+The paired ceiling tests passed 25 consecutive runs; the complete native
+factory passed 31 unit and 22 integration tests plus the hostile lane.
+Production `proxy.rs` moved from 114/357 to 117/362 structural/cognitive points
+for the typed classification and terminal match.
+
+Three comparable 128 MiB-per-tunnel, eight-tunnel runs measured 3,133–3,294
+MiB/sec upload and 3,433–3,492 MiB/sec download. Those ranges remain within the
+retained two-worker baseline (3,335 MiB/sec median upload and 3,464 MiB/sec
+median download), so no throughput change was claimed.
+
+The exact Rust 1.88 Linux image passed the factory and hostile lane. Its
+500-lease smoke held eight descriptors and five threads while live, returned
+to four descriptors and two threads, and finished at 3,928 KiB RSS.

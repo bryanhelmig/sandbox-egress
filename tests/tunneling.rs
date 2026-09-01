@@ -165,6 +165,7 @@ fn zero_download_limit_never_forwards_upstream_payload() {
         .expect("close lease")
         .usage();
     assert_eq!(final_usage.downloaded_bytes, 6);
+    assert_eq!(final_usage.denied_connections, 1);
     proxy
         .shutdown(Instant::now() + Duration::from_secs(1))
         .expect("proxy shutdown");

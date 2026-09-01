@@ -733,8 +733,14 @@ async fn serve_connect(
         state.policy.max_download_bytes,
         0,
     );
-    tokio::io::copy_bidirectional(&mut client, &mut upstream).await?;
-    Ok(ConnectionDisposition::Completed)
+    match tokio::io::copy_bidirectional(&mut client, &mut upstream).await {
+        Ok(_) => Ok(ConnectionDisposition::Completed),
+        Err(error) if is_transfer_limit_error(&error) => {
+            state.counters.deny();
+            Ok(ConnectionDisposition::Denied)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 async fn dial_approved_addresses(
@@ -970,6 +976,24 @@ enum Direction {
     Download,
 }
 
+#[derive(Debug)]
+struct TransferLimitExceeded;
+
+impl std::fmt::Display for TransferLimitExceeded {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("transfer byte limit exceeded")
+    }
+}
+
+impl std::error::Error for TransferLimitExceeded {}
+
+fn is_transfer_limit_error(error: &io::Error) -> bool {
+    error
+        .get_ref()
+        .and_then(|source| source.downcast_ref::<TransferLimitExceeded>())
+        .is_some()
+}
+
 struct Metered<T> {
     inner: T,
     counters: Arc<Counters>,
@@ -1012,7 +1036,7 @@ impl<T: AsyncRead + Unpin> AsyncRead for Metered<T> {
             };
             self.transferred = self.transferred.saturating_add(bytes);
             if self.limit.is_some_and(|limit| self.transferred > limit) {
-                return Poll::Ready(Err(io::Error::other("transfer byte limit exceeded")));
+                return Poll::Ready(Err(io::Error::other(TransferLimitExceeded)));
             }
         }
         result
