@@ -166,8 +166,10 @@ stopping state until a later caller actually receives the certificate.
 
 Legacy numeric host spellings (`127.1`, leading-zero dotted form, hexadecimal
 integer, and single decimal integer) are exercised end to end. Each is allowed
-only as a hostname, resolved to loopback by a controlled resolver, rejected by
-the forbidden-address floor, and required to produce zero connector calls.
+only as a hostname, sent through the production resolver to an explicit local
+DNS server, resolved to loopback, rejected by the forbidden-address floor, and
+required to produce zero connector calls. The fixture observes both A and AAAA
+wire queries for every spelling.
 
 The provider-control exception has its own real-listener proof. A controlled
 hostname resolves to Azure WireServer's public-looking `168.63.129.16`; the

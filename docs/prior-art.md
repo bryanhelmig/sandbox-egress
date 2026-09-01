@@ -64,6 +64,14 @@ hostname contract. It does not currently adopt compound host-and-port rules:
 ports remain a separate explicit allow dimension, and one implementation alone
 does not justify complicating that model.
 
+Ressrf rejects ambiguous legacy IPv4 text before resolution. Sandbox Egress
+does not need to infer an effective address from that text: a trusted host must
+first allow it as a hostname, the production resolver receives an absolute
+DNS name, and every returned address is then checked as an address. The
+conformance case now proves that distinction on the real resolver wire path
+for shorthand, leading-zero, hexadecimal, and decimal spellings; all resolve
+to loopback and reach zero connector calls.
+
 The nono pin advanced from `8f15fc86` to `7989b578` during this review. The
 intervening change only expanded environment variables in credential
 local-socket paths; it did not alter the proxy or the comparison above.

@@ -129,6 +129,12 @@ that full-set validation, duplicate approved socket addresses are collapsed in
 first-seen order. Repeated records therefore consume one bounded answer slot
 each but cannot amplify sequential connection attempts.
 
+Numeric-looking legacy host spellings are not trusted as IP literals. If a
+host policy deliberately permits one as a hostname, the production resolver
+still returns ordinary addresses and the complete result set crosses the same
+destination floor before any connector call. A local-wire proof covers dotted
+shorthand, leading-zero dotted form, hexadecimal integer, and decimal integer.
+
 The listener's actual post-bind socket address, including its assigned port,
 is frozen into process configuration before any connection is dispatched. A
 matching literal or DNS result is rejected as `proxy-endpoint-denied` before an

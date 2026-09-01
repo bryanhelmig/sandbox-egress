@@ -4437,3 +4437,28 @@ Whole-tree SCC 4.0.0 complexity moves from 750/2,229 to 749/2,229
 structural/cognitive. The rootless 178/178 image is
 `sha256:3186a93287671d8533c0ef1c40857d1b283f243133609908de89029286c4f381`
 (40,892,697 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — move legacy numeric proof onto the resolver wire
+
+Ressrf's strict ambiguous-address parser prompted a comparison follow-up.
+Sandbox Egress intentionally does not infer an effective IP from legacy text:
+the host must allow that text as a hostname, and the resolver's result still
+crosses the complete address floor. The existing conformance case proved this
+with an injected answer, leaving the maintained system-resolver boundary
+implicit.
+
+The case now uses the production Hickory backend and an explicit local UDP DNS
+server. Dotted shorthand, leading-zero dotted form, hexadecimal integer, and
+single decimal integer each generate A and AAAA wire questions, receive a
+loopback answer, return `resolved-address-denied`, and make zero connector
+calls. It passed ten consecutive focused runs. This replaces rather than adds
+a test, changes no production source or public contract, and keeps whole-tree
+complexity at 749/2,229 structural/cognitive.
+
+The native and exact Rust 1.88 Linux factories passed the unchanged 178
+deterministic cases and all six Linux resource lanes. Linux's TLS lane peaked
+at 14,928 KiB RSS, 265 descriptors, and six threads, recovered to 8,516 KiB,
+eight descriptors, and five threads, and finished at 5,932 KiB, four
+descriptors, and two threads. The rootless 178/178 image is
+`sha256:1853aa84db5fa45ed8af6b5e4d5e36310f0b41ac534f6934e3fa6ab96105c87d`
+(40,892,714 bytes) and runs as UID/GID 65534.

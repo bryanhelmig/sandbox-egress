@@ -3119,17 +3119,17 @@ mod tests {
     }
 
     #[test]
-    fn legacy_numeric_host_spellings_cannot_bypass_the_resolved_address_floor() {
+    fn legacy_numeric_spellings_cannot_bypass_the_system_resolver_address_floor() {
         let dial_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         for hostname in ["127.1", "0177.0.0.1", "0x7f000001", "2130706433"] {
             assert!(hostname.parse::<IpAddr>().is_err(), "{hostname}");
-            let resolver = Arc::new(FixedAnswerResolver(vec![IpAddr::V4(
-                std::net::Ipv4Addr::LOCALHOST,
-            )]));
+            let (dns_address, dns_server) = start_local_dns(2, local_a_response);
             let connector = Arc::new(RejectingConnector(Arc::clone(&dial_attempts)));
-            let proxy =
-                Proxy::start_with_test_backends(ProxyConfig::default(), resolver, connector)
-                    .expect("start proxy");
+            let proxy = Proxy::start_with_test_connector(
+                ProxyConfig::default().with_dns_server(dns_address),
+                connector,
+            )
+            .expect("start explicit-DNS proxy");
             let lease = proxy
                 .attach(
                     PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
@@ -3166,6 +3166,7 @@ mod tests {
             proxy
                 .shutdown(Instant::now() + Duration::from_secs(1))
                 .expect("proxy shutdown");
+            dns_server.join().expect("join explicit DNS server");
         }
     }
 
