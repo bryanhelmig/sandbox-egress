@@ -5070,3 +5070,17 @@ The pinned Rust 1.88 Linux factory also passes all 185 deterministic cases and
 all eight serialized resource lanes. Its rootless conformance image is
 `sha256:cb1212cd1aa40d4936e2d4185adfd61d39261a0a4df89a83785ea4c3e140b4c1`
 (40,948,020 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — recheck the final connection curve
+
+The final performance rotation reran the six-point, three-repeat fixed-load
+sweep on the exact 185-case tree. Median rates for concurrency 1, 8, 32, 64,
+128, and 256 were 6,350.8, 18,858.8, 20,095.5, 17,959.7, 18,974.8, and
+15,515.1 connections per second. Median p99 latencies were 190, 413, 1,336,
+3,963, 6,556, and 82,236 microseconds.
+
+The middle points move within local scheduler and socket noise, but the shape
+agrees with the earlier run: useful capacity saturates around 32–64 clients,
+and 256 materially worsens tail latency while reducing throughput. The recent
+policy and diagnostic changes do not justify a runtime tuning change. No
+production code is retained from this measurement.
