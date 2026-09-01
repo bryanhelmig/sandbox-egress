@@ -4052,3 +4052,29 @@ socket-and-scheduler variance of the measured path, while a custom iterator
 would add production type surface. The comparison worktree was removed; source,
 dependencies, public API, test counts, and whole-tree 694/2,077
 structural/cognitive complexity remain unchanged.
+
+## 2026-09-01 — flatten phase-permit ownership
+
+This simplification rotation found two redundant shared-owner layers. Every
+connection already retains one `Arc<PhasePermits>` for the full task, while
+the DNS and dial semaphores inside that structure were each independently
+wrapped in another `Arc` even though neither escapes the parent. They are now
+owned directly by `PhasePermits` and borrowed by bounded work. Permit capacity,
+queue cancellation, deadline behavior, and release-before-tunnel lifetimes are
+unchanged.
+
+The retained change removes two startup allocations and makes the ownership
+graph match the actual lifetime. The focused DNS and dial concurrency and
+cancellation proofs passed. No performance benchmark was run because this is
+process-start allocation work and changes no per-connection clone, task, permit,
+or data path. Whole-tree SCC 4.0.0 complexity remains exactly 694/2,077
+structural/cognitive.
+
+The native and exact Rust 1.88 Linux factories passed the unchanged 165
+deterministic cases, five doctests, documentation, package verification, and
+all six Linux resource lanes; native dependency policy checks also passed.
+Linux's TLS lane peaked at 14,908 KiB RSS, 265 descriptors, and six threads,
+recovered to 9,784 KiB, eight descriptors, and five threads, and finished at
+6,140 KiB, four descriptors, and two threads. The rootless 165/165 image is
+`sha256:87bc9c60d85fe6ec11807b0a987d00d716f9bd97c7840d2651e82dbb5a5658b1`
+(40,742,174 bytes) and runs as UID/GID 65534.

@@ -604,8 +604,8 @@ struct ConnectionRuntime {
 }
 
 struct PhasePermits {
-    dns: Arc<Semaphore>,
-    dial: Arc<Semaphore>,
+    dns: Semaphore,
+    dial: Semaphore,
 }
 
 impl ConnectionRuntime {
@@ -721,8 +721,8 @@ async fn run_proxy(
     let connections = ConnectionRuntime {
         global_permits: Arc::new(Semaphore::new(config.max_connections)),
         phase_permits: Arc::new(PhasePermits {
-            dns: Arc::new(Semaphore::new(config.max_concurrent_dns)),
-            dial: Arc::new(Semaphore::new(config.max_concurrent_dials)),
+            dns: Semaphore::new(config.max_concurrent_dns),
+            dial: Semaphore::new(config.max_concurrent_dials),
         }),
         resolver,
         connector,
@@ -3357,8 +3357,8 @@ mod tests {
             ));
             let resolver = ResolverBackend::Test(Arc::new(FixedAnswerResolver(Vec::new())));
             let phase_permits = PhasePermits {
-                dns: Arc::new(Semaphore::new(1)),
-                dial: Arc::new(Semaphore::new(1)),
+                dns: Semaphore::new(1),
+                dial: Semaphore::new(1),
             };
             let config = ProxyConfig::default();
 
