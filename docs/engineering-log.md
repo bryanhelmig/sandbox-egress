@@ -5293,3 +5293,16 @@ embedded in the supervisor process, rather than implying that the library
 always owns a separate process. A nearby capability sentence is made
 grammatically unambiguous. Runtime behavior, public API, tests, and complexity
 are unchanged.
+
+## 2026-09-01 — repeat the timing-sensitive lifecycle boundary
+
+The next hardening pass repeated three timing-sensitive guarantees 25 times
+each on the final implementation. A queued socket accepted under management
+pressure never inherited a replacement policy; an arrival during revocation
+always restarted the identity quiet period; and certified close always
+terminated simultaneous upload and download backpressure.
+
+All 75 focused runs passed. The first two exercise the listener-owner ordering
+and deliberate quiet-period waits, while the third requires both hostile
+writers to observe terminal sockets. No flake, ownership gap, or accounting
+mismatch appeared, so production code and the 187-case suite are unchanged.
