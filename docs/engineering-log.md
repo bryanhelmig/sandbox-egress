@@ -3757,3 +3757,32 @@ lanes; native dependency policy checks also passed. Linux's TLS lane peaked at
 to 6,172 KiB, four descriptors, and two threads. The rootless 160/160 image is
 `sha256:2b68af6bc83f31743126eaeb72220a3214bec49684e00b749086e767a54cac92`
 (40,740,569 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — reduce the initial CONNECT-header reservation
+
+Every accepted connection previously requested 4 KiB of vector capacity before
+reading its first CONNECT bytes. Ordinary requests in the benchmark are much
+smaller, while the connection remains admission-owned through parsing, DNS,
+and dialing. The initial request is now 1 KiB. Larger headers use the existing
+bounded growth path and retain the same absolute byte limit, parser, deadline,
+and revocation behavior. The change reduces requested starting capacity by
+3 KiB per concurrent header-phase connection; allocator RSS is not inferred
+from vector capacity.
+
+Three alternating A/B pairs compared the candidate with a detached `f2f19c6`
+worktree. Allowed CONNECT intervals were 109.77–138.52 microseconds for the
+candidate and 103.88–146.14 for baseline; denied-host intervals were
+73.43–85.45 and 68.25–89.74. Oversized 1 MiB intervals were 650.26–680.53 and
+643.13–756.52; near-terminator 1 MiB intervals were 652.12–673.39 and
+639.62–673.23. Every workload overlapped and results moved both directions, so
+no latency change is claimed. The comparison worktree was removed.
+
+Whole-tree SCC 4.0.0 complexity remains 679/2,038 structural/cognitive. No
+dependency, task, limit, or public API changed. The native and exact Rust 1.88
+Linux factories passed 160 deterministic cases, five doctests, documentation,
+package verification, and all six Linux resource lanes; native dependency
+policy checks also passed. Linux's TLS lane peaked at 14,748 KiB RSS, 265
+descriptors, and six threads, then returned after shutdown to 6,096 KiB, four
+descriptors, and two threads. The rootless 160/160 image is
+`sha256:b0f1affa4b01e315eeee9c88f9cbc2b1bb8df47f31583e2cf79437ba9e7ba826`
+(40,740,585 bytes) and runs as UID/GID 65534.

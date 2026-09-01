@@ -412,3 +412,27 @@ baseline intervals:  1.3752 .. 1.4071 ms
 Every pair overlapped. The result supports retaining the deletion without a
 performance claim; it neither demonstrates an improvement nor a regression in
 the measured attach/build/close lifecycle.
+
+## Smaller initial CONNECT-header reservation
+
+Recorded 2026-09-01 on the same Apple M1 with Rust 1.97.1. Three alternating
+pairs compared a 1 KiB initial header reservation with the 4 KiB `f2f19c6`
+baseline. Each round covered an allowed connection, a hostname denial, and two
+distinct 1 MiB hostile-header shapes:
+
+```text
+command: cargo bench --bench connections -- <case> --noplot
+paired runs: 3
+
+case                                  candidate us     baseline us
+connect_allowed_loopback              109.77..138.52   103.88..146.14
+connect_denied_hostname                73.43..85.45      68.25..89.74
+connect_oversized_header_1mib         650.26..680.53   643.13..756.52
+connect_near_terminator_header_1mib   652.12..673.39   639.62..673.23
+```
+
+Intervals overlapped in every workload and moved in both directions across
+runs. No latency improvement or regression is claimed. The retained effect is
+smaller bounded allocation demand: each in-progress header starts by requesting
+1 KiB rather than 4 KiB of vector capacity, while larger headers still grow up
+to the same configured byte limit.

@@ -1387,7 +1387,9 @@ async fn read_header<R>(stream: &mut R, max: usize) -> io::Result<HeaderBlock>
 where
     R: AsyncRead + Unpin,
 {
-    let mut bytes = Vec::with_capacity(max.min(4_096));
+    // Keep ordinary CONNECT requests in one allocation without reserving a
+    // full read chunk for every concurrent handshake.
+    let mut bytes = Vec::with_capacity(max.min(1_024));
     let mut chunk = [0_u8; 4_096];
     loop {
         if bytes.len() >= max {
