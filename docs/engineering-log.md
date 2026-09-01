@@ -3924,3 +3924,26 @@ RSS, 265 descriptors, and six threads, then returned after shutdown to 6,156
 KiB, four descriptors, and two threads. The rootless 162/162 image is
 `sha256:a495ddba8cb9ea129e90ec76a15b2e7927ebac79b6eff6006bfbaedeceacc8eb`
 (40,739,469 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — rejected monolithic connection-runtime ownership
+
+This performance rotation tested whether each admitted task should retain one
+shared `ConnectionRuntime` instead of cloning the four independently shared
+resolver, connector, phase-budget, and configuration handles. The candidate
+also placed the DNS and dial semaphores directly inside that runtime. It removed
+three production lines, three per-connection `Arc` clones, and several startup
+`Arc` allocations while preserving the task and permit lifetimes. All 112
+library cases and strict linting passed.
+
+Six alternating 50,000-connection measurements used 64 clients and 16 loopback
+destinations. Candidate throughput was 18,613, 18,433, 17,787, 19,843, 18,247,
+and 17,910 connections/second. The pinned `d452613` baseline produced 19,364,
+19,650, 19,067, 19,337, 19,265, and 18,483. The order was reversed for the
+last three pairs; five of six still favored the baseline. Median candidate
+throughput was approximately 18,340 connections/second versus 19,301 for the
+baseline, and candidate p95 latency was not consistently better.
+
+The candidate was therefore discarded in full. The existing independently
+shared handles remain: reducing shared-owner operations in isolation was not a
+measured end-to-end improvement. No production source, dependency, public API,
+test count, or whole-tree 686/2,055 structural/cognitive complexity changed.
