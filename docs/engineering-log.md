@@ -1214,3 +1214,31 @@ Its 500-lease Linux smoke held eight descriptors and five threads while live,
 returned to four descriptors and two threads, and finished at 3,988 KiB RSS.
 The bounded ordered set, validation loop, and recording test move whole-tree
 structural/cognitive complexity from 371/1,090 to 374/1,098.
+
+## 2026-08-31 — verify the assembled crate in the local factory
+
+### Finding
+
+CI's release lane used verified `cargo package`, but the ordinary local factory
+passed `--no-verify`. It proved the archive could be assembled while skipping
+the clean compile from that archive—the check that catches an incomplete
+`include` list or source code that accidentally depends on an unshipped file.
+Cargo also warned that the manifest declared no documentation, homepage, or
+repository metadata.
+
+### Result
+
+The local factory now runs verified `cargo package --allow-dirty`, aligning the
+usual contributor loop with CI. The current assembled crate compiled
+successfully in 9.14 seconds cold and 1.28 seconds warm from its isolated
+package directory. The manifest declares the stable future docs.rs URL without
+guessing a GitHub owner or repository URL that has not been chosen yet.
+
+The full native factory passed all 72 deterministic cases and the dependency
+policy gate. A clean-cache container build repeated the factory on the exact
+Rust 1.88 MSRV, explicitly packaged 53 files and compiled from
+`target/package/sandbox-egress-0.1.0`; the serialized hostile-input lane then
+passed the same 72 cases. Its 500-lease Linux smoke held eight descriptors and
+five threads while live, returned to four descriptors and two threads, and
+finished at 4,012 KiB RSS. This factory-only change leaves whole-tree
+structural/cognitive complexity at 374/1,098.

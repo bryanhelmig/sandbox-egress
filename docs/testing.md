@@ -136,7 +136,10 @@ The container builds debug and release dependencies from the locked manifest
 before copying project sources. This cache boundary makes source-only rebuilds
 fast without changing the commands or exact Rust version used for verification.
 Factory scripts and container metadata are included in `cargo package` output,
-so a source package does not contain documentation for missing commands.
+so a source package does not contain documentation for missing commands. The
+ordinary local factory compiles that assembled package, matching the dedicated
+CI release gate; a source-tree build alone cannot prove the include list is
+complete.
 
 `./scripts/measure-load.sh [connections] [concurrency] [destinations]` drives
 one lease through many concurrent real loopback CONNECTs in release mode. It

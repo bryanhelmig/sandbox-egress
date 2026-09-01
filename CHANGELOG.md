@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Make the local factory compile the assembled crate package and declare its
+  future docs.rs location in package metadata.
 - Deduplicate approved DNS results in first-seen order so repeated records
   cannot amplify sequential dial attempts.
 - Reject a zero header deadline, clamp process semaphore limits to Tokio's safe
