@@ -130,7 +130,9 @@ The current vertical slice provides:
 
 - HTTP/1 CONNECT request-target authority and destination-port allow rules,
   with strict HTTP/1.1 Host-field validation but no header-selected policy;
-- exact hostnames and wildcard suffixes matching one or more subdomain labels;
+- canonical ASCII hostnames (including explicit ACE/punycode spellings) and
+  wildcard suffixes matching one or more subdomain labels; raw Unicode is not
+  mapped implicitly;
 - source-IP identity derived from the accepted socket;
 - one DNS resolution followed by checks on every returned address;
 - bounded DNS answer cardinality, with oversized sets rejected before dialing;
@@ -246,7 +248,7 @@ The build stage is pinned to Rust 1.88, warms locked dependencies, then runs the
 normal factory and a small Linux resource smoke with Cargo offline. After the
 checked executables are collected, its compilation tree is discarded before
 the layer is committed. The final image contains only the stripped conformance
-executables and runs all 110 deterministic cases as an unprivileged user. It
+executables and runs all 112 deterministic cases as an unprivileged user. It
 does not ship Cargo, the compiler, source tree, or build cache. Tests remain
 local and do not call public network services.
 

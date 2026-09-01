@@ -33,6 +33,14 @@ both `api.example.com` and `deep.api.example.com`, but neither `example.com`
 nor `notexample.com`. The wildcard therefore means any nonempty sequence of
 complete left-hand labels, not TLS certificate wildcard semantics.
 
+Canonicalization cases accept ASCII case and one trailing root dot, explicit
+ACE/punycode text, 63-byte labels, and a 253-byte unrooted name. They reject a
+64-byte label, longer names, multiple root dots, underscores, edge hyphens,
+raw Unicode, a Unicode confusable, and IP literals. An end-to-end controlled
+resolver case requires the same lowercase absolute name that the system
+resolver receives, preventing local search-suffix behavior from disappearing
+behind a test-only backend difference.
+
 Port policy cases require an empty builder to allow no port and an HTTP-only
 builder to allow 80 without inheriting 443. A real listener repeats the latter
 case against CONNECT and requires the stable `port-denied` response.
@@ -151,7 +159,7 @@ exactly one executable for each conformance target, strips copies, and carries
 only those binaries into a Debian runner. The CLI's compile-time executable
 dependency is copied at its exact embedded path. The factory deletes its
 compilation tree only after collection, before committing the source-dependent
-layer. The final image runs as UID/GID 65534 and must reproduce all 110
+layer. The final image runs as UID/GID 65534 and must reproduce all 112
 deterministic cases without Cargo, source, or a build cache.
 
 Source-identity cases prove an IPv4 address and its mapped IPv6 transport

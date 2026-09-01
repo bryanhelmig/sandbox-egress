@@ -38,8 +38,6 @@ services may supplement research but must not become test dependencies.
   host-configured network-specific NAT64 prefixes.
 - Complete special-use range tables, including cloud metadata variants.
 - Resolver concurrency, queueing, and memory bounds.
-- Search domains, trailing dots, case, IDNA, Unicode confusables, and DNS label
-  length boundaries.
 - IP literals and explicit CIDR overrides without accidental broadening.
 
 ## TLS and application authority

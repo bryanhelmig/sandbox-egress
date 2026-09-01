@@ -394,6 +394,48 @@ mod tests {
     }
 
     #[test]
+    fn ascii_hostname_canonicalization_has_explicit_dns_boundaries() {
+        assert_eq!(
+            canonical_hostname("API.Example.COM."),
+            Some("api.example.com".to_owned())
+        );
+        assert_eq!(
+            canonical_hostname("xn--bcher-kva.example"),
+            Some("xn--bcher-kva.example".to_owned())
+        );
+
+        let longest_label = "a".repeat(63);
+        assert!(canonical_hostname(&format!("{longest_label}.example")).is_some());
+        assert!(canonical_hostname(&format!("{}.example", "a".repeat(64))).is_none());
+
+        let longest_name = format!(
+            "{}.{}.{}.{}.",
+            "a".repeat(63),
+            "b".repeat(63),
+            "c".repeat(63),
+            "d".repeat(61)
+        );
+        assert_eq!(longest_name.len(), 254);
+        assert!(canonical_hostname(&longest_name).is_some());
+        assert!(canonical_hostname(&format!("{}e", longest_name.trim_end_matches('.'))).is_none());
+
+        for invalid in [
+            "bücher.example",
+            "exаmple.com",
+            "under_score.example",
+            "example.com..",
+            "-leading.example",
+            "trailing-.example",
+            "127.0.0.1",
+        ] {
+            assert!(
+                canonical_hostname(invalid).is_none(),
+                "accepted {invalid:?}"
+            );
+        }
+    }
+
+    #[test]
     fn ports_are_empty_until_explicitly_allowed() {
         let empty = Policy::builder().build().expect("valid empty policy");
         assert!(!empty.allows_port(443));

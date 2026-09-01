@@ -2214,3 +2214,36 @@ crate.
 No Rust source, dependency, test count, complexity, or performance result
 changed. The source factory and documentation checks remain the appropriate
 evidence for this research-only clarification.
+
+## 2026-09-01 — align controlled DNS with absolute system lookups
+
+Smokescreen's hostname path performs IDNA mapping before lookup, while the
+existing Sandbox Egress contract deliberately accepts only canonical ASCII DNS
+text. The narrower choice remains: explicit ACE/punycode spellings are valid,
+but the policy layer does not silently transform raw Unicode or confusable
+characters. New unit boundaries pin ASCII case, one trailing root dot,
+63-byte labels, the 253-byte unrooted name ceiling, explicit ACE text, raw
+Unicode, a non-ASCII confusable, underscores, edge hyphens, repeated dots, and
+IP literals.
+
+The system resolver already appended a root dot so local search suffixes could
+not reinterpret a policy hostname. The controlled resolver interface received
+the unrooted form, however, making local tests semantically weaker than the
+production backend. A test written first expected `mixed.case.test.` and failed
+with `mixed.case.test`. Absolute-name construction now happens before the
+backend split, so system and controlled lookups receive identical lowercase,
+rooted text. The focused end-to-end case passed ten consecutive runs.
+
+The production system-resolver arm still performs the same one string
+allocation and Hickory call; the functional change is confined to the private
+test backend. No data-path benchmark was run and no performance claim is
+attached. Whole-tree SCC 4.0.0 complexity moved from 502/1,514 to 504/1,519
+structural/cognitive, almost entirely in the two boundary cases.
+
+The native and exact Rust 1.88 Linux factories passed all 112 deterministic
+cases, doctests, documentation, and package verification; native dependency
+policy checks also passed. Linux's 500-lease lane returned from eight
+descriptors and five threads to four and two, finishing at 3,984 KiB RSS in
+1,081 ms. The rootless runner reproduced 112/112 as UID/GID 65534; image
+`sha256:6a5c358fc6b0527485a9a27185a502b3a4d7db130664f55aa90565b4750e3aa4`
+measured 40,410,919 bytes.

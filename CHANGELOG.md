@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Give controlled and system resolvers the same absolute DNS name, and pin the
+  crate's ASCII/ACE hostname, label-length, case, and trailing-dot boundaries.
 - Clarify that Linux `SO_MARK` bypass schemes must remove both `CAP_NET_ADMIN`
   and `CAP_NET_RAW` from every untrusted process sharing the network namespace.
 - Prove repeated failed lease closes preserve ownership and an exact nonzero
@@ -29,7 +31,7 @@ Changelog and versions follow Semantic Versioning.
   inheriting a replacement lease under management-channel pressure.
 - Serialize only the stripped conformance executables into the unprivileged
   Docker runner, reducing the verified image content size by 96.4% without
-  dropping any of its 110 deterministic cases.
+  dropping any of its 112 deterministic cases.
 - Let a surviving lease consume the final counters already certified by a
   successful proxy-wide shutdown, including runtime-disconnect races.
 - Divide the remaining absolute handshake budget fairly across sequential

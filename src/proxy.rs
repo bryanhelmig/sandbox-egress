@@ -585,9 +585,10 @@ enum ResolverBackend {
 
 impl ResolverBackend {
     async fn lookup(&self, hostname: &str, max_addresses: usize) -> io::Result<Vec<IpAddr>> {
+        let absolute_hostname = format!("{hostname}.");
         match self {
             Self::System(resolver) => resolver
-                .lookup_ip(format!("{hostname}."))
+                .lookup_ip(&absolute_hostname)
                 .await
                 .map(|lookup| {
                     lookup
@@ -597,7 +598,7 @@ impl ResolverBackend {
                 })
                 .map_err(io::Error::other),
             #[cfg(test)]
-            Self::Test(resolver) => resolver.lookup(hostname).await,
+            Self::Test(resolver) => resolver.lookup(&absolute_hostname).await,
         }
     }
 }
@@ -1484,12 +1485,26 @@ mod tests {
 
     struct FixedAnswerResolver(Vec<IpAddr>);
 
+    struct CapturingResolver(mpsc::Sender<String>);
+
     impl TestResolver for FixedAnswerResolver {
         fn lookup<'a>(
             &'a self,
             _hostname: &'a str,
         ) -> Pin<Box<dyn Future<Output = io::Result<Vec<IpAddr>>> + Send + 'a>> {
             Box::pin(async move { Ok(self.0.clone()) })
+        }
+    }
+
+    impl TestResolver for CapturingResolver {
+        fn lookup<'a>(
+            &'a self,
+            hostname: &'a str,
+        ) -> Pin<Box<dyn Future<Output = io::Result<Vec<IpAddr>>> + Send + 'a>> {
+            self.0
+                .send(hostname.to_owned())
+                .expect("capture resolver hostname");
+            Box::pin(async { Ok(vec![IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)]) })
         }
     }
 
@@ -1828,6 +1843,46 @@ mod tests {
             target.accept(),
             Err(error) if error.kind() == io::ErrorKind::WouldBlock
         ));
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
+    }
+
+    #[test]
+    fn test_and_system_resolvers_receive_the_same_absolute_hostname() {
+        let (hostname_tx, hostname_rx) = mpsc::channel();
+        let resolver = Arc::new(CapturingResolver(hostname_tx));
+        let dial_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let connector = Arc::new(RejectingConnector(Arc::clone(&dial_attempts)));
+        let proxy = Proxy::start_with_test_backends(ProxyConfig::default(), resolver, connector)
+            .expect("start proxy");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                hostname_policy("mixed.case.test", 443),
+            )
+            .expect("attach lease");
+        let mut client =
+            std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+        std::io::Write::write_all(
+            &mut client,
+            b"CONNECT Mixed.Case.Test.:443 HTTP/1.1\r\nHost: mixed.case.test\r\n\r\n",
+        )
+        .expect("write CONNECT");
+
+        assert_eq!(
+            hostname_rx
+                .recv_timeout(Duration::from_secs(1))
+                .expect("resolver hostname"),
+            "mixed.case.test."
+        );
+        let mut response = String::new();
+        std::io::Read::read_to_string(&mut client, &mut response).expect("read dial denial");
+        assert!(response.contains("dial-failed"), "{response}");
+        assert_eq!(dial_attempts.load(Ordering::Acquire), 1);
+        lease
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("close lease");
         proxy
             .shutdown(Instant::now() + Duration::from_secs(1))
             .expect("proxy shutdown");
