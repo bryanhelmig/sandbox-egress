@@ -403,12 +403,14 @@ fn extract_rfc6052_ipv4(address: Ipv6Addr, prefix_len: u8) -> Ipv4Addr {
     Ipv4Addr::from(octets)
 }
 
-// Derived from the IANA special-purpose registries, reviewed 2026-09-01.
+// Derived from the IANA special-purpose registries plus reviewed provider
+// control-plane endpoints, reviewed 2026-09-01.
 const FORBIDDEN_V4_PREFIXES: &[(u32, u32)] = &[
     (0x0000_0000, 8),  // 0.0.0.0/8, this network
     (0x0a00_0000, 8),  // 10.0.0.0/8, private
     (0x6440_0000, 10), // 100.64.0.0/10, shared
     (0x7f00_0000, 8),  // 127.0.0.0/8, loopback
+    (0xa83f_8110, 32), // 168.63.129.16/32, Azure WireServer
     (0xa9fe_0000, 16), // 169.254.0.0/16, link-local
     (0xac10_0000, 12), // 172.16.0.0/12, private
     (0xc000_0000, 24), // 192.0.0.0/24, protocol assignments
@@ -591,6 +593,7 @@ mod tests {
         for address in [
             "127.0.0.1",
             "10.0.0.1",
+            "168.63.129.16",
             "169.254.169.254",
             "::1",
             "fc00::1",
@@ -687,7 +690,7 @@ mod tests {
     #[test]
     fn every_forbidden_prefix_includes_its_first_and_last_address() {
         for &(network, length) in FORBIDDEN_V4_PREFIXES {
-            let host_mask = u32::MAX >> length;
+            let host_mask = u32::MAX.checked_shr(length).unwrap_or(0);
             assert!(
                 forbidden_v4(Ipv4Addr::from(network)),
                 "{network:#010x}/{length}"
@@ -698,7 +701,7 @@ mod tests {
             );
         }
         for &(network, length) in FORBIDDEN_V6_PREFIXES {
-            let host_mask = u128::MAX >> length;
+            let host_mask = u128::MAX.checked_shr(length).unwrap_or(0);
             assert!(
                 forbidden_v6(Ipv6Addr::from(network)),
                 "{network:#034x}/{length}"

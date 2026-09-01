@@ -2620,6 +2620,46 @@ mod tests {
     }
 
     #[test]
+    fn azure_wireserver_dns_answer_is_rejected_before_dial() {
+        let resolver = Arc::new(FixedAnswerResolver(vec![
+            "168.63.129.16".parse().expect("Azure WireServer address"),
+        ]));
+        let dial_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let connector = Arc::new(RejectingConnector(Arc::clone(&dial_attempts)));
+        let proxy = Proxy::start_with_test_backends(ProxyConfig::default(), resolver, connector)
+            .expect("start proxy");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                hostname_policy("wireserver.test", 443),
+            )
+            .expect("attach lease");
+        let mut client =
+            std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+        std::io::Write::write_all(
+            &mut client,
+            b"CONNECT wireserver.test:443 HTTP/1.1\r\nHost: wireserver.test\r\n\r\n",
+        )
+        .expect("write CONNECT");
+        let mut response = String::new();
+        std::io::Read::read_to_string(&mut client, &mut response).expect("read address denial");
+
+        assert!(response.starts_with("HTTP/1.1 403"), "{response}");
+        assert!(response.contains("resolved-address-denied"), "{response}");
+        assert_eq!(dial_attempts.load(Ordering::Acquire), 0);
+        let usage = lease
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("close lease")
+            .usage();
+        assert_eq!(usage.accepted_connections, 1);
+        assert_eq!(usage.denied_connections, 1);
+        assert_eq!(usage.active_connections, 0);
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
+    }
+
+    #[test]
     fn explicit_hostname_denial_stops_before_dns_and_dial() {
         let (resolved_tx, resolved_rx) = mpsc::channel();
         let resolver = Arc::new(CapturingResolver(resolved_tx));

@@ -58,6 +58,18 @@ The nono pin advanced from `8f15fc86` to `7989b578` during this review. The
 intervening change only expanded environment variables in credential
 local-socket paths; it did not alter the proxy or the comparison above.
 
+## Provider control-plane comparison
+
+The ressrf provider data highlighted a gap that an IANA-only address floor
+cannot cover: Azure WireServer lives at the stable virtual public address
+`168.63.129.16`. Microsoft documents that address as the host-node endpoint for
+platform services and VM-agent traffic. Sandbox Egress therefore denies its
+`/32` by default, while preserving the existing explicit-CIDR escape hatch for
+trusted deployments that deliberately need it. AWS and GCP metadata addresses
+reviewed in the same comparison are already inside the default link-local or
+non-global IPv6 floor; importing provider domain lists or broad internal DNS
+suffixes would duplicate the resolve-and-check guarantee and was not retained.
+
 ## Host-cage capability boundary
 
 The current Lens cage review corrected a subtle deployment assumption around
@@ -85,6 +97,10 @@ UID alone is not the relevant boundary.
   Both registries were last updated 2025-10-09 and were rechecked on
   2026-09-01. `scripts/check-iana-drift.sh` pins their authoritative CSV hashes
   as an opt-in review signal; it does not generate policy.
+- Microsoft documents [`168.63.129.16`](https://learn.microsoft.com/en-us/azure/virtual-network/what-is-ip-address-168-63-129-16)
+  as Azure's stable host-node virtual public endpoint for platform services;
+  the default floor denies it explicitly because IANA global-address status is
+  not sufficient to describe its sandbox trust boundary.
 - [RFC 6052](https://www.rfc-editor.org/rfc/rfc6052.html) defines the
   well-known and network-specific NAT64 prefix lengths and the six layouts
   used to recover the effective IPv4 destination.

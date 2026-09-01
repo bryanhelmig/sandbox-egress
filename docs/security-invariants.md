@@ -276,6 +276,13 @@ special-purpose IPv6 prefixes are rejected because the effective endpoint is
 not safely knowable at this layer. A host can deliberately override the floor
 with an explicit CIDR grant.
 
+The floor is not limited to IANA special-purpose space. Azure WireServer uses
+the stable virtual public address `168.63.129.16` for host-platform services,
+including VM-agent control traffic and DNS. Because that address looks globally
+routable to an ordinary IP classifier, it is denied explicitly before dialing.
+Trusted host infrastructure that intentionally needs the endpoint can grant
+its `/32`; an untrusted run does not receive it by omission.
+
 NAT64 prefix knowledge belongs to the trusted proxy configuration, not the
 guest or a run policy. Registering a network-specific prefix says how the host
 network interprets matching IPv6 addresses; it does not allow a forbidden

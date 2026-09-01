@@ -155,8 +155,8 @@ The current vertical slice provides:
 - a separate process-wide outbound-dial budget, acquired only after every
   resolved address is approved and released before tunnelling begins;
 - default rejection of loopback, private, link-local, multicast,
-  documentation, cloud-metadata, and unsafe IPv6 transition destinations
-  unless a CIDR is explicitly granted;
+  documentation, cloud-metadata, reviewed provider control-plane endpoints,
+  and unsafe IPv6 transition destinations unless a CIDR is explicitly granted;
 - per-policy destination CIDR denials that take priority over explicit grants
   and the ordinary public-address behavior, including mapped, compatible, and
   configured NAT64 forms of a denied IPv4 destination;

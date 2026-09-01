@@ -460,3 +460,24 @@ Setup-latency ranges overlapped as well. DNS, socket, and scheduler work
 dominate that harness. The retained result is narrower: populated vectors are
 no longer allocated and copied once per admitted connection, and connection
 tasks have simpler immutable ownership.
+
+## Azure WireServer floor check
+
+Recorded 2026-09-01 on the same Apple M1 with Rust 1.97.1. Three A/B pairs
+compared the allowed-hostname path after adding one reviewed provider endpoint
+to the flat forbidden-IPv4 table with detached `5dc2754`:
+
+```text
+command: cargo bench --bench connections -- connect_allowed_hostname \
+         --noplot --sample-size 50 --measurement-time 3
+paired runs: 3
+candidate intervals: 148.57 .. 241.49, 154.23 .. 170.30,
+                     156.27 .. 173.33 us
+baseline intervals:  152.38 .. 166.38, 154.97 .. 168.98,
+                     154.88 .. 174.07 us
+```
+
+Every pair overlaps. The first candidate contains a wide host outlier; the two
+following pairs are nearly coincident. No allowed-path latency change is
+claimed. The security rule and deterministic zero-dial proof are retained, and
+the detached comparison worktree was removed.

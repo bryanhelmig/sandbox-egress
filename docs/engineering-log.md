@@ -3818,3 +3818,45 @@ lanes; native dependency policy checks also passed. Linux's TLS lane peaked at
 to 5,800 KiB, four descriptors, and two threads. The rootless 160/160 image is
 `sha256:fcba3c575f7247c504f2ea6cd2872ce52e08b35b733bf93e6f0fda394929b2f6`
 (40,738,534 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — deny Azure's public-looking host endpoint
+
+The comparison rotation cloned ressrf at its already documented `52fc89cf`
+pin and reviewed its provider data alongside official provider documentation.
+AWS and GCP metadata endpoints are already covered by Sandbox Egress's
+link-local and non-global IPv6 floor. Azure WireServer is different:
+Microsoft documents `168.63.129.16` as a stable virtual public address for
+host-platform and VM-agent services. The existing IANA-only classifier allowed
+it.
+
+A test first demonstrated that gap. The retained change adds the single `/32`
+to the reviewed default floor. A real-listener test then resolves an allowed
+hostname to that address, requires `resolved-address-denied`, proves zero dial
+attempts, and certifies final 1/1/0 accepted/denied/active counters. It passed
+25 consecutive focused repetitions. Broad provider domain suffixes and service
+range imports were not retained: the proxy already pins and checks every DNS
+answer, and those larger mutable datasets would expand policy without closing
+this specific public-address hole. A trusted host can still grant the `/32`
+explicitly under the existing floor-override contract.
+
+Three allowed-hostname A/B pairs against detached `5dc2754` all overlapped.
+Candidate intervals were 148.57–241.49, 154.23–170.30, and 156.27–173.33
+microseconds; baseline intervals were 152.38–166.38, 154.97–168.98, and
+154.88–174.07. No latency change is claimed. The comparison worktree was
+removed. Whole-tree SCC 4.0.0 complexity remains 683/2,048
+structural/cognitive.
+
+The first full-factory run exposed a proof-harness bug: the prefix-boundary
+test formed its host mask with `u32::MAX >> length`, which overflows when the
+table first contains a `/32`. Production matching was unaffected. The proof now
+uses checked shifts for both `/32` and a future IPv6 `/128`, and the complete
+factory was restarted rather than accepting only the focused tests.
+
+The native and exact Rust 1.88 Linux factories then passed 161 deterministic
+cases, five doctests, documentation, package verification, and all six Linux
+resource lanes; native dependency policy checks also passed. Linux's TLS lane
+peaked at 15,116 KiB RSS, 265 descriptors, and six threads, then returned after
+shutdown to 5,956 KiB, four descriptors, and two threads. The rootless 161/161
+image is
+`sha256:2940aa20f2fc68d460ca2dcfa7baf1ee3f5d34ff0a15f796275aaba9f3931934`
+(40,738,584 bytes) and runs as UID/GID 65534.

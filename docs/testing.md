@@ -169,6 +169,12 @@ integer, and single decimal integer) are exercised end to end. Each is allowed
 only as a hostname, resolved to loopback by a controlled resolver, rejected by
 the forbidden-address floor, and required to produce zero connector calls.
 
+The provider-control exception has its own real-listener proof. A controlled
+hostname resolves to Azure WireServer's public-looking `168.63.129.16`; the
+request must receive `resolved-address-denied`, the connector must observe zero
+attempts, and certified close must return one accepted, one denied, and zero
+active connections.
+
 Lease Drop is exercised while stack unwinding with a pending dial: cancellation
 must complete, the guest socket must become terminal, and the same identity
 must become attachable again after best-effort cleanup. Replacement attachment
