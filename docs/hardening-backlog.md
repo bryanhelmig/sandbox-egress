@@ -41,8 +41,9 @@ contributor instead of preserving solved work as apparent backlog.
 - Accounting when a policy ceiling and an independent transport failure become
   observable at nearly the same time.
 - Large full-duplex transfers and asymmetric traffic.
-- File-descriptor release under repeated backpressured terminal paths; silent
-  idle expiry, completion, pre-DNS denial, reset, and transfer limit are soaked.
+- File-descriptor release under repeated backpressured terminal paths; one
+  simultaneous blocked upload/download expiry is pinned, while silent idle
+  expiry, completion, pre-DNS denial, reset, and transfer limit are soaked.
 
 ## Capacity and denial of service
 

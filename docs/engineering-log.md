@@ -3228,6 +3228,37 @@ four and two at 5,132 KiB in 450 ms. The rootless 150/150 conformance image is
 `sha256:9fdd4d14741dce47c20c0f047f40432a66ea43a342ca9c3f498e34a56d0f59c4`
 (40,701,820 bytes).
 
+## 2026-09-01 — expire bidirectionally backpressured tunnels
+
+A silent socket is the simplest idle case, but it does not establish what
+happens when hostile peers keep invoking writes after the network stops making
+forward progress. A new tunnel proof makes guest and upstream write
+continuously while neither consumes the opposite stream. The proxy initially
+reads and accounts bytes in both directions. Once the finite TCP and copy
+buffers fill, successful reads stop, the shared 100 ms activity clock expires,
+and both writers must receive a terminal socket error.
+
+The harness bounds both endpoint send and receive buffers to 16 KiB to reduce
+host autotuning noise and gives each writer a five-second failure timeout.
+Timeout is not an accepted terminal result. The first cold run took 2.26
+seconds while later same-process runs settled near 0.53 seconds, reinforcing
+why the proof asserts behavior rather than a narrow latency. The case passed 25
+consecutive runs. Certified close afterward reports positive upload and
+download accounting, exactly one idle denial, zero completions, and zero active
+work.
+
+Production code and the opt-in measurement targets are unchanged. Whole-tree
+SCC 4.0.0 complexity moves from 628/1,880 to 633/1,893
+structural/cognitive, entirely in the deterministic proof.
+The native and exact Rust 1.88 Linux factories passed 151 deterministic cases,
+documentation, and package verification; the native factory also passed
+dependency policy checks. Linux's idle, control, lease-churn, and terminal
+resource lanes each returned to four descriptors and two threads, at 6,120,
+6,760, 6,476, and 5,528 KiB RSS respectively. The rootless 151/151 conformance
+image is
+`sha256:5418a9c56fb9f64072386d6216af93e761bcc379493b4e40ec4701a7b05adc24`
+(40,705,142 bytes).
+
 ## 2026-09-01 — measure simultaneous idle-tunnel recovery
 
 The idle policy had deterministic two-endpoint closure proofs but not a

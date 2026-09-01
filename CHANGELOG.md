@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Prove idle expiry terminates simultaneous blocked upload and download writers
+  after successful byte movement stops.
 - Measure simultaneous idle-tunnel expiry with exact terminal sockets,
   accounting, and descriptor/thread recovery.
 - Add an immutable opt-in per-lease tunnel idle timeout, reset by traffic in

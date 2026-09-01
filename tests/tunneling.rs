@@ -104,8 +104,15 @@ fn start_flooding_peer() -> (
     let (stopped_tx, stopped_rx) = mpsc::sync_channel(1);
     let handle = thread::spawn(move || {
         let (mut stream, _) = listener.accept().expect("accept proxy");
+        let socket = SockRef::from(&stream);
+        socket
+            .set_send_buffer_size(16 * 1024)
+            .expect("bound peer send buffer");
+        socket
+            .set_recv_buffer_size(16 * 1024)
+            .expect("bound peer receive buffer");
         stream
-            .set_write_timeout(Some(Duration::from_secs(2)))
+            .set_write_timeout(Some(Duration::from_secs(5)))
             .expect("peer write timeout");
         accepted_tx.send(()).expect("report accept");
         let block = [0x5a_u8; 16 * 1024];
@@ -797,6 +804,70 @@ fn close_interrupts_simultaneous_bidirectional_backpressure() {
     );
     guest_thread.join().expect("guest writer thread");
     peer_thread.join().expect("upstream writer thread");
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
+fn idle_timeout_stops_simultaneous_bidirectional_backpressure() {
+    let (port, accepted, upstream_stopped, peer_thread) = start_flooding_peer();
+    let proxy =
+        Proxy::start(ProxyConfig::default().with_identity_reuse_quiet_period(Duration::ZERO))
+            .expect("start proxy");
+    let lease = attach_with_idle_timeout(&proxy, port, Duration::from_millis(100));
+    let mut client = open_tunnel(lease.endpoint().socket_addr(), port);
+    let socket = SockRef::from(&client);
+    socket
+        .set_send_buffer_size(16 * 1024)
+        .expect("bound client send buffer");
+    socket
+        .set_recv_buffer_size(16 * 1024)
+        .expect("bound client receive buffer");
+    client
+        .set_write_timeout(Some(Duration::from_secs(5)))
+        .expect("client write timeout");
+    accepted
+        .recv_timeout(Duration::from_secs(1))
+        .expect("upstream accepted proxy");
+
+    let (guest_stopped_tx, guest_stopped_rx) = mpsc::sync_channel(1);
+    let guest_thread = thread::spawn(move || {
+        let block = [0xa5_u8; 16 * 1024];
+        let error = loop {
+            if let Err(error) = client.write_all(&block) {
+                break error.kind();
+            }
+        };
+        guest_stopped_tx
+            .send(error)
+            .expect("report guest writer stop");
+    });
+    wait_for_bytes(|| lease.usage().uploaded_bytes);
+    wait_for_bytes(|| lease.usage().downloaded_bytes);
+
+    assert_terminal_write(
+        guest_stopped_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("idle expiry stopped guest writer"),
+    );
+    assert_terminal_write(
+        upstream_stopped
+            .recv_timeout(Duration::from_secs(3))
+            .expect("idle expiry stopped upstream writer"),
+    );
+    guest_thread.join().expect("guest writer thread");
+    peer_thread.join().expect("upstream writer thread");
+
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close idle-expired backpressure lease")
+        .usage();
+    assert_eq!(final_usage.active_connections, 0);
+    assert_eq!(final_usage.completed_connections, 0);
+    assert_eq!(final_usage.denied_connections, 1);
+    assert!(final_usage.uploaded_bytes > 0);
+    assert!(final_usage.downloaded_bytes > 0);
     proxy
         .shutdown(Instant::now() + Duration::from_secs(1))
         .expect("proxy shutdown");

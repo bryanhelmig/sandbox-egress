@@ -265,6 +265,13 @@ continuously while neither reads. Both accounting directions must advance
 before certified close, both hostile writers must then observe a terminal
 socket error, and final active ownership must be zero.
 
+The idle-policy mirror lets both writers continue without host intervention.
+Bytes initially move while TCP buffers have capacity, so both activity
+directions must be counted. Once backpressure stops successful proxy reads, the
+shared idle clock must expire, both writers must receive a terminal socket
+error rather than their five-second failure bound, and final accounting must
+show one idle denial, no completion, and no active work.
+
 The resolver seam is internal to tests, so production callers cannot replace
 host-authenticated policy with a guest-selected backend. Controlled resolver
 tests hold lookups pending, measure the exact concurrency ceiling, cancel both
