@@ -90,7 +90,13 @@ including RFC 6052 decoding under host-configured network-specific NAT64
 prefixes. Explicit destination denials take priority over grants and default
 public-address handling. The actual listener endpoint is also rejected before
 any explicit grant, preventing recursive CONNECT chains through the proxy
-itself. Tokio then dials a selected checked IP directly.
+itself. Tokio then dials a selected checked IP directly. When the host
+configures an upstream HTTP proxy, the same connector instead dials that
+numeric proxy address and sends CONNECT for the selected checked `SocketAddr`;
+the destination hostname never crosses that boundary for another lookup. A
+bounded mature-parser response phase remains inside the dial and absolute
+handshake budgets, and any bytes coalesced after its successful header are
+retained for the tunnel.
 Approved addresses are tried sequentially. Each receives
 a fair share of the remaining absolute handshake budget so a pending first
 address cannot consume all fallback time or create parallel socket

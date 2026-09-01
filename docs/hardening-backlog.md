@@ -69,6 +69,10 @@ contributor instead of preserving solved work as apparent backlog.
 - Resolver configuration changes and absent or malformed `resolv.conf`.
 - Process signals, supervisor crashes, restart, and orphan cleanup.
 - Resource-capped standalone executable using the same library.
+- Authenticated and TLS corporate upstream proxies, explicit trust-root
+  ownership, and resolution-aware host-controlled bypass rules. The current
+  transport slice is unauthenticated HTTP CONNECT with validated numeric
+  targets and no ambient proxy-environment behavior.
 - macOS and Windows compilation without overstating enforcement strength.
 
 ## Reproducible evidence

@@ -148,7 +148,8 @@ The current vertical slice provides:
 - optional host-pinned recursive DNS servers with UDP plus truncated-response
   TCP recovery, independent of host resolver and hosts-file changes;
 - bounded DNS answer cardinality, with oversized sets rejected before dialing;
-- direct dialing of a checked `SocketAddr`, with no second lookup;
+- direct dialing of a checked `SocketAddr`, or host-configured HTTP CONNECT
+  chaining using that numeric address, with no second lookup;
 - rejection of the proxy's own concrete listener endpoint before any explicit
   network grant, preventing nested CONNECT chains through the shared listener;
 - sequential address failover with a fair share of the remaining absolute
@@ -232,6 +233,25 @@ This is trusted process configuration, not a per-lease or guest-selected
 resolver. Up to eight distinct servers are accepted. Scoped IPv6 server
 addresses are rejected because the underlying resolver cannot preserve their
 scope identifier.
+
+Corporate networks can route every approved destination through one
+operator-controlled HTTP CONNECT proxy. Supply its numeric socket address in
+process configuration; Sandbox Egress still resolves and checks the guest's
+destination locally, then sends only the approved IP and port upstream:
+
+```rust,no_run
+# use sandbox_egress::ProxyConfig;
+let config = ProxyConfig::default()
+    .with_upstream_proxy("10.0.0.10:3128".parse()?);
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+This first slice is intentionally narrow: plain HTTP to the upstream proxy,
+no authentication, no bypass list, and no hostname-selected CONNECT mode. The
+upstream response header is bounded to 32 KiB and parsed with `httparse`; a
+non-2xx response becomes the stable `upstream-proxy-failed` denial. TCP setup,
+CONNECT negotiation, and any queued wait all consume the existing dial and
+absolute handshake budgets. The guest cannot select or override this route.
 
 Resolver caching is also a host decision. It is off by default because one DNS
 response can contain many records even though Hickory counts it as one cache

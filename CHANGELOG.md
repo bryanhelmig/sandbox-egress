@@ -5,6 +5,10 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Add optional host-configured HTTP CONNECT chaining after local destination
+  resolution and policy checks, sending only the approved numeric address and
+  preserving cancellation, deadlines, bounded response parsing, and exact
+  tunnel bytes.
 - Add immutable hostname denials that override exact and wildcard grants and
   reject before DNS work begins.
 - Add immutable per-policy destination CIDR denials with deny-overrides-grant

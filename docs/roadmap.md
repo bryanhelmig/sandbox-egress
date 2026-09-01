@@ -34,7 +34,10 @@
 
 ## M3 — protocol and integration breadth
 
+- [x] Host-configured, unauthenticated HTTP CONNECT chaining with locally
+  validated numeric targets and lease-owned cancellation.
 - Plain HTTP absolute-form forwarding.
+- Authenticated or TLS upstream proxies and host-controlled bypass rules.
 - Optional transparent ingress adapter.
 - Host-authenticated identities beyond source IP.
 - Arbitrary resolver backends and configurable destination-range tables;

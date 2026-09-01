@@ -11,6 +11,7 @@ mod resolver;
 mod tls;
 #[cfg(test)]
 mod tls_tests;
+mod upstream;
 mod usage;
 
 pub use config::ProxyConfig;

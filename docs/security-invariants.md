@@ -199,6 +199,25 @@ Dialing receives only approved `SocketAddr` values and shares the absolute
 handshake deadline. Lease cancellation drops the in-progress connect future;
 certified close waits for the owning tracked connection task to disappear.
 
+An optional process-wide upstream proxy changes the transport route, not the
+destination decision. It is a host-supplied numeric `SocketAddr`; the guest
+cannot select it through a header or environment variable. Sandbox Egress
+still resolves and validates the destination locally, then uses its checked IP
+and port as the upstream CONNECT authority. The upstream proxy therefore gets
+no hostname to resolve again. Its TCP setup, bounded 32 KiB response header,
+and CONNECT negotiation live inside the same dial permit, per-address attempt
+deadline, tracked connection task, and lease cancellation boundary. A
+non-success or malformed response is `upstream-proxy-failed`. Any bytes read
+beyond a successful response header are preserved as the first tunnel bytes;
+they receive ordinary download accounting and policy ceilings. The configured
+upstream proxy may not be the shared Sandbox Egress listener itself.
+
+This route currently supports unauthenticated cleartext HTTP CONNECT only.
+Authentication, TLS to the upstream proxy, and host-controlled bypass rules
+require explicit designs for secret ownership, trust roots, and preserving the
+validated-address guarantee; they are not silently inferred from process or
+guest proxy environment variables.
+
 CONNECT header acquisition has a process-wide byte ceiling and an absolute
 deadline capped by the lease handshake deadline. Both deadlines begin when the
 listener accepts the socket, so time awaiting the spawned connection task does

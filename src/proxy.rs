@@ -27,6 +27,7 @@ use crate::resolver::{ResolverBackend, build_system_resolver};
 #[cfg(test)]
 use crate::resolver::{TestResolver, apply_resolver_cache_options};
 use crate::tls::{ClientHelloError, read_client_hello};
+use crate::upstream::{ConnectedStream, connect_via};
 use crate::usage::Counters;
 use crate::{
     AttachError, CloseError, CloseErrorKind, EchPolicy, Endpoint, FinalUsage, PeerIdentity, Policy,
@@ -568,17 +569,44 @@ impl Drop for Admission {
 }
 
 enum ConnectorBackend {
-    System,
+    System {
+        upstream_proxy: Option<SocketAddr>,
+    },
     #[cfg(test)]
     Test(Arc<dyn TestConnector>),
 }
 
 impl ConnectorBackend {
-    async fn connect(&self, address: SocketAddr) -> io::Result<TcpStream> {
+    async fn connect(&self, address: SocketAddr) -> io::Result<ConnectedStream> {
         match self {
-            Self::System => TcpStream::connect(address).await,
+            Self::System {
+                upstream_proxy: Some(proxy),
+            } => connect_via(*proxy, address)
+                .await
+                .map(ConnectedStream::Proxied),
+            Self::System {
+                upstream_proxy: None,
+            } => TcpStream::connect(address)
+                .await
+                .map(ConnectedStream::Direct),
             #[cfg(test)]
-            Self::Test(connector) => connector.connect(address).await,
+            Self::Test(connector) => connector
+                .connect(address)
+                .await
+                .map(ConnectedStream::Direct),
+        }
+    }
+
+    const fn failure_reason(&self) -> &'static str {
+        match self {
+            Self::System {
+                upstream_proxy: Some(_),
+            } => "upstream-proxy-failed",
+            Self::System {
+                upstream_proxy: None,
+            } => "dial-failed",
+            #[cfg(test)]
+            Self::Test(_) => "dial-failed",
         }
     }
 }
@@ -697,7 +725,9 @@ async fn run_proxy(
             }
         },
     };
-    let connector = Arc::new(connector.unwrap_or(ConnectorBackend::System));
+    let connector = Arc::new(connector.unwrap_or(ConnectorBackend::System {
+        upstream_proxy: config.upstream_proxy,
+    }));
     let listener = match TcpListener::bind(config.bind_address).await {
         Ok(listener) => listener,
         Err(error) => {
@@ -712,10 +742,19 @@ async fn run_proxy(
             return;
         }
     };
+    config.bind_address = endpoint.socket_addr();
+    if config
+        .upstream_proxy
+        .is_some_and(|proxy| is_proxy_endpoint(proxy, config.bind_address))
+    {
+        let _ = ready.send(Err(
+            "upstream proxy must not be the Sandbox Egress listener".to_owned(),
+        ));
+        return;
+    }
     if ready.send(Ok(endpoint)).is_err() {
         return;
     }
-    config.bind_address = endpoint.socket_addr();
 
     let mut leases: HashMap<PeerIdentity, Arc<LeaseState>> = HashMap::new();
     let connections = ConnectionRuntime {
@@ -994,10 +1033,50 @@ async fn serve_connect(
         Ok(upstream) => upstream,
         Err(denial) => return deny(&mut client, state, denial.status, denial.reason).await,
     };
-    let Some(mut upstream) = upstream else {
-        return deny(&mut client, state, 502, "dial-failed").await;
+    let Some(upstream) = upstream else {
+        return deny(&mut client, state, 502, connector.failure_reason()).await;
     };
 
+    match upstream {
+        ConnectedStream::Direct(upstream) => {
+            establish_tunnel(
+                client,
+                upstream,
+                state,
+                &request,
+                header,
+                config,
+                handshake_deadline,
+            )
+            .await
+        }
+        ConnectedStream::Proxied(upstream) => {
+            establish_tunnel(
+                client,
+                upstream,
+                state,
+                &request,
+                header,
+                config,
+                handshake_deadline,
+            )
+            .await
+        }
+    }
+}
+
+async fn establish_tunnel<U>(
+    mut client: TcpStream,
+    mut upstream: U,
+    state: &LeaseState,
+    request: &ConnectRequest,
+    header: HeaderBlock,
+    config: &ProxyConfig,
+    handshake_deadline: TokioInstant,
+) -> io::Result<ConnectionDisposition>
+where
+    U: AsyncRead + AsyncWrite + Unpin,
+{
     if !write_connect_success(&mut client, handshake_deadline).await? {
         return reject_tunnel(&mut client, state, "connect-response-timeout").await;
     }
@@ -1042,12 +1121,15 @@ async fn serve_connect(
     tunnel_bidirectionally(client, upstream, state, buffered_upload).await
 }
 
-async fn tunnel_bidirectionally(
+async fn tunnel_bidirectionally<U>(
     client: TcpStream,
-    upstream: TcpStream,
+    upstream: U,
     state: &LeaseState,
     buffered_upload: usize,
-) -> io::Result<ConnectionDisposition> {
+) -> io::Result<ConnectionDisposition>
+where
+    U: AsyncRead + AsyncWrite + Unpin,
+{
     let activity = state.policy.idle_timeout.map(|timeout| {
         let (sender, receiver) = watch::channel(TokioInstant::now());
         (timeout, sender, receiver)
@@ -1126,7 +1208,7 @@ async fn dial_approved_addresses(
     addresses: Vec<SocketAddr>,
     connector: &ConnectorBackend,
     handshake_deadline: TokioInstant,
-) -> Option<TcpStream> {
+) -> Option<ConnectedStream> {
     let mut addresses = addresses.into_iter();
     while let Some(address) = addresses.next() {
         let now = TokioInstant::now();
@@ -1154,7 +1236,7 @@ async fn dial_with_budget(
     connector: &ConnectorBackend,
     permits: &Semaphore,
     handshake_deadline: TokioInstant,
-) -> Result<Option<TcpStream>, Denial> {
+) -> Result<Option<ConnectedStream>, Denial> {
     let permit = complete_before_deadline(handshake_deadline, permits.acquire())
         .await
         .ok_or(Denial::DIAL_CAPACITY)?
@@ -3367,7 +3449,9 @@ mod tests {
                 &state,
                 &resolver,
                 &phase_permits,
-                &ConnectorBackend::System,
+                &ConnectorBackend::System {
+                    upstream_proxy: None,
+                },
                 &config,
                 TokioInstant::now() - Duration::from_millis(20),
             )

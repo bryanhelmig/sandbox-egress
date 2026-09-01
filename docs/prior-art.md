@@ -13,6 +13,7 @@ links remain upstream-owned and are not vendored.
 | [canister](https://github.com/dergraf/canister) | `27434158` | hostile L7 contracts, body limits, DLP | sandbox product, not reusable lifecycle primitive |
 | [eavs](https://github.com/byteowlz/eavs) | `afa178a0` | transparent destination recovery and SNI/Host ACLs | no ephemeral run ownership |
 | [microsandbox](https://github.com/superradcompany/microsandbox) | `5b1c63d9` | network-layer DNS timeout/rebinding controls | microVM network subsystem, not forward-proxy lease API |
+| [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) | `f7180c0f` | operator-owned corporate proxy chaining after local SSRF validation | product supervisor with broader TLS/auth/bypass configuration |
 
 Also relevant: Rama for composable mature proxy machinery and VEY/G3 for
 production daemon limits, metrics, ACLs, and per-user policy.
@@ -90,6 +91,23 @@ post-bind listener address and rejects matching literal and DNS destinations
 before policy grants or dialing. It does not add an interface-enumeration
 dependency; wildcard and translated-address deployments must bind a concrete
 guest-facing address or enforce other local aliases in the host cage.
+
+## Upstream-proxy comparison
+
+Smokescreen, Lens, nono, and OpenShell all support routing outbound CONNECT
+tunnels through an operator-controlled proxy. OpenShell makes the important
+security ordering explicit: resolve and validate locally, then send the
+approved numeric address to the corporate proxy so it cannot perform a second
+destination lookup. Its hostname CONNECT escape hatch deliberately transfers
+that authority to the upstream proxy and is not adopted here.
+
+Sandbox Egress implements the small common transport core: one process-wide
+numeric HTTP proxy address, a bounded parsed CONNECT response, sequential
+validated-address fallback, and lease-owned cancellation. It does not yet
+import OpenShell's HTTPS proxy transport, CA bundles, credential files, or
+resolution-aware bypass rules. Those features introduce separate secret and
+trust-root contracts and remain explicit follow-up work rather than ambient
+`HTTP_PROXY`, `HTTPS_PROXY`, or `NO_PROXY` behavior a guest could influence.
 
 ## Host-cage capability boundary
 

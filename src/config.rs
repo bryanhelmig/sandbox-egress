@@ -29,6 +29,7 @@ pub struct ProxyConfig {
     pub(crate) header_timeout: Duration,
     pub(crate) identity_reuse_quiet_period: Duration,
     pub(crate) diagnostics: Option<DiagnosticConfig>,
+    pub(crate) upstream_proxy: Option<SocketAddr>,
 }
 
 impl ProxyConfig {
@@ -56,6 +57,9 @@ impl ProxyConfig {
         if self.dns_servers.iter().any(|server| server.port() == 0) {
             return Err("explicit DNS server port must be nonzero");
         }
+        if self.upstream_proxy.is_some_and(|proxy| proxy.port() == 0) {
+            return Err("upstream proxy port must be nonzero");
+        }
         if self.dns_servers.iter().any(|server| match server {
             SocketAddr::V4(_) => false,
             SocketAddr::V6(server) => server.scope_id() != 0,
@@ -68,6 +72,18 @@ impl ProxyConfig {
     /// Set the listener address. Port zero asks the operating system to choose.
     pub fn with_bind_address(mut self, address: SocketAddr) -> Self {
         self.bind_address = address;
+        self
+    }
+
+    /// Route approved destinations through an operator-controlled HTTP CONNECT
+    /// proxy at a numeric socket address.
+    ///
+    /// Destination names are still resolved and checked locally. The upstream
+    /// proxy receives the approved numeric address, so it cannot perform a
+    /// second destination lookup. Authentication and TLS to the upstream proxy
+    /// are not provided by this configuration.
+    pub fn with_upstream_proxy(mut self, address: SocketAddr) -> Self {
+        self.upstream_proxy = Some(address);
         self
     }
 
@@ -219,6 +235,7 @@ impl Default for ProxyConfig {
             header_timeout: Duration::from_secs(10),
             identity_reuse_quiet_period: Duration::from_millis(25),
             diagnostics: None,
+            upstream_proxy: None,
         }
     }
 }
@@ -331,6 +348,17 @@ mod tests {
         assert!(
             ProxyConfig::default()
                 .with_dns_server(server)
+                .validate()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn upstream_proxy_requires_a_destination_port() {
+        let proxy = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 0);
+        assert!(
+            ProxyConfig::default()
+                .with_upstream_proxy(proxy)
                 .validate()
                 .is_err()
         );

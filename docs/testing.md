@@ -412,6 +412,15 @@ recording the exact checked `SocketAddr`. Tests release it only through lease
 cancellation or the absolute handshake deadline and observe its drop directly,
 avoiding platform-dependent assumptions about unroutable addresses.
 
+The upstream-proxy lane uses a real local HTTP CONNECT peer. It requires that
+the peer receive only the already-approved numeric target, preserves payload
+bytes coalesced with the peer's 2xx response, and checks exact guest byte
+accounting. Separate cases pin a distinct denial for a 407 refusal, reject a
+response header that reaches the 32 KiB ceiling, reject configuring the shared
+listener as its own upstream, and certify lease revocation while the peer
+withholds its response. The last case requires both guest and upstream sockets
+to become terminal without releasing the peer first.
+
 Dial admission has its own process-wide phase budget. With five approved
 connections and two permits, the connector must observe exactly two live
 attempts; certified close cancels those attempts and all three queued waits.

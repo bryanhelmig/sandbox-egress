@@ -4078,3 +4078,63 @@ recovered to 9,784 KiB, eight descriptors, and five threads, and finished at
 6,140 KiB, four descriptors, and two threads. The rootless 165/165 image is
 `sha256:87bc9c60d85fe6ec11807b0a987d00d716f9bd97c7840d2651e82dbb5a5658b1`
 (40,742,174 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — operator-owned upstream HTTP proxy
+
+This comparison-and-feature rotation reviewed NVIDIA OpenShell at pinned
+revision `f7180c0f`. Smokescreen, Lens, nono, and OpenShell all support chaining
+through an operator-controlled proxy. OpenShell supplied the decisive security
+lesson: resolve and validate locally, then send only the approved numeric
+address to the next proxy. Its optional hostname mode transfers resolution
+authority upstream and was not adopted.
+
+A public test was written first and failed to compile because
+`ProxyConfig::with_upstream_proxy` did not exist. The retained implementation
+adds one process-wide, host-configured numeric `SocketAddr` and cleartext HTTP
+CONNECT transport. The existing sequence remains authoritative: parse the
+guest request, apply hostname and port policy, resolve locally, reject the
+entire answer set if any address is forbidden, then ask the upstream proxy for
+one already-approved numeric destination. Guest headers are reconstructed
+rather than forwarded. Ambient proxy variables, hostname CONNECT, bypass
+rules, authentication, TLS transport, and CA configuration are deliberately
+outside this first transport contract.
+
+Upstream TCP setup and CONNECT negotiation share the existing dial permit and
+absolute handshake deadline. The response uses `httparse`, permits at most 64
+headers and 32 KiB, requires a 2xx status, and preserves response-coalesced
+tunnel bytes for ordinary download accounting and ceilings. A configured
+upstream endpoint equal to the actual shared listener is rejected at startup.
+Because negotiation occurs inside the lease-owned connection task, certified
+close cancels a stalled upstream without adding a second task registry or
+shutdown protocol.
+
+Five public real-socket cases prove the numeric authority exactly, including
+IPv6 formatting and the absence of guest-supplied headers; coalesced response
+payload preservation and exact accounting; stable refusal and oversized-header
+denials; sub-500-millisecond cancellation of a silent upstream with terminal
+sockets; and listener self-reference rejection. Each focused case passed ten
+consecutive runs before the full factory.
+
+The first correct implementation wrapped direct and proxied sockets in one
+prefix-aware stream. Three alternating 64 MiB by eight-worker download pairs
+then found the candidate consistently behind detached `e05fee6`: 3,136,
+3,342, and 3,416 MiB/sec versus 3,647, 3,614, and 3,435. The branch checking an
+empty prefix on every direct read was not retained. The final design matches
+the direct or proxied transport once after dialing and calls a generic tunnel
+routine, preserving a concrete, monomorphized `TcpStream` direct path.
+
+Three warm alternating pairs after that simplification measured 3,183, 3,332,
+and 3,243 MiB/sec for the candidate versus 3,252, 3,314, and 3,066 for the
+parent. The candidate won two pairs and the medians differ by about 0.3%, so
+the initial regression is removed and no speedup is claimed. The comparison
+worktree was removed. Whole-tree SCC 4.0.0 complexity moves from 694/2,077 to
+725/2,159 structural/cognitive, including the new transport and public proofs.
+
+The native and exact Rust 1.88 Linux factories passed 173 deterministic cases,
+six doctests, documentation, package verification, and all six Linux resource
+lanes; native dependency policy checks also passed. Linux's TLS lane peaked at
+14,876 KiB RSS, 265 descriptors, and six threads, recovered to 7,696 KiB,
+eight descriptors, and five threads, and finished at 6,104 KiB, four
+descriptors, and two threads. The rootless 173/173 image is
+`sha256:5bdd4c12676d03f833666a25f080eeda6c28a5a8fefaf09f6325f70ac9cac00e`
+(40,862,091 bytes) and runs as UID/GID 65534.
