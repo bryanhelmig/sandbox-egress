@@ -1006,6 +1006,34 @@ sources all passed. The only output remains the configured warning for
 transitive `syn` 2.x and 3.x versions; no dependency pin was forced merely to
 merge proc-macro build graphs owned by Hickory and development dependencies.
 
+## 2026-08-31 — close the IPv6 protocol-assignments umbrella
+
+### Finding
+
+The current IANA IPv6 special-purpose registry marks `2001::/23` as the IETF
+protocol-assignments umbrella and non-destination, non-forwardable, and
+non-global unless a more-specific allocation applies. The policy table listed
+Teredo, benchmarking, ORCHID, ORCHIDv2, and DET children individually. An
+unassigned child such as `2001:5::1` therefore passed the default floor. The
+new regression reproduced that allow-by-omission failure.
+
+### Result
+
+Five child entries were replaced by the one conservative `2001::/23` parent,
+matching the existing treatment of IPv4's `192.0.0.0/24` special umbrella. A
+boundary test continues to check the first and last address of every listed
+prefix. A separate policy case proves an explicit `/128` grant still overrides
+the floor for integrations that knowingly need a more-specific assignment.
+
+This closes the gap while reducing the production prefix table by four rows.
+Whole-tree structural/cognitive complexity remains 361/1,059.
+
+The full native factory, including dependency policy, and the exact Rust 1.88
+Linux factory passed 66 deterministic cases. No performance claim was made for
+removing four entries from a short linear prefix scan. The Linux 500-lease
+smoke held eight descriptors and five threads while live, returned to four
+descriptors and two threads, and finished at 3,980 KiB RSS.
+
 Whole-tree structural/cognitive complexity moved from 350/1,020 to 356/1,036.
 With diagnostics disabled, Criterion detected no change: allowed loopback was
 102.17–117.52 microseconds (`p=0.23`) and hostname denial was 68.00–73.52

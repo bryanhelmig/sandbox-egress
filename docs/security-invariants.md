@@ -80,6 +80,12 @@ special-purpose IPv6 prefixes are rejected because the effective endpoint is
 not safely knowable at this layer. A host can deliberately override the floor
 with an explicit CIDR grant.
 
+The conservative floor rejects IANA's full `2001::/23` IETF protocol
+assignments umbrella, as it does IPv4's `192.0.0.0/24` umbrella. This includes
+more-specific special assignments that a deployment might intentionally use;
+those require an explicit CIDR grant. Unassigned children cannot become an
+allow-by-omission gap as the registry evolves.
+
 ## Shutdown result
 
 `Lease::close` consumes the lease. On deadline or coordination failure the

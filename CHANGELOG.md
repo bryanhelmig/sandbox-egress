@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Reject the full IANA `2001::/23` protocol-assignments umbrella by default,
+  closing unassigned IPv6 special-purpose gaps while preserving CIDR override.
 - Add opt-in, rate-limited structured denial events through a caller-owned
   bounded channel, without a logging dependency or blocking callback. Events
   retain a non-wrapping lease sequence across source-identity reuse.

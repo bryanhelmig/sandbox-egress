@@ -324,11 +324,7 @@ const FORBIDDEN_V6_PREFIXES: &[(u128, u32)] = &[
     (0x0064_ff9b_0001_0000_0000_0000_0000_0000, 48), // local NAT64
     (0x0100_0000_0000_0000_0000_0000_0000_0000, 64), // discard-only
     (0x0100_0000_0000_0001_0000_0000_0000_0000, 64), // dummy
-    (0x2001_0000_0000_0000_0000_0000_0000_0000, 32), // Teredo
-    (0x2001_0002_0000_0000_0000_0000_0000_0000, 48), // benchmarking
-    (0x2001_0010_0000_0000_0000_0000_0000_0000, 28), // deprecated ORCHID
-    (0x2001_0020_0000_0000_0000_0000_0000_0000, 28), // ORCHIDv2
-    (0x2001_0030_0000_0000_0000_0000_0000_0000, 28), // DETs
+    (0x2001_0000_0000_0000_0000_0000_0000_0000, 23), // IETF assignments umbrella
     (0x2001_0db8_0000_0000_0000_0000_0000_0000, 32), // documentation
     (0x2002_0000_0000_0000_0000_0000_0000_0000, 16), // 6to4
     (0x3fff_0000_0000_0000_0000_0000_0000_0000, 20), // documentation
@@ -402,6 +398,7 @@ mod tests {
             "100:0:0:1::1",
             "2001::1",
             "2001:2::1",
+            "2001:5::1",
             "2001:10::1",
             "2001:20::1",
             "2001:30::1",
@@ -449,5 +446,17 @@ mod tests {
                 "{network:#034x}/{length}"
             );
         }
+    }
+
+    #[test]
+    fn explicit_network_grant_overrides_the_special_purpose_floor() {
+        let address: IpAddr = "2001:5::1".parse().expect("special-purpose test IP");
+        let policy = Policy::builder()
+            .allow_network("2001:5::1/128".parse().expect("explicit test grant"))
+            .build()
+            .expect("valid policy");
+
+        assert!(policy.allows_ip(address));
+        assert!(policy.allows_ip_literal(address));
     }
 }
