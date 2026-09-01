@@ -569,9 +569,8 @@ impl Drop for Admission {
 }
 
 enum ConnectorBackend {
-    System {
-        upstream_proxy: Option<SocketAddr>,
-    },
+    Direct,
+    Upstream(SocketAddr),
     #[cfg(test)]
     Test(Arc<dyn TestConnector>),
 }
@@ -579,16 +578,12 @@ enum ConnectorBackend {
 impl ConnectorBackend {
     async fn connect(&self, address: SocketAddr) -> io::Result<ConnectedStream> {
         match self {
-            Self::System {
-                upstream_proxy: Some(proxy),
-            } => connect_via(*proxy, address)
-                .await
-                .map(ConnectedStream::Proxied),
-            Self::System {
-                upstream_proxy: None,
-            } => TcpStream::connect(address)
+            Self::Direct => TcpStream::connect(address)
                 .await
                 .map(ConnectedStream::Direct),
+            Self::Upstream(proxy) => connect_via(*proxy, address)
+                .await
+                .map(ConnectedStream::Proxied),
             #[cfg(test)]
             Self::Test(connector) => connector
                 .connect(address)
@@ -599,12 +594,8 @@ impl ConnectorBackend {
 
     const fn failure_reason(&self) -> &'static str {
         match self {
-            Self::System {
-                upstream_proxy: Some(_),
-            } => "upstream-proxy-failed",
-            Self::System {
-                upstream_proxy: None,
-            } => "dial-failed",
+            Self::Direct => "dial-failed",
+            Self::Upstream(_) => "upstream-proxy-failed",
             #[cfg(test)]
             Self::Test(_) => "dial-failed",
         }
@@ -725,9 +716,10 @@ async fn run_proxy(
             }
         },
     };
-    let connector = Arc::new(connector.unwrap_or(ConnectorBackend::System {
-        upstream_proxy: config.upstream_proxy,
-    }));
+    let system_connector = config
+        .upstream_proxy
+        .map_or(ConnectorBackend::Direct, ConnectorBackend::Upstream);
+    let connector = Arc::new(connector.unwrap_or(system_connector));
     let listener = match TcpListener::bind(config.bind_address).await {
         Ok(listener) => listener,
         Err(error) => {
@@ -3449,9 +3441,7 @@ mod tests {
                 &state,
                 &resolver,
                 &phase_permits,
-                &ConnectorBackend::System {
-                    upstream_proxy: None,
-                },
+                &ConnectorBackend::Direct,
                 &config,
                 TokioInstant::now() - Duration::from_millis(20),
             )

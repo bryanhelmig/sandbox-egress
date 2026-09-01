@@ -4193,3 +4193,33 @@ lane peaked at 14,988 KiB RSS, 265 descriptors, and six threads, recovered to
 four descriptors, and two threads. The rootless 174/174 image is
 `sha256:a08585327c02a6d62b347e5d5564de9a4ca1622193efd5de1891987f8948a65d`
 (40,865,285 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — flatten connector modes
+
+This simplification rotation removed an operational sum type hidden inside
+another sum type. The connector previously had a `System` variant containing
+`Option<SocketAddr>`, so both dialing and denial attribution repeated nested
+`Some` and `None` patterns. It now has explicit `Direct` and `Upstream`
+variants, with the process configuration converted once at startup. Test-only
+connector injection remains a third explicit variant.
+
+The retained change removes ten production lines and makes invalid combinations
+unrepresentable without changing tasks, allocations, public API, or the hot
+tunnel loop. Whole-tree SCC 4.0.0 complexity remains exactly 730/2,173
+structural/cognitive.
+
+Three alternating Criterion pairs measured allowed direct CONNECT against
+detached `4eced6f`. Candidate intervals were 104.45–120.36, 109.51–130.04,
+and 116.59–144.21 microseconds; parent intervals were 110.74–127.03,
+115.06–118.20, and 116.12–144.48. Every pair overlaps, so no performance
+change is claimed. The comparison worktree was removed.
+
+The native and exact Rust 1.88 Linux factories passed the unchanged 174
+deterministic cases, six doctests, documentation, package verification,
+benchmark smoke, and all six Linux resource lanes; native dependency policy
+checks also passed. Linux's TLS lane peaked at 14,724 KiB RSS, 265 descriptors,
+and six threads, recovered to 12,780 KiB, eight descriptors, and five threads,
+and finished at 6,564 KiB, four descriptors, and two threads. The rootless
+174/174 image is
+`sha256:4e2b625edafd9934118c9f71269038299e52358174b877a640f63cd4dd3a33c6`
+(40,866,141 bytes) and runs as UID/GID 65534.
