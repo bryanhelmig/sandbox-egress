@@ -5066,3 +5066,7 @@ from 184 to 185.
 The complete native factory passes all 185 deterministic tests, six
 documentation examples, formatting, all-target lints, documentation,
 dependency policy, package verification, benchmark smoke, and release build.
+The pinned Rust 1.88 Linux factory also passes all 185 deterministic cases and
+all eight serialized resource lanes. Its rootless conformance image is
+`sha256:cb1212cd1aa40d4936e2d4185adfd61d39261a0a4df89a83785ea4c3e140b4c1`
+(40,948,020 bytes) and runs as UID/GID 65534.
