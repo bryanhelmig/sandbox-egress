@@ -232,6 +232,105 @@ fn dial_permit_is_released_before_tunnelling() {
 }
 
 #[test]
+fn upstream_proxy_negotiations_hold_the_dial_budget_until_success() {
+    const CONNECTIONS: usize = 4;
+    const DIAL_LIMIT: usize = 2;
+    const UPSTREAM_CONNECT: &[u8] =
+        b"CONNECT 127.0.0.2:443 HTTP/1.1\r\nHost: 127.0.0.2:443\r\n\r\n";
+
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind upstream proxy");
+    let upstream_proxy = listener.local_addr().expect("upstream proxy address");
+    let (accepted_tx, accepted_rx) = mpsc::sync_channel(DIAL_LIMIT);
+    let (third_tx, third_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::sync_channel(0);
+    let server = thread::spawn(move || {
+        let mut negotiations = Vec::with_capacity(DIAL_LIMIT);
+        for _ in 0..DIAL_LIMIT {
+            let (mut stream, _) = listener.accept().expect("accept upstream negotiation");
+            let mut request = [0_u8; UPSTREAM_CONNECT.len()];
+            stream
+                .read_exact(&mut request)
+                .expect("read upstream CONNECT");
+            assert_eq!(&request, UPSTREAM_CONNECT);
+            negotiations.push(stream);
+            accepted_tx.send(()).expect("report upstream negotiation");
+        }
+        let (third, _) = listener.accept().expect("accept observer wakeup");
+        let _ = third_tx.send(());
+        release_rx.recv().expect("release upstream negotiations");
+        drop(third);
+        drop(negotiations);
+    });
+
+    let target: SocketAddr = "127.0.0.2:443".parse().expect("numeric target");
+    let proxy = Proxy::start(
+        ProxyConfig::default()
+            .with_max_connections(CONNECTIONS)
+            .with_max_concurrent_dials(DIAL_LIMIT)
+            .with_upstream_proxy(upstream_proxy),
+    )
+    .expect("start proxy");
+    let policy = Policy::builder()
+        .allow_network("127.0.0.0/8".parse().expect("loopback CIDR"))
+        .allow_port(target.port())
+        .max_connections(CONNECTIONS)
+        .expect("positive lease limit")
+        .build()
+        .expect("valid policy");
+    let lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            policy,
+        )
+        .expect("attach lease");
+    let request = format!("CONNECT {target} HTTP/1.1\r\nHost: {}\r\n\r\n", target.ip());
+    let mut clients = Vec::with_capacity(CONNECTIONS);
+    for _ in 0..CONNECTIONS {
+        let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect guest");
+        client
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .expect("set guest timeout");
+        client
+            .write_all(request.as_bytes())
+            .expect("write guest CONNECT");
+        clients.push(client);
+    }
+    for _ in 0..DIAL_LIMIT {
+        accepted_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("observe bounded upstream negotiation");
+    }
+    let active_deadline = Instant::now() + Duration::from_secs(1);
+    while lease.usage().active_connections != CONNECTIONS as u64 && Instant::now() < active_deadline
+    {
+        thread::yield_now();
+    }
+    assert_eq!(lease.usage().active_connections, CONNECTIONS as u64);
+    let third_seen = third_rx.recv_timeout(Duration::from_millis(200)).is_ok();
+
+    let usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("cancel active and queued negotiations")
+        .usage();
+    assert_eq!(usage.accepted_connections, CONNECTIONS as u64);
+    assert_eq!(usage.denied_connections, 0);
+    assert_eq!(usage.active_connections, 0);
+    for mut client in clients {
+        let mut byte = [0_u8; 1];
+        assert_terminal_read(client.read(&mut byte));
+    }
+    if !third_seen {
+        TcpStream::connect(upstream_proxy).expect("wake upstream observer");
+    }
+    release_tx.send(()).expect("release upstream observer");
+    server.join().expect("join upstream proxy");
+    assert!(!third_seen, "dial budget admitted a third negotiation");
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
 fn full_diagnostic_channel_cannot_block_concurrent_denials_or_close() {
     const CLIENTS: usize = 64;
 

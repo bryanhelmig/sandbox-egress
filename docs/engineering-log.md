@@ -4223,3 +4223,33 @@ and finished at 6,564 KiB, four descriptors, and two threads. The rootless
 174/174 image is
 `sha256:4e2b625edafd9934118c9f71269038299e52358174b877a640f63cd4dd3a33c6`
 (40,866,141 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — bound concurrent upstream negotiations
+
+This comparison follow-up tested whether the new upstream response phase truly
+belongs to the existing dial budget. Releasing a permit after the upstream TCP
+connect but before its CONNECT response would let a hostile guest turn a small
+dial ceiling into many simultaneous negotiations and 32 KiB response buffers.
+
+A new public barrier starts four guest connections with two process-wide dial
+permits. The local upstream accepts and verifies exactly two numeric CONNECT
+requests, withholds both responses, and observes no third connection for 200
+milliseconds. Certified lease close then cancels the two live negotiations and
+the two queued permit waits; all four guest sockets are terminal and final
+usage reports four accepted, zero denied, and zero active connections. The
+focused case passed ten consecutive runs.
+
+Production behavior already held the invariant because `connect_via` remains
+inside the permit-owning connector future. No production source, dependency,
+or data path changed, so no performance benchmark was run. Whole-tree SCC 4.0.0
+complexity moves from 730/2,173 to 739/2,192 structural/cognitive, entirely in
+the public concurrency proof.
+
+The native and exact Rust 1.88 Linux factories passed 175 deterministic cases,
+six doctests, documentation, package verification, benchmark smoke, and all six
+Linux resource lanes; native dependency policy checks also passed. Linux's TLS
+lane peaked at 14,564 KiB RSS, 265 descriptors, and six threads, recovered to
+9,156 KiB, eight descriptors, and five threads, and finished at 5,956 KiB, four
+descriptors, and two threads. The rootless 175/175 image is
+`sha256:f8b4bb00ca2425eeefe5f7368caeecf8926de3709113d21442f06f0a0bbfa0aa`
+(40,879,838 bytes) and runs as UID/GID 65534.

@@ -422,6 +422,10 @@ refusal, reject a response header that reaches the 32 KiB ceiling, reject
 configuring the shared listener as its own upstream, and certify lease
 revocation while the peer withholds its response. The last case requires both
 guest and upstream sockets to become terminal without releasing the peer first.
+A four-guest capacity barrier with two dial permits then withholds every
+upstream response, proves exactly two upstream negotiations exist for 200
+milliseconds, and requires certified close to cancel both active negotiations
+and both queued permit waits.
 
 The connection Criterion suite also measures one complete upstream-proxy
 negotiation beside direct allowed CONNECT. The local peer consumes and verifies
