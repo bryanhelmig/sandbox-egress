@@ -60,6 +60,29 @@ repeated runs close with RST rather than exhaust the macOS 16,384-port ephemeral
 range with `TIME_WAIT` sockets. That socket option is part of the measured
 harness overhead and must remain consistent in comparisons.
 
+## Process-wide dial-budget comparison
+
+Recorded 2026-09-01 on the same Apple M1, comparing the working tree with
+`9ec6256` using the end-to-end allowed-loopback CONNECT benchmark. Two
+reversed-order, five-second runs without the direct-TCP control measured:
+
+```text
+command: cargo bench --bench connections -- connect_allowed_loopback \
+         --noplot --sample-size 100 --measurement-time 5
+previous median:  122.84, 122.89 us
+dial-budget median: 127.52, 130.39 us
+```
+
+That unnormalized pair suggested a 4.6–7.6 microsecond setup cost, but shorter
+paired runs crossed in both directions. Repeating with the direct loopback
+control in each process made the proxy-minus-control medians 80.71 and 72.22
+microseconds before the change. The exact retained implementation then measured
+71.54 and 72.91 microseconds in two final control-normalized runs. The intervals
+overlap substantially, so no precise speedup or regression is claimed. The
+retained implementation uses a borrowed permit, paid once around outbound
+connection establishment and released before tunnel traffic; it adds no
+per-byte or tunnel-lifetime work.
+
 ## Initial sustained CONNECT baseline
 
 Recorded 2026-08-31 on the same Apple M1 with Rust 1.97.1:

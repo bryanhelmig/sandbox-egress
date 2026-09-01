@@ -18,6 +18,7 @@ pub struct ProxyConfig {
     pub(crate) bind_address: SocketAddr,
     pub(crate) max_connections: usize,
     pub(crate) max_concurrent_dns: usize,
+    pub(crate) max_concurrent_dials: usize,
     pub(crate) dns_cache_entries: u64,
     pub(crate) dns_cache_max_ttl: Duration,
     pub(crate) dns_servers: Vec<SocketAddr>,
@@ -83,6 +84,15 @@ impl ProxyConfig {
     /// absolute handshake deadlines.
     pub fn with_max_concurrent_dns(mut self, max: usize) -> Self {
         self.max_concurrent_dns = max.clamp(1, tokio::sync::Semaphore::MAX_PERMITS);
+        self
+    }
+
+    /// Set the process-wide ceiling for outbound connection attempts executing
+    /// concurrently, clamped to the runtime semaphore's safe range.
+    /// Waiting for a permit remains subject to the absolute handshake deadline;
+    /// a permit is released as soon as dialing finishes, before tunnelling.
+    pub fn with_max_concurrent_dials(mut self, max: usize) -> Self {
+        self.max_concurrent_dials = max.clamp(1, tokio::sync::Semaphore::MAX_PERMITS);
         self
     }
 
@@ -196,6 +206,7 @@ impl Default for ProxyConfig {
             bind_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
             max_connections: 1_024,
             max_concurrent_dns: 128,
+            max_concurrent_dials: 256,
             dns_cache_entries: MAX_DNS_CACHE_ENTRIES,
             dns_cache_max_ttl: MAX_DNS_CACHE_TTL,
             dns_servers: Vec::new(),
@@ -361,10 +372,15 @@ mod tests {
     fn runtime_semaphore_limits_stay_within_the_runtime_bound() {
         let config = ProxyConfig::default()
             .with_max_connections(usize::MAX)
-            .with_max_concurrent_dns(usize::MAX);
+            .with_max_concurrent_dns(usize::MAX)
+            .with_max_concurrent_dials(usize::MAX);
         assert_eq!(config.max_connections, tokio::sync::Semaphore::MAX_PERMITS);
         assert_eq!(
             config.max_concurrent_dns,
+            tokio::sync::Semaphore::MAX_PERMITS
+        );
+        assert_eq!(
+            config.max_concurrent_dials,
             tokio::sync::Semaphore::MAX_PERMITS
         );
         crate::Proxy::start(config)

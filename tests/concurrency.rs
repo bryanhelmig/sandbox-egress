@@ -1,7 +1,7 @@
 //! Concurrency-focused revocation tests.
 
 use std::io::{Read, Write};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, Barrier, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -147,6 +147,85 @@ fn global_capacity_rejection_is_attributed_and_retry_recovers() {
     assert_eq!(ipv6_usage.active_connections, 0);
     drop(retry);
 
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
+fn dial_permit_is_released_before_tunnelling() {
+    const CONNECT_RESPONSE: &[u8; 39] = b"HTTP/1.1 200 Connection Established\r\n\r\n";
+
+    let upstream = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind upstream");
+    let upstream_port = upstream.local_addr().expect("upstream address").port();
+    let (accepted_tx, accepted_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let server = thread::spawn(move || {
+        let mut connections = Vec::with_capacity(2);
+        for _ in 0..2 {
+            let (connection, _) = upstream.accept().expect("accept upstream connection");
+            connections.push(connection);
+            accepted_tx.send(()).expect("report upstream connection");
+        }
+        release_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("release upstream connections");
+    });
+
+    let proxy = Proxy::start(
+        ProxyConfig::default()
+            .with_identity_reuse_quiet_period(Duration::ZERO)
+            .with_max_connections(2)
+            .with_max_concurrent_dials(1),
+    )
+    .expect("start proxy");
+    let lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            Policy::builder()
+                .allow_network("127.0.0.0/8".parse().expect("valid loopback network"))
+                .allow_port(upstream_port)
+                .max_connections(2)
+                .expect("positive lease limit")
+                .build()
+                .expect("valid policy"),
+        )
+        .expect("attach lease");
+    let endpoint = lease.endpoint().socket_addr();
+    let mut clients = Vec::with_capacity(2);
+
+    for _ in 0..2 {
+        let mut client = TcpStream::connect(endpoint).expect("connect proxy");
+        client
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .expect("set CONNECT response timeout");
+        write!(
+            client,
+            "CONNECT 127.0.0.1:{upstream_port} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"
+        )
+        .expect("write CONNECT");
+        let mut response = [0_u8; CONNECT_RESPONSE.len()];
+        client
+            .read_exact(&mut response)
+            .expect("read CONNECT success");
+        assert_eq!(&response, CONNECT_RESPONSE);
+        accepted_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("observe upstream dial");
+        clients.push(client);
+    }
+
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close two active tunnels")
+        .usage();
+    assert_eq!(final_usage.accepted_connections, 2);
+    assert_eq!(final_usage.active_connections, 0);
+    assert_eq!(final_usage.completed_connections, 0);
+    assert_eq!(final_usage.denied_connections, 0);
+    drop(clients);
+    release_tx.send(()).expect("release upstream server");
+    server.join().expect("join upstream server");
     proxy
         .shutdown(Instant::now() + Duration::from_secs(1))
         .expect("proxy shutdown");

@@ -613,8 +613,13 @@ struct ConnectionRuntime {
     resolver: Arc<ResolverBackend>,
     connector: Arc<ConnectorBackend>,
     global_permits: Arc<Semaphore>,
-    dns_permits: Arc<Semaphore>,
+    phase_permits: Arc<PhasePermits>,
     config: ProxyConfig,
+}
+
+struct PhasePermits {
+    dns: Arc<Semaphore>,
+    dial: Arc<Semaphore>,
 }
 
 impl ConnectionRuntime {
@@ -639,7 +644,7 @@ impl ConnectionRuntime {
             return;
         };
         let resolver = Arc::clone(&self.resolver);
-        let dns_permits = Arc::clone(&self.dns_permits);
+        let phase_permits = Arc::clone(&self.phase_permits);
         let connector = Arc::clone(&self.connector);
         let config = self.config.clone();
         tokio::spawn(async move {
@@ -653,7 +658,7 @@ impl ConnectionRuntime {
                     stream,
                     &state,
                     &resolver,
-                    &dns_permits,
+                    &phase_permits,
                     &connector,
                     &config,
                     accepted_at,
@@ -728,7 +733,10 @@ async fn run_proxy(
     let mut leases: HashMap<PeerIdentity, Arc<LeaseState>> = HashMap::new();
     let connections = ConnectionRuntime {
         global_permits: Arc::new(Semaphore::new(config.max_connections)),
-        dns_permits: Arc::new(Semaphore::new(config.max_concurrent_dns)),
+        phase_permits: Arc::new(PhasePermits {
+            dns: Arc::new(Semaphore::new(config.max_concurrent_dns)),
+            dial: Arc::new(Semaphore::new(config.max_concurrent_dials)),
+        }),
         resolver,
         connector,
         config,
@@ -921,7 +929,7 @@ async fn serve_connect(
     mut client: TcpStream,
     state: &Arc<LeaseState>,
     resolver: &ResolverBackend,
-    dns_permits: &Arc<Semaphore>,
+    phase_permits: &PhasePermits,
     connector: &ConnectorBackend,
     config: &ProxyConfig,
     accepted_at: TokioInstant,
@@ -960,7 +968,7 @@ async fn serve_connect(
         &request,
         state,
         resolver,
-        dns_permits,
+        &phase_permits.dns,
         config.max_resolved_addresses,
         &config.nat64_prefixes,
         handshake_deadline,
@@ -971,9 +979,18 @@ async fn serve_connect(
         Err(denial) => return deny(&mut client, state, denial.status, denial.reason).await,
     };
 
-    let Some(mut upstream) =
-        dial_approved_addresses(addresses, connector, handshake_deadline).await
-    else {
+    let upstream = match dial_with_budget(
+        addresses,
+        connector,
+        &phase_permits.dial,
+        handshake_deadline,
+    )
+    .await
+    {
+        Ok(upstream) => upstream,
+        Err(denial) => return deny(&mut client, state, denial.status, denial.reason).await,
+    };
+    let Some(mut upstream) = upstream else {
         return deny(&mut client, state, 502, "dial-failed").await;
     };
 
@@ -1089,6 +1106,21 @@ async fn dial_approved_addresses(
     None
 }
 
+async fn dial_with_budget(
+    addresses: Vec<SocketAddr>,
+    connector: &ConnectorBackend,
+    permits: &Arc<Semaphore>,
+    handshake_deadline: TokioInstant,
+) -> Result<Option<TcpStream>, Denial> {
+    let permit = timeout_at(handshake_deadline, permits.acquire())
+        .await
+        .map_err(|_| Denial::DIAL_CAPACITY)?
+        .map_err(|_| Denial::DIAL_CAPACITY)?;
+    let upstream = dial_approved_addresses(addresses, connector, handshake_deadline).await;
+    drop(permit);
+    Ok(upstream)
+}
+
 async fn forward_uninspected_upload<W>(
     upstream: &mut W,
     state: &LeaseState,
@@ -1169,6 +1201,7 @@ struct Denial {
 }
 
 impl Denial {
+    const DIAL_CAPACITY: Self = Self::new(503, "dial-capacity");
     const DNS_CAPACITY: Self = Self::new(503, "dns-capacity");
     const DNS_ANSWER_TOO_LARGE: Self = Self::new(502, "dns-answer-too-large");
     const DNS_EMPTY: Self = Self::new(502, "dns-empty");
@@ -1438,6 +1471,7 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for Metered<T> {
 mod tests {
     use super::*;
 
+    mod dial_budget;
     mod dns_wire;
 
     struct ActiveLookup(Arc<std::sync::atomic::AtomicUsize>);
@@ -2998,14 +3032,17 @@ mod tests {
                 DiagnosticReporter::default(),
             ));
             let resolver = ResolverBackend::Test(Arc::new(FixedAnswerResolver(Vec::new())));
-            let dns_permits = Arc::new(Semaphore::new(1));
+            let phase_permits = PhasePermits {
+                dns: Arc::new(Semaphore::new(1)),
+                dial: Arc::new(Semaphore::new(1)),
+            };
             let config = ProxyConfig::default();
 
             let disposition = serve_connect(
                 server,
                 &state,
                 &resolver,
-                &dns_permits,
+                &phase_permits,
                 &ConnectorBackend::System,
                 &config,
                 TokioInstant::now() - Duration::from_millis(20),

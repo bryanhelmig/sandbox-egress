@@ -50,7 +50,6 @@ contributor instead of preserving solved work as apparent backlog.
   current contract is fail-fast attribution and recovery on retry.
 - Listener backlog saturation and general accept-loop fairness beyond the
   certified close/attach drain barriers.
-- DNS and dial concurrency distinct from tunnel concurrency.
 - A bounded trusted-host control-plane design that preserves nonblocking Drop
   cleanup; concurrent caller recovery is measured, but outstanding host calls
   are not currently capped inside the crate.

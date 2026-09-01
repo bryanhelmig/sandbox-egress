@@ -153,6 +153,15 @@ the fallback's entire deadline, while one admitted connection still owns at
 most one live upstream dial. Immediate failures advance without an artificial
 delay. Lease cancellation drops the current attempt and prevents the next.
 
+A process-wide semaphore separately bounds connections executing the outbound
+dial phase. It is acquired only after the complete resolved-address set passes
+policy and remains subject to the connection's absolute handshake deadline.
+Capacity expiry is the distinct bounded denial `503 dial-capacity`. The permit
+is released immediately after connection establishment, before CONNECT success
+or tunnelling, so long-lived tunnels do not consume dial capacity. The permit,
+any queued wait, and the current connect future live inside the lease's tracked
+connection task; lease cancellation drops all three before close can certify.
+
 Policy construction begins with no allowed hostname, destination network, or
 port. Every permitted port is explicit: adding one port cannot retain a hidden
 HTTPS default, and adding a hostname cannot create a port grant. The thin
@@ -194,10 +203,10 @@ Configuration and immutable policy construction reject durations too large for
 the platform clock to represent as deadlines. The connection path also uses
 checked deadline arithmetic, so elapsed startup time or a platform clock edge
 cannot turn a trusted configuration mistake into a panicking runtime task.
-The process header deadline must also be nonzero. Global connection and DNS
-limits are clamped to Tokio's semaphore maximum, and a per-lease limit beyond
-that maximum returns a typed policy error before attachment; extreme host
-configuration cannot reach a panicking semaphore constructor.
+The process header deadline must also be nonzero. Global connection, DNS, and
+dial limits are clamped to Tokio's semaphore maximum, and a per-lease limit
+beyond that maximum returns a typed policy error before attachment; extreme
+host configuration cannot reach a panicking semaphore constructor.
 
 Per-tunnel byte ceilings count bytes read from the guest or upstream. After
 CONNECT establishment, while allowance remains, the metered reader caps its

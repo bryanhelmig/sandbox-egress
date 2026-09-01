@@ -145,6 +145,8 @@ The current vertical slice provides:
 - sequential address failover with a fair share of the remaining absolute
   handshake budget per attempt, keeping one live dial per connection;
 - an independently bounded process-wide DNS concurrency budget;
+- a separate process-wide outbound-dial budget, acquired only after every
+  resolved address is approved and released before tunnelling begins;
 - default rejection of loopback, private, link-local, multicast,
   documentation, cloud-metadata, and unsafe IPv6 transition destinations
   unless a CIDR is explicitly granted;
@@ -154,7 +156,7 @@ The current vertical slice provides:
 - fail-fast global and per-lease connection admission reserved before work is
   spawned, with refusals attributed to the contending lease;
 - bounded request headers, backpressure, and absolute accept-to-handshake and
-  DNS deadlines;
+  DNS deadlines; waiting for DNS or dial capacity consumes those deadlines;
 - opt-in, bounded TLS `ClientHello` parsing that requires visible SNI to equal
   the CONNECT hostname;
 - explicit ECH handling: strict inspection rejects ECH by default, while an
@@ -184,6 +186,19 @@ encrypted tunnel, so Sandbox Egress does not claim to eliminate every form of
 domain fronting. Plain HTTP forwarding, transparent interception,
 arbitrary resolver backends, and configurable destination-range tables are also
 not yet implemented. These gaps are tracked rather than hidden.
+
+Global connection, resolver, and outbound-dial work are bounded independently.
+The defaults are 1,024 admitted connections, 128 concurrent DNS lookups, and
+256 concurrent dials; a host can narrow or widen each ceiling before startup:
+
+```rust,no_run
+# use sandbox_egress::ProxyConfig;
+let config = ProxyConfig::default()
+    .with_max_connections(512)
+    .with_max_concurrent_dns(64)
+    .with_max_concurrent_dials(128);
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
 
 By default the proxy snapshots the host's resolver configuration when it
 starts. A sandbox supervisor can instead pin one or more recursive servers;

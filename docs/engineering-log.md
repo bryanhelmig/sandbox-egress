@@ -3073,3 +3073,53 @@ ms. The 2,000-connection terminal lane returned to four and two at 5,132 KiB
 in 453 ms. The rootless 141/141 conformance image is
 `sha256:8be96646ef39241618e47f579291fe4444d635712b5e11b62f4e5dea63c2df15`
 (40,561,917 bytes).
+
+## 2026-09-01 — bound process-wide outbound dialing
+
+Outbound connection establishment now has a process-wide budget independent
+of total admitted connections and DNS work. `ProxyConfig` defaults to 256
+concurrent dials and exposes `with_max_concurrent_dials`; extreme values are
+clamped before Tokio constructs the semaphore. A connection acquires its permit
+only after the complete resolved-address set passes policy. Waiting consumes
+the existing absolute handshake deadline and expires as the distinct
+`503 dial-capacity` denial. The permit is dropped immediately after connection
+establishment, before CONNECT success, TLS inspection, or tunnel lifetime.
+
+Three proofs pin the ownership boundary. Five pending connections with a limit
+of two produce exactly two connector calls; certified close cancels those two
+live attempts and the three queued permit waits, stops every client, and leaves
+zero active work. A separate dual-stack, two-identity case lets one lease hold
+the only permit while the other exhausts its handshake deadline; the waiting
+lease receives one attributed capacity denial and never enters the connector.
+Finally, a public system-dial test establishes and simultaneously holds two real
+loopback tunnels with a limit of one, proving the permit is not retained by an
+established tunnel. Both internal cases passed 25 consecutive runs and the
+public case passed 10 consecutive runs.
+
+The first implementation used an owned semaphore permit. A borrowed permit is
+sufficient because the dial helper's stack frame encloses every attempt, so the
+owned form and its `Arc` traffic were removed. An explicit uncontended branch
+was also tried, measured, and discarded: it added one structural and six
+cognitive complexity points without a stable latency benefit. The retained
+single deadline-wrapped acquisition is the smaller implementation.
+
+A detached `9ec6256` worktree supplied the before measurement and was removed
+with its build artifacts afterward. Short paired end-to-end runs crossed in
+both directions. Two longer unnormalized runs suggested a 4.6–7.6 microsecond
+loopback setup cost, but the direct-TCP control moved at the same scale. The
+final control-normalized proxy medians were 71.54 and 72.91 microseconds versus
+80.71 and 72.22 before the change, with overlapping intervals. No performance
+change is claimed. The budget is paid once per outbound setup and does not add
+per-byte or tunnel-lifetime work.
+
+Whole-tree SCC 4.0.0 complexity moves from 593/1,788 to 602/1,809
+structural/cognitive. `proxy.rs` moves from 230/789 to 233/797; the remaining
+increase is the public configuration and three deterministic proofs. The
+native and exact Rust 1.88 Linux factories passed 144 deterministic cases,
+documentation, package verification, and dependency policy checks. Linux's
+64-caller control lane peaked at 5,332 KiB RSS and returned to four descriptors
+and two threads at 4,852 KiB in 180 ms. The 500-lease lane returned to four and
+two at 4,856 KiB in 1,098 ms. The 2,000-connection terminal lane returned to
+four and two at 5,108 KiB in 448 ms. The rootless 144/144 conformance image is
+`sha256:92ace025f196b32512a25d581f114b2ece9dca0b9c1af3fd803950d726a21d7e`
+(40,615,724 bytes).

@@ -343,6 +343,17 @@ recording the exact checked `SocketAddr`. Tests release it only through lease
 cancellation or the absolute handshake deadline and observe its drop directly,
 avoiding platform-dependent assumptions about unroutable addresses.
 
+Dial admission has its own process-wide phase budget. With five approved
+connections and two permits, the connector must observe exactly two live
+attempts; certified close cancels those attempts and all three queued waits.
+A two-identity case then occupies the only permit with one lease while a
+dual-stack request on another lease consumes its absolute handshake deadline.
+That contender receives exactly one `dial-capacity` denial and never reaches
+the connector. A public system-dial case sets the limit to one and holds two
+real loopback tunnels open at once, proving each permit is released after
+connection establishment rather than retained for tunnel lifetime. Extreme
+host configuration is also clamped before semaphore construction.
+
 A direct connection-task case supplies an already-expired listener-accept
 timestamp without sending any header bytes. It must immediately return the
 bounded `header-timeout` denial, proving scheduler delay cannot reset either

@@ -5,6 +5,9 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Add a separate process-wide outbound-dial budget with deadline-bound waiting,
+  a distinct `dial-capacity` denial, lease-owned cancellation, and release
+  before tunnel lifetime.
 - Bound a real two-name CNAME cycle to 16 A/AAAA questions and a no-dial
   `dns-failed` denial, and isolate DNS-wire conformance from the proxy test body.
 - Pin an incomplete DNS wire reply to six bounded resolver questions, an
