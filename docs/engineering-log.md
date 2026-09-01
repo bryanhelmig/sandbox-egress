@@ -4727,3 +4727,36 @@ descriptors, and two threads. Production artifacts did not change, so the
 rootless 180/180 image remains
 `sha256:41133bfefe81f2821cf16af889aebd453de02d38283d15081f2d70c7f8f6c63e`
 (40,904,531 bytes), running as UID/GID 65534.
+
+## 2026-09-01 — reduce the initial header reserve
+
+The next performance rotation measured the shared header framer's initial
+allocation. It reserved 1 KiB for every admitted guest or upstream handshake
+even though an ordinary CONNECT header is much smaller. The candidate reserves
+256 bytes initially and retains the same configured ceiling, 4 KiB stack read
+buffer, incremental scan, and vector growth for larger headers.
+
+Five baseline allowed-CONNECT intervals were 110.56–122.09,
+115.11–119.86, 113.34–133.08, 114.43–133.24, and 120.26–166.33
+microseconds. Five candidate intervals were 112.10–114.02, 112.92–126.07,
+114.93–154.87, 114.95–117.00, and 116.39–134.49 microseconds. The intervals
+overlap, so no setup-latency improvement is claimed. Three 1 MiB
+near-terminator baselines were 650.99–685.63 microseconds; three candidates
+were 656.38–691.83 microseconds, also overlapping.
+
+The resource effect was exact enough to retain. Three 512-connection partial
+header baselines peaked at 16,912, 16,912, and 16,928 KiB RSS. Three candidate
+runs peaked at 16,528, 16,544, and 16,464 KiB. Median peak RSS fell by 384
+KiB, exactly 512 times the 768-byte reserve reduction. No public API, branch,
+task, dependency, test count, or complexity changes.
+
+The native and exact Rust 1.88 Linux factories passed all 180 deterministic
+cases, six doctests, documentation, package verification, benchmark smoke, and
+all seven Linux resource lanes. Linux's 128-connection header lane peaked at
+7,284 KiB RSS, 264 descriptors, and five threads and recovered to eight
+descriptors/five threads after close and four/two after shutdown. The TLS lane
+peaked at 14,696 KiB RSS, 265 descriptors, and six threads, recovered to 9,928
+KiB, eight descriptors, and five threads, and finished at 5,936 KiB, four
+descriptors, and two threads. The rootless 180/180 image is
+`sha256:352afe0968c2a281386adfdd6f7122385b6267b26ce59acf274d81449a90225c`
+(40,904,544 bytes) and runs as UID/GID 65534.

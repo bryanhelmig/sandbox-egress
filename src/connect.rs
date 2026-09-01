@@ -32,7 +32,9 @@ where
     R: AsyncRead + Unpin,
 {
     debug_assert!((1..=4_096).contains(&chunk_bytes));
-    let mut bytes = Vec::with_capacity(max.min(1_024));
+    // Keep ordinary CONNECT headers in one allocation without reserving a
+    // full read chunk for every concurrent handshake.
+    let mut bytes = Vec::with_capacity(max.min(256));
     let mut chunk = [0_u8; 4_096];
     loop {
         if bytes.len() >= max {

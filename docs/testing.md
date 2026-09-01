@@ -288,7 +288,9 @@ of their distinct attached leases, then releases their close calls together in
 four repeated batches. A third lane holds a configurable number of partial
 CONNECT headers before their deadline, proves every admission is active, then
 requires certified close to make all guest sockets terminal and recover
-descriptors and threads. A fourth lane establishes a configurable batch of
+descriptors and threads. Its 512-connection measurement also catches changes
+to the bounded header buffer's per-handshake reserve. A fourth lane establishes
+a configurable batch of
 silent tunnels under one idle-expiring lease. It samples their simultaneous peak,
 requires every guest and upstream socket to become terminal, and checks exact
 idle-denial counters plus recovered descriptors and threads. A fifth lane
