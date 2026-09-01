@@ -883,3 +883,33 @@ The connection benchmark detected no performance change: allowed loopback was
 The exact Rust 1.88 Linux image passed the factory and hostile lane. Its
 500-lease smoke held eight descriptors and five threads while live, returned
 to four descriptors and two threads, and finished at 4,004 KiB RSS.
+
+## 2026-08-31 — bound DNS answer cardinality before dialing
+
+### Finding
+
+DNS lookup concurrency and time were bounded, and every returned address was
+checked, but answer cardinality was not. A controlled 65-address answer reached
+the connector and ended as the generic `dial-failed` response. A hostile DNS
+server could therefore amplify one request into many sequential connection
+attempts within the handshake budget.
+
+### Result
+
+The proxy now accepts at most 64 addresses per lookup by default. Callers can
+configure the ceiling within a hard `1..=1024` range. The system resolver
+collects no more than ceiling plus one entries; the extra entry detects an
+oversized set. Such a set is rejected intact as `dns-answer-too-large`, rather
+than truncated in an order-dependent way.
+
+The deterministic regression supplies 65 allowed loopback answers and a
+recording connector. It requires a 502 response with the stable reason, exactly
+one lease denial, and zero dial attempts. The case passed 25 consecutive runs.
+The complete native factory and 57-case conformance lane passed.
+
+Whole-tree structural complexity moved from 348 to 350 and cognitive
+complexity from 1,017 to 1,020. No connection benchmark was claimed because
+the existing allowed benchmark uses an IP literal and does not exercise DNS.
+The exact Rust 1.88 Linux image passed the same factory and hostile lane. Its
+500-lease smoke held eight descriptors and five threads while live, returned
+to four descriptors and two threads, and finished at 3,996 KiB RSS.

@@ -8,6 +8,7 @@ pub struct ProxyConfig {
     pub(crate) bind_address: SocketAddr,
     pub(crate) max_connections: usize,
     pub(crate) max_concurrent_dns: usize,
+    pub(crate) max_resolved_addresses: usize,
     pub(crate) max_header_bytes: usize,
     pub(crate) max_client_hello_bytes: usize,
     pub(crate) header_timeout: Duration,
@@ -43,6 +44,15 @@ impl ProxyConfig {
     /// absolute handshake deadlines.
     pub fn with_max_concurrent_dns(mut self, max: usize) -> Self {
         self.max_concurrent_dns = max.max(1);
+        self
+    }
+
+    /// Set the maximum IP addresses accepted from one DNS lookup.
+    ///
+    /// Values are clamped to `1..=1024`. An answer over the configured ceiling
+    /// is rejected as a whole rather than partially dialed.
+    pub fn with_max_resolved_addresses(mut self, max: usize) -> Self {
+        self.max_resolved_addresses = max.clamp(1, 1_024);
         self
     }
 
@@ -84,6 +94,7 @@ impl Default for ProxyConfig {
             bind_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
             max_connections: 1_024,
             max_concurrent_dns: 128,
+            max_resolved_addresses: 64,
             max_header_bytes: 32 * 1_024,
             max_client_hello_bytes: 64 * 1_024,
             header_timeout: Duration::from_secs(10),
@@ -114,5 +125,21 @@ mod tests {
             crate::Proxy::start(ProxyConfig::default().with_header_timeout(Duration::MAX)),
             Err(crate::ProxyError::Initialization(_))
         ));
+    }
+
+    #[test]
+    fn resolved_address_ceiling_stays_bounded() {
+        assert_eq!(
+            ProxyConfig::default()
+                .with_max_resolved_addresses(0)
+                .max_resolved_addresses,
+            1
+        );
+        assert_eq!(
+            ProxyConfig::default()
+                .with_max_resolved_addresses(usize::MAX)
+                .max_resolved_addresses,
+            1_024
+        );
     }
 }

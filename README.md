@@ -111,6 +111,7 @@ The current vertical slice provides:
 - exact hostnames and left-most wildcard subdomains;
 - source-IP identity derived from the accepted socket;
 - one DNS resolution followed by checks on every returned address;
+- bounded DNS answer cardinality, with oversized sets rejected before dialing;
 - direct dialing of a checked `SocketAddr`, with no second lookup;
 - an independently bounded process-wide DNS concurrency budget;
 - default rejection of loopback, private, link-local, multicast,

@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Bound accepted DNS answer cardinality and reject oversized sets before any
+  address can reach the dialer.
 - Extend the absolute handshake deadline through forwarding an approved
   ClientHello, including a constrained-socket cancellation proof.
 - Apply the IPv4 forbidden-address floor to mapped, compatible, and

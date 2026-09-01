@@ -41,6 +41,13 @@ lookups executing concurrently; waiting for a permit consumes the same DNS and
 absolute handshake deadlines. A cancelled or late resolver future cannot reach
 dialing because it lives inside the tracked connection future.
 
+DNS address cardinality is process-configured and has a hard upper bound. The
+system resolver collects at most one entry beyond that ceiling, solely to
+detect overflow. An oversized answer is rejected as a whole before address
+policy or dialing; response ordering cannot select a truncated subset for the
+dialer. This bounds the proxy's collected address vector and dial attempts; the
+resolver still necessarily parses the DNS message it receives.
+
 Dialing receives only approved `SocketAddr` values and shares the absolute
 handshake deadline. Lease cancellation drops the in-progress connect future;
 certified close waits for the owning tracked connection task to disappear.

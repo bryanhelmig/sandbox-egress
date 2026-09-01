@@ -420,12 +420,17 @@ enum ResolverBackend {
 }
 
 impl ResolverBackend {
-    async fn lookup(&self, hostname: &str) -> io::Result<Vec<IpAddr>> {
+    async fn lookup(&self, hostname: &str, max_addresses: usize) -> io::Result<Vec<IpAddr>> {
         match self {
             Self::System(resolver) => resolver
                 .lookup_ip(format!("{hostname}."))
                 .await
-                .map(|lookup| lookup.iter().collect())
+                .map(|lookup| {
+                    lookup
+                        .iter()
+                        .take(max_addresses.saturating_add(1))
+                        .collect()
+                })
                 .map_err(io::Error::other),
             #[cfg(test)]
             Self::Test(resolver) => resolver.lookup(hostname).await,
@@ -674,11 +679,19 @@ async fn serve_connect(
         return deny(&mut client, state, 413, "upload-limit").await;
     }
 
-    let addresses =
-        match resolve_addresses(&request, state, resolver, dns_permits, handshake_deadline).await {
-            Ok(addresses) => addresses,
-            Err(denial) => return deny(&mut client, state, denial.status, denial.reason).await,
-        };
+    let addresses = match resolve_addresses(
+        &request,
+        state,
+        resolver,
+        dns_permits,
+        config.max_resolved_addresses,
+        handshake_deadline,
+    )
+    .await
+    {
+        Ok(addresses) => addresses,
+        Err(denial) => return deny(&mut client, state, denial.status, denial.reason).await,
+    };
 
     let Some(mut upstream) =
         dial_approved_addresses(addresses, connector, handshake_deadline).await
@@ -869,6 +882,7 @@ struct Denial {
 
 impl Denial {
     const DNS_CAPACITY: Self = Self::new(503, "dns-capacity");
+    const DNS_ANSWER_TOO_LARGE: Self = Self::new(502, "dns-answer-too-large");
     const DNS_EMPTY: Self = Self::new(502, "dns-empty");
     const DNS_FAILED: Self = Self::new(502, "dns-failed");
     const HOST_DENIED: Self = Self::new(403, "host-denied");
@@ -906,6 +920,7 @@ async fn resolve_addresses(
     state: &LeaseState,
     resolver: &ResolverBackend,
     dns_permits: &Arc<Semaphore>,
+    max_resolved_addresses: usize,
     handshake_deadline: TokioInstant,
 ) -> Result<Vec<SocketAddr>, Denial> {
     if let Ok(ip) = request.host.parse::<IpAddr>() {
@@ -928,13 +943,20 @@ async fn resolve_addresses(
         .await
         .map_err(|_| Denial::DNS_CAPACITY)?
         .map_err(|_| Denial::DNS_CAPACITY)?;
-    let lookup = timeout_at(dns_deadline, resolver.lookup(&hostname)).await;
+    let lookup = timeout_at(
+        dns_deadline,
+        resolver.lookup(&hostname, max_resolved_addresses),
+    )
+    .await;
     drop(dns_permit);
     let addresses = lookup
         .map_err(|_| Denial::DNS_FAILED)?
         .map_err(|_| Denial::DNS_FAILED)?;
     if addresses.is_empty() {
         return Err(Denial::DNS_EMPTY);
+    }
+    if addresses.len() > max_resolved_addresses {
+        return Err(Denial::DNS_ANSWER_TOO_LARGE);
     }
 
     addresses
@@ -1154,6 +1176,8 @@ mod tests {
         active: Arc<std::sync::atomic::AtomicUsize>,
     }
 
+    struct RejectingConnector(Arc<std::sync::atomic::AtomicUsize>);
+
     impl TestConnector for PendingConnector {
         fn connect(
             &self,
@@ -1165,6 +1189,16 @@ mod tests {
                 self.entered.send(address).expect("report dial entry");
                 std::future::pending::<io::Result<TcpStream>>().await
             })
+        }
+    }
+
+    impl TestConnector for RejectingConnector {
+        fn connect(
+            &self,
+            _address: SocketAddr,
+        ) -> Pin<Box<dyn Future<Output = io::Result<TcpStream>> + Send + '_>> {
+            self.0.fetch_add(1, Ordering::AcqRel);
+            Box::pin(async { Err(io::Error::other("test connector rejected dial")) })
         }
     }
 
@@ -1339,6 +1373,42 @@ mod tests {
         std::io::Read::read_to_string(&mut client, &mut response).expect("read DNS denial");
         assert!(response.starts_with("HTTP/1.1 403"), "{response}");
         assert!(response.contains("resolved-address-denied"), "{response}");
+        assert_eq!(lease.usage().denied_connections, 1);
+
+        lease
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("close lease");
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
+    }
+
+    #[test]
+    fn oversized_dns_answer_is_rejected_before_any_dial() {
+        let loopback = IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
+        let resolver = Arc::new(FixedAnswerResolver(vec![loopback; 65]));
+        let dial_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let connector = Arc::new(RejectingConnector(Arc::clone(&dial_attempts)));
+        let proxy = Proxy::start_with_test_backends(ProxyConfig::default(), resolver, connector)
+            .expect("start proxy");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                hostname_policy("large-answer.test", 443),
+            )
+            .expect("attach lease");
+        let mut client =
+            std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+        std::io::Write::write_all(
+            &mut client,
+            b"CONNECT large-answer.test:443 HTTP/1.1\r\n\r\n",
+        )
+        .expect("write CONNECT");
+        let mut response = String::new();
+        std::io::Read::read_to_string(&mut client, &mut response).expect("read DNS denial");
+        assert!(response.starts_with("HTTP/1.1 502"), "{response}");
+        assert!(response.contains("dns-answer-too-large"), "{response}");
+        assert_eq!(dial_attempts.load(Ordering::Acquire), 0);
         assert_eq!(lease.usage().denied_connections, 1);
 
         lease

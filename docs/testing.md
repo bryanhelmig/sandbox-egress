@@ -61,6 +61,11 @@ tests hold lookups pending, measure the exact concurrency ceiling, cancel both
 active and queued work, and deliver an answer after close to prove no dial
 consumer remains.
 
+An oversized-answer case supplies one address beyond the default cardinality
+ceiling and uses a recording connector. It requires the bounded
+`dns-answer-too-large` denial, one denial counter increment, and zero dial
+attempts; the implementation may not silently truncate the answer.
+
 The equivalent internal connector seam holds a dial future pending after
 recording the exact checked `SocketAddr`. Tests release it only through lease
 cancellation or the absolute handshake deadline and observe its drop directly,
