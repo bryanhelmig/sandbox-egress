@@ -1505,7 +1505,10 @@ mod tests {
 
     struct CapturingResolver(mpsc::Sender<String>);
 
-    fn start_local_dns(expected_queries: usize) -> (SocketAddr, thread::JoinHandle<()>) {
+    fn start_local_dns(
+        expected_queries: usize,
+        respond: fn(&[u8]) -> Vec<u8>,
+    ) -> (SocketAddr, thread::JoinHandle<()>) {
         let socket = std::net::UdpSocket::bind((std::net::Ipv4Addr::LOCALHOST, 0))
             .expect("bind local DNS server");
         socket
@@ -1516,7 +1519,7 @@ mod tests {
             let mut packet = [0_u8; 2_048];
             for _ in 0..expected_queries {
                 let (length, peer) = socket.recv_from(&mut packet).expect("receive DNS query");
-                let response = local_a_response(&packet[..length]);
+                let response = respond(&packet[..length]);
                 socket.send_to(&response, peer).expect("send DNS response");
             }
         });
@@ -1524,6 +1527,31 @@ mod tests {
     }
 
     fn local_a_response(query: &[u8]) -> Vec<u8> {
+        let question_end = local_dns_question_end(query);
+        let mut response = Vec::with_capacity(question_end + 16);
+        response.extend_from_slice(&query[..2]);
+        response.extend_from_slice(&[0x81, 0x80]);
+        response.extend_from_slice(&[0, 1, 0, 1, 0, 0, 0, 0]);
+        response.extend_from_slice(&query[12..question_end]);
+        response.extend_from_slice(&[0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 127, 0, 0, 1]);
+        response
+    }
+
+    fn local_nxdomain_response(query: &[u8]) -> Vec<u8> {
+        let question_end = local_dns_question_end(query);
+        let mut response = Vec::with_capacity(question_end + 36);
+        response.extend_from_slice(&query[..2]);
+        response.extend_from_slice(&[0x81, 0x83]);
+        response.extend_from_slice(&[0, 1, 0, 0, 0, 1, 0, 0]);
+        response.extend_from_slice(&query[12..question_end]);
+        response.extend_from_slice(&[
+            0xc0, 0x0c, 0, 6, 0, 1, 0, 0, 0, 60, 0, 24, 0xc0, 0x0c, 0xc0, 0x0c, 0, 0, 0, 1, 0, 0,
+            0, 60, 0, 0, 0, 60, 0, 0, 0, 60, 0, 0, 0, 60, 0, 0, 0, 60,
+        ]);
+        response
+    }
+
+    fn local_dns_question_end(query: &[u8]) -> usize {
         assert!(query.len() >= 17, "DNS query is too short");
         let name_end = query[12..]
             .iter()
@@ -1532,14 +1560,7 @@ mod tests {
             .expect("DNS question terminator");
         let question_end = name_end.checked_add(4).expect("bounded DNS question");
         assert!(question_end <= query.len(), "complete DNS question");
-
-        let mut response = Vec::with_capacity(question_end + 16);
-        response.extend_from_slice(&query[..2]);
-        response.extend_from_slice(&[0x81, 0x80]);
-        response.extend_from_slice(&[0, 1, 0, 1, 0, 0, 0, 0]);
-        response.extend_from_slice(&query[12..question_end]);
-        response.extend_from_slice(&[0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 127, 0, 0, 1]);
-        response
+        question_end
     }
 
     fn local_dns_resolver(address: SocketAddr, config: &ProxyConfig) -> TokioResolver {
@@ -2080,7 +2101,7 @@ mod tests {
 
     #[test]
     fn zero_capacity_resolver_cache_requeries_local_dns() {
-        let (address, server) = start_local_dns(2);
+        let (address, server) = start_local_dns(2, local_a_response);
         let config = ProxyConfig::default().with_dns_cache(0, Duration::from_secs(60));
         let resolver = local_dns_resolver(address, &config);
         let runtime = tokio::runtime::Runtime::new().expect("start resolver test runtime");
@@ -2102,7 +2123,7 @@ mod tests {
 
     #[test]
     fn resolver_cache_ttl_ceiling_expires_local_dns_answer() {
-        let (address, server) = start_local_dns(2);
+        let (address, server) = start_local_dns(2, local_a_response);
         let config = ProxyConfig::default().with_dns_cache(8, Duration::from_secs(1));
         let resolver = local_dns_resolver(address, &config);
         let runtime = tokio::runtime::Runtime::new().expect("start resolver test runtime");
@@ -2129,6 +2150,31 @@ mod tests {
                 first.iter().collect::<Vec<_>>(),
                 expired.iter().collect::<Vec<_>>()
             );
+        });
+        server.join().expect("join local DNS server");
+    }
+
+    #[test]
+    fn resolver_cache_ttl_ceiling_expires_local_nxdomain() {
+        let (address, server) = start_local_dns(2, local_nxdomain_response);
+        let config = ProxyConfig::default().with_dns_cache(8, Duration::from_secs(1));
+        let resolver = local_dns_resolver(address, &config);
+        let runtime = tokio::runtime::Runtime::new().expect("start resolver test runtime");
+
+        runtime.block_on(async {
+            resolver
+                .lookup_ip("negative-cache.test.")
+                .await
+                .expect_err("initial NXDOMAIN must fail");
+            resolver
+                .lookup_ip("negative-cache.test.")
+                .await
+                .expect_err("cached NXDOMAIN must fail");
+            tokio::time::sleep(Duration::from_millis(1_200)).await;
+            resolver
+                .lookup_ip("negative-cache.test.")
+                .await
+                .expect_err("expired NXDOMAIN must be queried again");
         });
         server.join().expect("join local DNS server");
     }

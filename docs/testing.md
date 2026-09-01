@@ -173,7 +173,7 @@ exactly one executable for each conformance target, strips copies, and carries
 only those binaries into a Debian runner. The CLI's compile-time executable
 dependency is copied at its exact embedded path. The factory deletes its
 compilation tree only after collection, before committing the source-dependent
-layer. The final image runs as UID/GID 65534 and must reproduce all 125
+layer. The final image runs as UID/GID 65534 and must reproduce all 126
 deterministic cases without Cargo, source, or a build cache.
 
 Source-identity cases prove an IPv4 address and its mapped IPv6 transport
@@ -256,7 +256,9 @@ A fixed local UDP DNS server exercises the actual Hickory wire path without
 using the public network. With zero cache capacity, two identical lookups must
 produce two upstream queries. With an enabled cache and a one-second maximum
 TTL, an immediate repeat is served from cache and a lookup after 1.2 seconds
-must produce the second upstream query.
+must produce the second upstream query. A fixed NXDOMAIN response carrying a
+60-second SOA negative TTL follows the same sequence, proving that the shared
+ceiling constrains negative caching in behavior as well as configuration.
 
 An oversized-answer case supplies one address beyond the default cardinality
 ceiling and uses a recording connector. It requires the bounded

@@ -2509,3 +2509,26 @@ descriptors and five threads to four and two, finishing at 3,992 KiB RSS in
 1,141 ms. The rootless runner reproduced 125/125 as UID/GID 65534; image
 `sha256:60982d7e314041fdbfdc60990e822f70034501c40887f4c67758b48c318ec99e`
 measured 40,456,922 bytes.
+
+## 2026-09-01 — prove negative DNS cache expiry on the same wire seam
+
+The local UDP responder now accepts a fixed response function. A new response
+returns NXDOMAIN with a 60-second SOA negative TTL. Under the host-configured
+one-second ceiling, the first lookup fails from the wire, the immediate repeat
+fails from cache without consuming another response, and a lookup after 1.2
+seconds must query the server again. The focused case passed six native runs.
+
+Using the existing responder seam added no SCC 4.0.0 complexity: the whole tree
+remained at 524/1,577 structural/cognitive. No production behavior or default
+changed, so no throughput benchmark was run. Positive and negative TTL expiry,
+zero-capacity behavior, effective option wiring, and cross-run policy rechecks
+are now all deterministic cache conformance; the cache item was removed from
+the hardening backlog.
+
+The native and exact Rust 1.88 Linux factories passed all 126 deterministic
+cases, doctests, documentation, and package verification; native dependency
+policy checks also passed. Linux's 500-lease lane returned from eight
+descriptors and five threads to four and two, finishing at 4,036 KiB RSS in
+1,070 ms. The rootless runner reproduced 126/126 as UID/GID 65534; image
+`sha256:ee432090b710a2dba21e2115f1b451be0295d08778440c38c18b7bfeb0c09efa`
+measured 40,465,442 bytes.
