@@ -22,9 +22,9 @@ contributor instead of preserving solved work as apparent backlog.
 
 ## DNS, IP policy, and SSRF
 
-- Longer noncyclic CNAME chains and broader malformed DNS packet matrices; a
-  one-hop alias to a forbidden terminal address, a two-name cycle, and a
-  transaction-ID-only response are already pinned on the real wire path.
+- Broader malformed DNS packet matrices; a seven-link noncyclic alias chain to
+  a forbidden terminal address, a two-name cycle, and a transaction-ID-only
+  response are already pinned on the real wire path.
 - A byte-aware upstream DNS decoder/cache bound. Current defaults disable
   caching, cap opt-in storage at 64 responses, and limit 32 concurrent lookups,
   but Hickory still allocates its decode vectors from wire section counts before

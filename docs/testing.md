@@ -382,10 +382,10 @@ slots and requires exactly one dial attempt. The mixed allowed/metadata case
 uses the same recording connector and requires zero attempts, proving the
 entire set is validated before first-seen-order deduplication reaches dialing.
 A real UDP CNAME case allows the original hostname, observes Hickory's A and
-AAAA questions for both alias and target, returns `169.254.169.254` for the
-target, and requires the ordinary resolved-address denial with zero connector
-calls. This proves alias following cannot inherit hostname trust at the IP
-boundary.
+AAAA questions through a seven-link noncyclic chain, returns
+`169.254.169.254` for the terminal name, and requires the ordinary
+resolved-address denial with zero connector calls. This proves a near-limit
+alias chain cannot inherit hostname trust at the IP boundary.
 A two-name CNAME cycle receives valid alias replies through the production
 resolver and requires exactly 16 A/AAAA questions: the resolver's eight-hop
 bound for each family. It then returns `dns-failed`, never calls the connector,

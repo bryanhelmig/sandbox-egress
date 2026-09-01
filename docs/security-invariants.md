@@ -157,10 +157,10 @@ host-configured RFC 6052 forms of the same effective destination.
 
 Resolver-followed aliases do not transfer trust from the allowed original
 hostname to their target addresses. Real-wire conformance follows an allowed
-CNAME through separate A and AAAA target questions to a link-local metadata
-address, then requires `resolved-address-denied` with zero connector calls.
-The CONNECT hostname remains the authority rule; every terminal address still
-passes the destination floor independently.
+CNAME through a seven-link noncyclic chain of separate A and AAAA questions to
+a link-local metadata address, then requires `resolved-address-denied` with
+zero connector calls. The CONNECT hostname remains the authority rule; every
+terminal address still passes the destination floor independently.
 
 A two-name CNAME cycle is also finite. The production resolver follows its
 eight-hop bound independently for A and AAAA, producing exactly 16 local wire

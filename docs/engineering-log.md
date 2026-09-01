@@ -4476,3 +4476,22 @@ Three baseline allowed-CONNECT intervals were 115.24–128.09,
 overlapped and Criterion detected no change. The candidate was discarded; the
 task's explicit independent ownership remains, and no performance, complexity,
 or behavior claim changes.
+
+## 2026-09-01 — extend forbidden CNAME proof to seven links
+
+The DNS hardening inventory still called out longer noncyclic alias chains.
+The existing one-hop CNAME-to-metadata fixture now returns seven successive
+aliases before its terminal A record resolves to `169.254.169.254`. Hickory
+must issue sixteen controlled A/AAAA wire questions, the connector must remain
+untouched, and certified close must retain the single denial.
+
+The strengthened case passed 25 consecutive focused runs. It replaces the
+shorter proof, so the deterministic count stays at 178 and production code is
+unchanged. Whole-tree SCC 4.0.0 complexity moves from 749/2,229 to 749/2,230
+structural/cognitive, entirely in the controlled DNS response fixture.
+
+The native and exact Rust 1.88 Linux factories passed all 178 deterministic
+cases, six doctests, documentation, package verification, benchmark smoke, and
+all six Linux resource lanes. The rootless 178/178 conformance image is
+`sha256:26ec942dfca2d4cb451913598f404a28c56271f579e49f05d4d4c659e7544cd4`
+(40,893,554 bytes) and runs as UID/GID 65534.

@@ -12,28 +12,42 @@ fn local_inflated_answer_count_dns_response(query: &[u8]) -> Vec<u8> {
     response
 }
 
-fn local_cname_metadata_response(query: &[u8]) -> Vec<u8> {
-    const TARGET: &[u8] = b"\x08metadata\x04test\x00";
+fn local_cname_chain_metadata_response(query: &[u8]) -> Vec<u8> {
+    const CHAIN: [&[u8]; 8] = [
+        b"\x02c0\x05chain\x04test\x00",
+        b"\x02c1\x05chain\x04test\x00",
+        b"\x02c2\x05chain\x04test\x00",
+        b"\x02c3\x05chain\x04test\x00",
+        b"\x02c4\x05chain\x04test\x00",
+        b"\x02c5\x05chain\x04test\x00",
+        b"\x02c6\x05chain\x04test\x00",
+        b"\x02c7\x05chain\x04test\x00",
+    ];
 
     let question_end = local_dns_question_end(query);
     let question_name = &query[12..question_end - 4];
     let question_type = u16::from_be_bytes([query[question_end - 4], query[question_end - 3]]);
-    let answer_count = u8::from(question_name == TARGET && question_type == 1);
+    let position = CHAIN
+        .iter()
+        .position(|candidate| *candidate == question_name)
+        .expect("query belongs to the controlled CNAME chain");
+    let terminal = position == CHAIN.len() - 1;
+    let answer_count = u8::from(!terminal || question_type == 1);
     let mut response = Vec::with_capacity(question_end + 32);
     response.extend_from_slice(&query[..2]);
     response.extend_from_slice(&[0x81, 0x80]);
     response.extend_from_slice(&[0, 1, 0, answer_count, 0, 0, 0, 0]);
     response.extend_from_slice(&query[12..question_end]);
-    if question_name == TARGET {
+    if terminal {
         if question_type == 1 {
             response.extend_from_slice(&[
                 0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 169, 254, 169, 254,
             ]);
         }
     } else {
-        response[6..8].copy_from_slice(&[0, 1]);
+        let target = CHAIN[position + 1];
         response.extend_from_slice(&[0xc0, 0x0c, 0, 5, 0, 1, 0, 0, 0, 60, 0, 15]);
-        response.extend_from_slice(TARGET);
+        response.extend_from_slice(target);
     }
     response
 }
@@ -65,8 +79,8 @@ fn local_cname_loop_response(query: &[u8]) -> Vec<u8> {
 }
 
 #[test]
-fn cname_to_metadata_is_rejected_before_dialing() {
-    let (address, server) = start_local_dns(4, local_cname_metadata_response);
+fn long_cname_chain_to_metadata_is_rejected_before_dialing() {
+    let (address, server) = start_local_dns(16, local_cname_chain_metadata_response);
     let dial_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let connector = Arc::new(RejectingConnector(Arc::clone(&dial_attempts)));
     let proxy = Proxy::start_with_test_connector(
@@ -79,14 +93,14 @@ fn cname_to_metadata_is_rejected_before_dialing() {
     let lease = proxy
         .attach(
             PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
-            hostname_policy("alias.test", 443),
+            hostname_policy("c0.chain.test", 443),
         )
         .expect("attach DNS lease");
     let mut client =
         std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
     std::io::Write::write_all(
         &mut client,
-        b"CONNECT alias.test:443 HTTP/1.1\r\nHost: alias.test\r\n\r\n",
+        b"CONNECT c0.chain.test:443 HTTP/1.1\r\nHost: c0.chain.test\r\n\r\n",
     )
     .expect("write aliased CONNECT");
     let mut response = String::new();
