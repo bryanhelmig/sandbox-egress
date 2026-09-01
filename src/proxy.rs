@@ -2637,6 +2637,78 @@ mod tests {
     }
 
     #[test]
+    fn lease_drop_during_unwind_cancels_work_and_allows_identity_reuse() {
+        let PendingDialFixture {
+            proxy,
+            lease,
+            client,
+            active,
+        } = pending_dial_fixture(19_450);
+        let identity = lease.state.as_ref().expect("lease state").identity.clone();
+        let state = Arc::downgrade(lease.state.as_ref().expect("lease state"));
+
+        let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _lease_dropped_during_unwind = lease;
+            panic!("intentional lease-owner unwind");
+        }));
+        assert!(unwind.is_err());
+
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while active.load(Ordering::Acquire) != 0 && Instant::now() < deadline {
+            thread::yield_now();
+        }
+        assert_eq!(active.load(Ordering::Acquire), 0);
+        assert_client_stopped(client);
+
+        let replacement_policy = Policy::builder().build().expect("replacement policy");
+        let replacement = loop {
+            match proxy.attach(identity.clone(), replacement_policy.clone()) {
+                Ok(lease) => break lease,
+                Err(AttachError::IdentityInUse) if Instant::now() < deadline => {
+                    thread::yield_now();
+                }
+                result => panic!("identity did not recover after unwind: {result:?}"),
+            }
+        };
+        assert!(state.upgrade().is_none());
+        replacement
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("close replacement lease");
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
+    }
+
+    #[test]
+    fn lease_drop_after_runtime_stop_releases_local_ownership() {
+        let mut proxy =
+            Proxy::start(ProxyConfig::default()).expect("start proxy for runtime-stop drop");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                Policy::builder().build().expect("valid policy"),
+            )
+            .expect("attach lease");
+        let state = Arc::downgrade(lease.state.as_ref().expect("lease state"));
+        let runtime = proxy.thread.take().expect("runtime handle");
+        let (reply, receiver) = mpsc::sync_channel(1);
+        drop(receiver);
+        proxy
+            .commands
+            .send(Command::Shutdown {
+                deadline: Instant::now() + Duration::from_secs(1),
+                reply,
+                retryable: false,
+            })
+            .expect("stop runtime");
+        runtime.join().expect("join stopped runtime");
+
+        drop(lease);
+        assert!(state.upgrade().is_none());
+        drop(proxy);
+    }
+
+    #[test]
     fn delayed_release_cannot_remove_a_replacement_lease() {
         let identity = PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
         let old = Arc::new(LeaseState::new(

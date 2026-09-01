@@ -2133,3 +2133,32 @@ resource lane returned from eight descriptors and five threads to four and two,
 finishing at 3,960 KiB RSS in 1,074 ms. No Rust source or complexity changed;
 this is a factory storage and network-reproducibility improvement, not a proxy
 throughput result.
+
+## 2026-09-01 — prove lease Drop under unwind and runtime loss
+
+`Lease::drop` is deliberately an infallible fallback, not a cleanup
+certificate. It must nevertheless initiate cancellation without panicking when
+the owner is already unwinding, and it must release local ownership when the
+proxy command receiver no longer exists.
+
+The first new deterministic case holds a dial pending, moves the lease into a
+caught owner panic, and lets normal stack unwinding invoke Drop. It then
+requires the dial token to disappear, the guest socket to reach a terminal
+state, the old lease state to lose its final strong owner, and the same source
+identity to become attachable under a replacement policy. The second stops and
+joins the owned proxy runtime before dropping a lease, then proves that the
+disconnected management channel neither causes a second panic nor retains the
+lease state. The focused four-case lease-drop set passed ten consecutive runs.
+
+No production source changed, so no data-path benchmark was run and no
+performance claim is attached to this cycle. Whole-tree SCC 4.0.0 complexity
+moved from 491/1,482 to 498/1,506 structural/cognitive, entirely in the two
+lifecycle cases.
+
+The native and exact Rust 1.88 Linux factories passed all 109 deterministic
+cases, doctests, documentation, and package verification; native dependency
+policy checks also passed. Linux's 500-lease lane returned from eight
+descriptors and five threads to four and two, finishing at 3,932 KiB RSS in
+1,067 ms. The rootless runner reproduced 109/109 as UID/GID 65534; image
+`sha256:24d9268478d7ae257942e9b52666076ea46388d78c1323ab4d73cfda318f2716`
+measured 40,398,450 bytes.

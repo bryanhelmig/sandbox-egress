@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Prove lease Drop remains non-panicking and releases ownership during unwind
+  and after the proxy runtime has stopped.
 - Make the Docker source-validation stage offline after dependency warmup and
   discard its compilation tree after collecting conformance executables.
 - Prove that legacy numeric host spellings remain on the checked DNS path and
@@ -23,7 +25,7 @@ Changelog and versions follow Semantic Versioning.
   inheriting a replacement lease under management-channel pressure.
 - Serialize only the stripped conformance executables into the unprivileged
   Docker runner, reducing the verified image content size by 96.4% without
-  dropping any of its 107 deterministic cases.
+  dropping any of its 109 deterministic cases.
 - Let a surviving lease consume the final counters already certified by a
   successful proxy-wide shutdown, including runtime-disconnect races.
 - Divide the remaining absolute handshake budget fairly across sequential

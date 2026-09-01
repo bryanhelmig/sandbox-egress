@@ -12,7 +12,6 @@ services may supplement research but must not become test dependencies.
 - Half-open and half-closed sockets during revocation.
 - Remote peers that never read, never write, or ignore FIN.
 - Repeated failed close and retry with stable final counters.
-- Lease `Drop` during unwinding and proxy runtime failure.
 - Source-address reuse with accepted, queued, retransmitted, and delayed SYNs.
 - Old-run connections that arrive after a new policy is attached.
 - Host fencing requirements for Firecracker TAP/NAT/conntrack teardown.
