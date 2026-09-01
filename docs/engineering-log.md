@@ -5335,3 +5335,18 @@ The roadmap now marks the completed repository spine and phase-revocation
 milestones, and old nono commit references are labeled historical instead of
 appearing to conflict with the reviewed table pin. This changes no security
 claim or production behavior; it makes the next work selection more accurate.
+
+## 2026-09-01 — compare ownership boundaries, not feature counts
+
+The comparison rotation condensed the closest implementations around four
+questions: what selects policy, who owns spawned handlers, what scope remains
+alive after one run ends, and what a successful cleanup operation proves.
+Smokescreen's process tracker, Lens's process-lifetime handlers, nono's accept
+loop, and Motosan's per-run listener are coherent at their respective daemon or
+sandbox lifetimes. None is a defective version of a lease.
+
+The distinction matters only when one listener remains alive and a source
+identity is reassigned. The prior-art document now puts that boundary beside
+Sandbox Egress's per-run tracker, cancellation, permits, final counters, and
+ownership-retaining failure. No implementation change follows from the table;
+it prevents feature-count comparison from obscuring the lifecycle requirement.

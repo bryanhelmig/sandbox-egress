@@ -24,6 +24,23 @@ policy.
 
 ## Admission and shutdown comparison
 
+The closest implementations differ most at the ownership boundary, not at the
+shape of an allowlist:
+
+| Project | Run or policy selector | Connection owner | Strongest reviewed cleanup boundary |
+| --- | --- | --- | --- |
+| Smokescreen | request-derived role against a process policy | process connection tracker | process-wide server shutdown and drain |
+| lens-sandbox-core | shared mutable proxy policy | detached process-lifetime handlers | proxy/process lifetime |
+| nono | sandbox session configuration and guest token flows | one proxy accept loop plus spawned handlers | accept-loop shutdown signal |
+| motosan-sandbox | one small proxy instance per sandbox run | spawned handlers under that instance | listener-task abort |
+| Sandbox Egress | host-observed source IP plus one immutable `Policy` | one `Lease` tracker, cancellation token, and permits | fallible per-run close with final counters and retained ownership on failure |
+
+This is an architectural comparison, not a quality ranking. Process-wide drain
+is the right boundary for a daemon that exits between policy generations, and
+a per-run listener can rely on destruction of the surrounding sandbox. A
+shared long-lived listener that reuses source identities needs the narrower
+lease certificate because the process remains alive while one run ends.
+
 The reviewed implementations reinforce two separate rules that should not be
 conflated. `lens-sandbox-core` shares one semaphore across its explicit and
 transparent listeners, acquires a permit before spawning a handler, and drops
