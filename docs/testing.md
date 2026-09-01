@@ -28,6 +28,11 @@ The suite is organized by claimed invariant rather than by source module.
 No test may depend on the public internet. DNS and upstream behavior must be
 locally controlled so failures are reproducible.
 
+The optional `scripts/check-iana-drift.sh` maintainer command is deliberately
+outside the factory. It downloads the authoritative IPv4 and IPv6
+special-purpose CSVs and compares them with reviewed SHA-256 pins. Drift fails
+the command and requires a human policy review; it never changes source.
+
 Hostname policy cases pin wildcard depth explicitly: `*.example.com` matches
 both `api.example.com` and `deep.api.example.com`, but neither `example.com`
 nor `notexample.com`. The wildcard therefore means any nonempty sequence of

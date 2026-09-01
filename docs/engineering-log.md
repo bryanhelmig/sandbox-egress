@@ -2690,3 +2690,39 @@ is excluded from the stripped conformance runner, so the rootless 128/128 image
 remained byte-identical at
 `sha256:1b29c3f1c3fc757112dc4e4591ee011ee5fbfe5d9aaefa96095d359f9db80b5d`
 (40,491,607 bytes).
+
+## 2026-09-01 — pin authoritative address-registry drift, not generated policy
+
+The default destination floor was rechecked against IANA's authoritative
+[IPv4](https://www.iana.org/assignments/iana-ipv4-special-registry) and
+[IPv6](https://www.iana.org/assignments/iana-ipv6-special-registry)
+special-purpose registries. Both still report 2025-10-09 as their last update.
+No new entry or changed reachability flag creates a gap in the current IPv4
+unsafe-prefix table, IPv6 `2000::/3` global-unicast floor and unsafe children,
+or translated-IPv4 handling. No policy change was made.
+
+The audit previously depended on prose and a review date. A new opt-in command
+downloads the two official CSVs to a temporary directory and compares their
+SHA-256 values with the reviewed versions: IPv4
+`e3e39e76d00b1677335db8e9a805c7b9480ea2f4dc9e33f0b93cd3a905128d73`
+and IPv6
+`775feea0621dec8735a44fbf30f762e721e8f0a1b3ab7eb341961a88cfce2139`.
+The live command passed for both. It supports `sha256sum` and macOS `shasum`,
+uses a `mktemp` directory with cleanup, and prints the authoritative URL when a
+pin changes.
+
+This is intentionally a drift alarm, not a generator. Registry semantics still
+require review, and automatically allowing a newly global special-purpose
+range would weaken a conservative SSRF floor. The command is outside every
+test and factory lane, so normal development remains deterministic and offline.
+No Rust source, deterministic case count, benchmark, or complexity changed.
+
+The native and exact Rust 1.88 Linux factories passed all 128 deterministic
+cases, doctests, documentation, and package verification; native dependency
+policy checks also passed. Linux's 64-caller control lane peaked at 5,252 KiB
+RSS and returned to four descriptors and two threads at 4,708 KiB in 180 ms.
+The following 500-lease lane returned to four and two at 4,716 KiB in 1,136 ms.
+Because the change only adds documentation and a maintainer script, the
+rootless 128/128 conformance image remained byte-identical at
+`sha256:1b29c3f1c3fc757112dc4e4591ee011ee5fbfe5d9aaefa96095d359f9db80b5d`
+(40,491,607 bytes).

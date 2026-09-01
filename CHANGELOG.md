@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Add an opt-in IANA registry-drift check with reviewed IPv4 and IPv6 CSV
+  hashes, without adding a public-network dependency to tests or generation.
 - Add a direct loopback TCP control beside the allowed CONNECT benchmark so
   host networking noise can be separated from proxy-path changes.
 - Add an opt-in concurrent management soak that holds and closes 64 distinct

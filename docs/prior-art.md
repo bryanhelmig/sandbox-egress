@@ -68,6 +68,9 @@ UID alone is not the relevant boundary.
   and [IPv6](https://www.iana.org/assignments/iana-ipv6-special-registry)
   special-purpose registries are the source of the default address floor;
   transition prefixes receive extra treatment when they can encode IPv4.
+  Both registries were last updated 2025-10-09 and were rechecked on
+  2026-09-01. `scripts/check-iana-drift.sh` pins their authoritative CSV hashes
+  as an opt-in review signal; it does not generate policy.
 - [RFC 6052](https://www.rfc-editor.org/rfc/rfc6052.html) defines the
   well-known and network-specific NAT64 prefix lengths and the six layouts
   used to recover the effective IPv4 destination.

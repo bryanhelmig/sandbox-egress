@@ -238,8 +238,14 @@ scripts:
 ./scripts/measure-complexity.sh source size and complexity trend report
 ./scripts/measure-load.sh       concurrent CONNECT capacity and tail latency
 ./scripts/measure-throughput.sh concurrent upload/download tunnel throughput
+./scripts/check-iana-drift.sh   opt-in authoritative registry drift signal
 cargo run --bin sandbox-egress -- example.com
 ```
+
+The factory and tests never use the public network. The IANA drift command is
+an explicit maintainer research step: it downloads the two authoritative CSVs
+and fails when either differs from the last reviewed SHA-256 pin. A changed pin
+requires a policy review; the script never rewrites the deny table.
 
 To reproduce the MSRV factory in a clean Linux environment:
 
