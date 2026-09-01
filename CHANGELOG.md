@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Add a direct loopback TCP control beside the allowed CONNECT benchmark so
+  host networking noise can be separated from proxy-path changes.
 - Add an opt-in concurrent management soak that holds and closes 64 distinct
   leases together, sampling peak and recovered RSS, threads, and descriptors;
   serialize resource lanes so their process baselines cannot overlap.

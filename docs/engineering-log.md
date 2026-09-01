@@ -2659,3 +2659,34 @@ atomic strong-count update has no clear theoretical win either.
 The source change was discarded. No correctness, resource, complexity,
 factory, or throughput claim changed. The negative result is retained so a
 future optimization pass does not infer a win from the first noisy comparison.
+
+## 2026-09-01 — add a direct TCP control before another hot-path guess
+
+Rather than attempt a second micro-optimization, the accepted CONNECT path was
+bracketed with a direct loopback TCP control using the same upstream listener
+and reset-on-drop behavior. Three paired Criterion runs also retained the
+existing allowed CONNECT and hostname-denial cases.
+
+The first two direct-control intervals were 34.74–38.30 and 35.48–37.95
+microseconds. The first hostname-denial interval was 71.02–79.80 microseconds,
+and allowed CONNECT was 108.99–127.77 microseconds. This coarse decomposition
+is consistent with roughly one TCP handshake for the direct control, listener
+scheduling plus bounded parse/policy/response for the denial, and a second TCP
+handshake for the allowed upstream dial.
+
+The third direct interval itself rose to 43.42–60.56 microseconds. Allowed and
+denied measurements were noisy in the same sequence. The control therefore
+demonstrated why subtracting a precise parser cost or claiming a small proxy
+regression would be unsound on this host. No data-path code or configuration
+changed. Whole-tree SCC 4.0.0 complexity moved from 538/1,610 to 539/1,613
+structural/cognitive, entirely in the benchmark control.
+
+The native and exact Rust 1.88 Linux factories passed all 128 deterministic
+cases, doctests, documentation, and package verification; native dependency
+policy checks also passed. Linux's 64-caller control lane peaked at 5,284 KiB
+RSS and returned to four descriptors and two threads in 176 ms. The following
+500-lease lane returned to four and two at 4,736 KiB in 1,122 ms. The benchmark
+is excluded from the stripped conformance runner, so the rootless 128/128 image
+remained byte-identical at
+`sha256:1b29c3f1c3fc757112dc4e4591ee011ee5fbfe5d9aaefa96095d359f9db80b5d`
+(40,491,607 bytes).

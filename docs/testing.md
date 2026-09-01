@@ -364,6 +364,11 @@ inspection and one requires visible SNI. The controlled upstream asserts that
 both receive the exact ClientHello bytes, so the comparison includes policy
 enforcement rather than timing only the early 200 response.
 
+The ordinary allowed-CONNECT benchmark has a direct loopback TCP control using
+the same upstream listener and reset-on-drop behavior. Comparing them does not
+subtract a precise parser cost, but it shows when the host's TCP stack and
+scheduler moved enough to invalidate a small proxy-path claim.
+
 Each client sends a marker after setup. The controlled upstream consumes it
 and resets that completed tunnel, preventing rapid repetitions from exhausting
 the host's ephemeral ports with `TIME_WAIT` sockets. Dials are distributed

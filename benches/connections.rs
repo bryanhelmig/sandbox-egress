@@ -43,6 +43,14 @@ fn allowed_connect(criterion: &mut Criterion) {
     let endpoint = lease.endpoint().socket_addr();
     let request = format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
 
+    criterion.bench_function("connect_direct_loopback_control", |bencher| {
+        bencher.iter(|| {
+            let client = TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+                .expect("connect directly to upstream");
+            reset_on_drop(client);
+        });
+    });
+
     criterion.bench_function("connect_allowed_loopback", |bencher| {
         bencher.iter(|| {
             let mut client = TcpStream::connect(endpoint).expect("connect proxy");

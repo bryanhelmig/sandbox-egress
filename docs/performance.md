@@ -133,6 +133,28 @@ no change detected. The implementation was reverted. The default config's
 dynamic fields are empty, so an atomic reference-count operation was not
 retained on every connection without a reproducible benefit.
 
+## Direct TCP control for CONNECT attribution
+
+Recorded 2026-09-01 on the same Apple M1 with Rust 1.97.1:
+
+```text
+command: cargo bench --bench connections \
+  'connect_(direct_loopback_control|allowed_loopback|denied_hostname)' -- --noplot
+runs: 3
+direct loopback TCP: 34.74–38.30 us in two stable runs; 43.42–60.56 us noisy run
+hostname denial:    71.02–79.80 us first run; 72.27–87.25 us later runs
+allowed CONNECT:   108.99–127.77 us first run; later runs were noisy
+```
+
+The direct case uses the same controlled upstream listener and teardown socket
+option, but connects without the proxy. In the stable runs, one local TCP
+handshake accounts for roughly 35–38 microseconds. The denial path adds one
+proxy accept, bounded parse and policy decision, and denial response. The
+allowed path adds an upstream TCP handshake before the 200 response. When the
+third run slowed, the direct control slowed too; this is evidence of host
+network/scheduler noise, not an isolated proxy regression. These overlapping
+operations do not support subtracting a precise parser cost.
+
 ## Hostile header near-match baseline
 
 Recorded 2026-09-01 on the Apple M1 with Rust 1.97.1:
