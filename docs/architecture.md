@@ -82,11 +82,12 @@ a task is spawned. `httparse` parses a bounded header block. HTTP/1.1 requires
 one valid Host field consistent with the CONNECT request-target, but only the
 request-target supplies authority to policy, DNS, and dialing. The policy then
 checks that authority and port. Hickory performs one async lookup under a
-deadline. Its process-wide positive and negative response cache has
-host-narrowable count and TTL ceilings. Every result, including a cache hit,
-is filtered under the current lease policy, including RFC 6052 decoding under
-host-configured network-specific NAT64 prefixes, and Tokio dials a selected
-checked IP directly. Approved addresses are tried sequentially; each receives
+deadline. Its process-wide positive and negative response cache is disabled by
+default and has host-narrowable count and TTL ceilings when enabled. Every
+result, including a cache hit, is filtered under the current lease policy,
+including RFC 6052 decoding under host-configured network-specific NAT64
+prefixes, and Tokio dials a selected checked IP directly. Approved addresses
+are tried sequentially. Each receives
 a fair share of the remaining absolute handshake budget so a pending first
 address cannot consume all fallback time or create parallel socket
 amplification. An opt-in TLS authority phase incrementally parses a bounded

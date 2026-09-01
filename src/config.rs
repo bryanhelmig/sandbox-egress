@@ -7,7 +7,7 @@ use ipnet::Ipv6Net;
 use crate::DiagnosticEvent;
 use crate::diagnostic::DiagnosticConfig;
 
-pub(crate) const MAX_DNS_CACHE_ENTRIES: u64 = 8_192;
+pub(crate) const MAX_DNS_CACHE_ENTRIES: u64 = 64;
 pub(crate) const MAX_DNS_CACHE_TTL: Duration = Duration::from_secs(86_400);
 pub(crate) const MAX_DNS_SERVERS: usize = 8;
 
@@ -96,11 +96,13 @@ impl ProxyConfig {
         self
     }
 
-    /// Bound the process-wide resolver cache by response count and TTL.
+    /// Opt into a process-wide resolver cache bounded by response count and TTL.
     ///
-    /// The values can narrow but cannot exceed the crate's defaults of 8,192
-    /// responses and 24 hours. The TTL ceiling applies to both successful and
-    /// negative answers. Set `entries` to zero to disable the cache.
+    /// Caching is disabled by default because a DNS response can contain many
+    /// records and the resolver bounds its cache by response count, not bytes.
+    /// The values cannot exceed 64 responses and 24 hours. The TTL ceiling
+    /// applies to both successful and negative answers. Set `entries` to zero
+    /// to disable the cache.
     pub fn with_dns_cache(mut self, entries: u64, max_ttl: Duration) -> Self {
         self.dns_cache_entries = entries.min(MAX_DNS_CACHE_ENTRIES);
         self.dns_cache_max_ttl = max_ttl.min(MAX_DNS_CACHE_TTL);
@@ -205,10 +207,10 @@ impl Default for ProxyConfig {
         Self {
             bind_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
             max_connections: 1_024,
-            max_concurrent_dns: 128,
+            max_concurrent_dns: 32,
             max_concurrent_dials: 256,
-            dns_cache_entries: MAX_DNS_CACHE_ENTRIES,
-            dns_cache_max_ttl: MAX_DNS_CACHE_TTL,
+            dns_cache_entries: 0,
+            dns_cache_max_ttl: Duration::ZERO,
             dns_servers: Vec::new(),
             max_resolved_addresses: 64,
             max_header_bytes: 32 * 1_024,
@@ -270,13 +272,21 @@ mod tests {
     }
 
     #[test]
+    fn dns_defaults_limit_transient_and_retained_work() {
+        let defaults = ProxyConfig::default();
+        assert_eq!(defaults.max_concurrent_dns, 32);
+        assert_eq!(defaults.dns_cache_entries, 0);
+        assert_eq!(defaults.dns_cache_max_ttl, Duration::ZERO);
+    }
+
+    #[test]
     fn resolver_cache_configuration_can_only_narrow_process_bounds() {
         let disabled = ProxyConfig::default().with_dns_cache(0, Duration::ZERO);
         assert_eq!(disabled.dns_cache_entries, 0);
         assert_eq!(disabled.dns_cache_max_ttl, Duration::ZERO);
 
         let clamped = ProxyConfig::default().with_dns_cache(u64::MAX, Duration::MAX);
-        assert_eq!(clamped.dns_cache_entries, 8_192);
+        assert_eq!(clamped.dns_cache_entries, 64);
         assert_eq!(clamped.dns_cache_max_ttl, Duration::from_secs(86_400));
     }
 

@@ -4,6 +4,14 @@ fn local_incomplete_dns_response(query: &[u8]) -> Vec<u8> {
     query[..2].to_vec()
 }
 
+fn local_inflated_answer_count_dns_response(query: &[u8]) -> Vec<u8> {
+    let mut response = Vec::with_capacity(12);
+    response.extend_from_slice(&query[..2]);
+    response.extend_from_slice(&[0x81, 0x80]);
+    response.extend_from_slice(&[0, 0, 0xff, 0xff, 0, 0, 0, 0]);
+    response
+}
+
 fn local_cname_metadata_response(query: &[u8]) -> Vec<u8> {
     const TARGET: &[u8] = b"\x08metadata\x04test\x00";
 
@@ -98,9 +106,8 @@ fn cname_to_metadata_is_rejected_before_dialing() {
         .expect("proxy shutdown");
 }
 
-#[test]
-fn malformed_dns_replies_are_bounded_and_never_dialed() {
-    let (address, server) = start_local_dns(6, local_incomplete_dns_response);
+fn assert_bad_dns_response_is_bounded(respond: fn(&[u8]) -> Vec<u8>) {
+    let (address, server) = start_local_dns(6, respond);
     let dial_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let connector = Arc::new(RejectingConnector(Arc::clone(&dial_attempts)));
     let proxy = Proxy::start_with_test_connector(
@@ -148,6 +155,16 @@ fn malformed_dns_replies_are_bounded_and_never_dialed() {
     proxy
         .shutdown(Instant::now() + Duration::from_secs(1))
         .expect("proxy shutdown");
+}
+
+#[test]
+fn malformed_dns_replies_are_bounded_and_never_dialed() {
+    assert_bad_dns_response_is_bounded(local_incomplete_dns_response);
+}
+
+#[test]
+fn inflated_dns_section_counts_fail_without_dialing() {
+    assert_bad_dns_response_is_bounded(local_inflated_answer_count_dns_response);
 }
 
 #[test]

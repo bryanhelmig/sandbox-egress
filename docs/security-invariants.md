@@ -110,11 +110,12 @@ attached lease can choose a resolver. At most eight distinct servers are
 accepted, port zero is invalid, and scoped IPv6 server addresses fail startup
 because their scope cannot be represented faithfully by the resolver backend.
 
-The shared resolver cache defaults to at most 8,192 responses, each with at
-most 24 hours of validity; the host may narrow either bound or disable storage
-with zero entries. Cached data is proxy-owned, not lease-owned work. Every
-returned address, including a cache hit after identity reuse, is rechecked
-under the current lease's immutable policy before it can reach the connector.
+The shared resolver cache is disabled by default because its dependency bounds
+entries rather than bytes. The host may opt into at most 64 responses, each
+with at most 24 hours of validity. Cached data is proxy-owned, not lease-owned
+work. Every returned address, including a cache hit after identity reuse, is
+rechecked under the current lease's immutable policy before it can reach the
+connector.
 
 DNS address cardinality is process-configured and has a hard upper bound. The
 system resolver collects at most one entry beyond that ceiling, solely to

@@ -287,14 +287,15 @@ for work that cannot acquire a resolver permit in time.
 Resolver construction tests inspect Hickory's effective options and require
 the configured response-count ceiling plus the same maximum TTL for positive
 and negative entries, as well as TCP recovery after a failed UDP exchange.
-Configuration can narrow the built-in 8,192-entry and 24-hour limits but cannot
-widen them. Explicit server tests use a nonstandard loopback port, require the
-hosts file to be disabled, and complete a UDP-truncated response over a real
-TCP DNS connection. More than eight distinct servers, port zero, and scoped
-IPv6 addresses fail validation. An identity-reuse case gives two runs the same
-hostname and repeated loopback answer: the first policy explicitly grants
-loopback and reaches the connector, while the replacement policy does not and
-must deny without another connector call.
+Caching is disabled by default. Configuration can opt into at most 64 entries
+and a 24-hour TTL but cannot widen those ceilings. Explicit server tests use a
+nonstandard loopback port, require the hosts file to be disabled, and complete
+a UDP-truncated response over a real TCP DNS connection. More than eight
+distinct servers, port zero, and scoped IPv6 addresses fail validation. An
+identity-reuse case gives two runs the same hostname and repeated loopback
+answer: the first policy explicitly grants loopback and reaches the connector,
+while the replacement policy does not and must deny without another connector
+call.
 
 A fixed local UDP DNS server exercises the actual Hickory wire path without
 using the public network. With zero cache capacity, two identical lookups must
@@ -303,6 +304,12 @@ TTL, an immediate repeat is served from cache and a lookup after 1.2 seconds
 must produce the second upstream query. A fixed NXDOMAIN response carrying a
 60-second SOA negative TTL follows the same sequence, proving that the shared
 ceiling constrains negative caching in behavior as well as configuration.
+
+An invalid response claiming the maximum 65,535 answer records but containing
+no record body must exhaust the resolver's bounded retries as `dns-failed`,
+make no dial attempt, and leave no active lease work. This pins the actual
+dependency decoder path without pretending that the returned-address ceiling
+can prevent the decoder from seeing wire section counts first.
 
 A real proxy/lease case holds Hickory's parallel A and AAAA requests at a local
 recursive server, certifies lease close, then releases valid late SERVFAIL

@@ -137,9 +137,9 @@ The current vertical slice provides:
   mapped implicitly;
 - source-IP identity derived from the accepted socket;
 - one DNS resolution followed by checks on every returned address;
-- a process-wide resolver cache explicitly bounded to 8,192 responses and a
-  24-hour TTL ceiling by default; the host may narrow either bound or disable
-  caching;
+- a resolver cache disabled by default because the dependency bounds entries,
+  not bytes; the host may explicitly enable up to 64 responses with a 24-hour
+  TTL ceiling;
 - optional host-pinned recursive DNS servers with UDP plus truncated-response
   TCP recovery, independent of host resolver and hosts-file changes;
 - bounded DNS answer cardinality, with oversized sets rejected before dialing;
@@ -193,7 +193,7 @@ arbitrary resolver backends, and configurable destination-range tables are also
 not yet implemented. These gaps are tracked rather than hidden.
 
 Global connection, resolver, and outbound-dial work are bounded independently.
-The defaults are 1,024 admitted connections, 128 concurrent DNS lookups, and
+The defaults are 1,024 admitted connections, 32 concurrent DNS lookups, and
 256 concurrent dials; a host can narrow or widen each ceiling before startup:
 
 ```rust,no_run
@@ -222,6 +222,17 @@ This is trusted process configuration, not a per-lease or guest-selected
 resolver. Up to eight distinct servers are accepted. Scoped IPv6 server
 addresses are rejected because the underlying resolver cannot preserve their
 scope identifier.
+
+Resolver caching is also a host decision. It is off by default because one DNS
+response can contain many records even though Hickory counts it as one cache
+entry. A host that accepts that memory tradeoff can enable a small shared cache:
+
+```rust,no_run
+# use sandbox_egress::ProxyConfig;
+# use std::time::Duration;
+let config = ProxyConfig::default().with_dns_cache(32, Duration::from_secs(60));
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
 
 If the proxy host uses DNS64/NAT64 with a network-specific prefix, register the
 actual routed prefix in `ProxyConfig` before starting the proxy:

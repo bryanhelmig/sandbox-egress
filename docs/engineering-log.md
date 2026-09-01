@@ -3228,6 +3228,72 @@ four and two at 5,132 KiB in 450 ms. The rootless 150/150 conformance image is
 `sha256:9fdd4d14741dce47c20c0f047f40432a66ea43a342ca9c3f498e34a56d0f59c4`
 (40,701,820 bytes).
 
+## 2026-09-01 — make DNS memory defaults reflect decoded response size
+
+The returned-address ceiling bounds Sandbox Egress's own `Vec<IpAddr>`, but it
+does not run until Hickory has decoded the complete DNS message. Auditing the
+pinned Hickory 0.26.1 decoder found that query and record vectors reserve
+directly from the unsigned 16-bit section counts. The current upstream source
+has the same behavior and exposes no resolver option for a decoder count or
+byte ceiling. On this arm64 target, `Record` is 272 bytes and `Query` is 88
+bytes, so an answer count of 65,535 asks the allocator for 17,825,520 bytes of
+record capacity before the first record is decoded.
+
+That number initially looked worse than the observed behavior. Ten alternating
+process runs compared a transaction-ID-only reply with a complete header
+claiming 65,535 answers and no body. Both peaked around 12.1 MB RSS and
+completed in 30 ms. The untouched capacity is a virtual reservation on this
+allocator, so multiplying it by DNS concurrency would have overstated resident
+memory.
+
+A valid dense response exposed the durable cost. A temporary measurement case
+decoded a 65,532-byte message containing 4,368 minimal A records. Five process
+runs that decoded and dropped 64 messages peaked at 8,044,544 bytes RSS after
+the cold run. Five runs retaining the same 64 decoded messages peaked at
+83,755,008 to 83,771,392 bytes. The incremental 75,710,464 bytes is about
+1,182,976 bytes per response. Source inspection confirmed why this matters:
+for an ordinary matching answer, Hickory caches the complete decoded `Message`,
+and its configured capacity counts responses rather than bytes. The prior
+8,192-entry ceiling was finite in name but could retain an impractical amount
+of memory. The temporary measurement source was removed; it tested dependency
+representation rather than a Sandbox Egress contract.
+
+Accepted. Resolver caching is now disabled by default. A host may opt in, but
+the hard ceiling is 64 responses rather than 8,192, corresponding to roughly
+75.7 MB of incremental RSS in the dense measurement instead of a multi-gigabyte
+configuration. Default concurrent resolver work falls from 128 to 32 to reduce
+transient decoder amplification by four while remaining host-configurable.
+This is an explicit security/performance choice: uncached network names perform
+a resolver lookup on each connection unless the host enables a small cache.
+The hardening backlog retains a byte-aware upstream decoder/cache bound because
+response-count ceilings remain an approximation.
+
+A real UDP wire case now returns the maximum answer-section count with no
+records. It must finish as one `502 dns-failed` denial after the resolver's six
+bounded questions, make zero dial attempts, and close with no active work. It
+and the neighboring incomplete-reply case each passed 25 consecutive focused
+runs. The configuration proof pins the new zero-entry, zero-TTL, 32-lookup
+defaults and the 64-entry opt-in maximum.
+
+Four pre-change and three post-change local-hostname benchmark runs had
+overlapping intervals: pre-change point estimates ranged from 144.47 to 156.47
+microseconds and post-change from 153.03 to 157.23 microseconds. Criterion did
+not detect a change in the three post-change runs, so no ordinary-path
+regression or improvement is claimed. A remote uncached lookup is intentionally
+not represented by that local hosts-file benchmark.
+
+Whole-tree SCC 4.0.0 complexity remains exactly 633/1,893
+structural/cognitive; production control flow is unchanged. The native and
+exact Rust 1.88 Linux factories passed 153 deterministic cases, five doctests,
+documentation, and package verification; native dependency policy checks also
+passed. Linux's idle lane peaked at 8,396 KiB RSS, 521 descriptors, and six
+threads, then returned to 6,020 KiB, four descriptors, and two threads after
+shutdown. The control, 500-lease, and 2,000-terminal-connection lanes likewise
+returned to four descriptors and two threads at 6,640, 6,524, and 5,404 KiB.
+The rootless 153/153 image is
+`sha256:239f534ed18ee39b1c9ddb50a51030069a5e8a314bc3fe09201b07d312e8f5e1`
+(40,705,015 bytes).
+
 ## 2026-09-01 — expire bidirectionally backpressured tunnels
 
 A silent socket is the simplest idle case, but it does not establish what

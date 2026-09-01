@@ -5,6 +5,9 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Disable resolver caching by default, cap opt-in storage at 64 responses, and
+  narrow default concurrent DNS work to 32 after measuring dense decoded
+  responses; pin inflated section-count replies to bounded failure and no dial.
 - Prove idle expiry terminates simultaneous blocked upload and download writers
   after successful byte movement stops.
 - Measure simultaneous idle-tunnel expiry with exact terminal sockets,
