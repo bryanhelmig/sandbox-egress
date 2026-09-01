@@ -157,3 +157,21 @@ more than the difference between modes. No precise parser surcharge is claimed
 from this end-to-end test; DNS, scheduling, and socket setup dominate its
 noise. The retained benchmark gives future changes a realistic regression
 signal without pretending the current machine can isolate parser nanoseconds.
+
+## Incremental oversized-header scan
+
+Recorded 2026-08-31 on the same Apple M1 with Rust 1.97.1:
+
+```text
+command: cargo bench --bench connections connect_oversized_header_1mib
+before, 3 runs: 43.857 .. 44.377 ms intervals
+after, 4 runs:  646.80 .. 679.72 us intervals
+improvement:    approximately 64x .. 69x
+```
+
+The benchmark writes an exact 1 MiB unterminated header through a real client
+socket and waits for the proxy's 431 response. Previously each 4 KiB read
+rescanned every preceding byte. The retained implementation scans only the new
+bytes and the three-byte overlap where `\r\n\r\n` may cross reads. A complete
+connection-benchmark replay found no measurable change in the ordinary
+allowed, hostname, visible-SNI, or denied paths.

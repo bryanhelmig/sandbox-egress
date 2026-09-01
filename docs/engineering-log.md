@@ -1275,3 +1275,36 @@ changing library code. The exact Rust 1.88 factory and serialized lane passed
 the same cases; its 500-lease Linux smoke returned to four descriptors and two
 threads at 4,056 KiB RSS. Cargo verified 54 packaged files in the native Git
 checkout and 53 in the clean container, where the VCS metadata file is absent.
+
+## 2026-08-31 — make header acquisition linear
+
+### Finding
+
+The CONNECT byte ceiling bounded memory, but `read_header` searched the entire
+accumulated vector after every 4 KiB socket read. A guest sending the permitted
+1 MiB maximum without a terminator therefore induced quadratic comparison work
+before receiving its ordinary 431 denial.
+
+Three retained pre-change Criterion runs took 43.857–44.377 milliseconds to
+send that header through a real socket and observe the denial.
+
+### Result
+
+Header acquisition now searches only bytes added by the latest read plus the
+three preceding bytes required to detect a split `\r\n\r\n`. Four post-change
+runs took 646.80–679.72 microseconds, a repeatable 64–69x improvement. The full
+connection benchmark found no measurable regression in normal allowed,
+hostname, visible-SNI, or denied requests.
+
+A deterministic unit case places the terminator at all five positions around
+the 4 KiB boundary and reconstructs following tunnel bytes from the buffer and
+unread input. Production structural/cognitive complexity moves only from
+134/412 to 135/415 in `src/proxy.rs`; whole-tree complexity moves from
+381/1,116 to 383/1,122 because the retained benchmark and test carry most of
+the additional proof.
+
+The native and clean-cache exact Rust 1.88 factories passed all 73 deterministic
+cases and verified the assembled crate; the serialized hostile-input lane
+passed the same set. The 500-lease Linux smoke returned from eight descriptors
+and five threads while live to four descriptors and two threads, finishing at
+4,072 KiB RSS.

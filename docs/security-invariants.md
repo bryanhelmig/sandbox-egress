@@ -66,7 +66,9 @@ deadline capped by the lease handshake deadline. Oversize input, early EOF,
 timeout, and other socket read failure remain fail-closed and have distinct
 bounded reason codes. The mature parser also uses a fixed 64-header slot array;
 header 65 is rejected as `too-many-headers` rather than allocating more space
-or being mislabeled as malformed syntax.
+or being mislabeled as malformed syntax. Header terminator search scans only
+new bytes plus the three-byte boundary overlap, so raising the trusted byte
+ceiling does not give a guest quadratic parser work.
 
 Configuration and immutable policy construction reject durations too large for
 the platform clock to represent as deadlines. The connection path also uses

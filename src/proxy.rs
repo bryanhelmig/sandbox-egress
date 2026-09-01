@@ -1050,13 +1050,13 @@ struct HeaderBlock {
     end: usize,
 }
 
-async fn read_header(stream: &mut TcpStream, max: usize) -> io::Result<HeaderBlock> {
+async fn read_header<R>(stream: &mut R, max: usize) -> io::Result<HeaderBlock>
+where
+    R: AsyncRead + Unpin,
+{
     let mut bytes = Vec::with_capacity(max.min(4_096));
     let mut chunk = [0_u8; 4_096];
     loop {
-        if let Some(end) = find_header_end(&bytes) {
-            return Ok(HeaderBlock { bytes, end });
-        }
         if bytes.len() >= max {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -1071,15 +1071,19 @@ async fn read_header(stream: &mut TcpStream, max: usize) -> io::Result<HeaderBlo
                 "header ended early",
             ));
         }
+        let scan_from = bytes.len().saturating_sub(3);
         bytes.extend_from_slice(&chunk[..read]);
+        if let Some(end) = find_header_end(&bytes, scan_from) {
+            return Ok(HeaderBlock { bytes, end });
+        }
     }
 }
 
-fn find_header_end(bytes: &[u8]) -> Option<usize> {
-    bytes
+fn find_header_end(bytes: &[u8], scan_from: usize) -> Option<usize> {
+    bytes[scan_from..]
         .windows(4)
         .position(|window| window == b"\r\n\r\n")
-        .map(|index| index + 4)
+        .map(|index| scan_from + index + 4)
 }
 
 async fn deny(
@@ -1804,5 +1808,25 @@ mod tests {
         proxy
             .shutdown(Instant::now() + Duration::from_secs(1))
             .expect("proxy shutdown");
+    }
+
+    #[test]
+    fn header_terminator_survives_each_read_boundary_split() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("test runtime");
+        for start in 4_092..=4_096 {
+            let mut wire = vec![b'a'; start];
+            wire.extend_from_slice(b"\r\n\r\nfollowing");
+            let mut input = wire.as_slice();
+            let header = runtime
+                .block_on(read_header(&mut input, 8_192))
+                .expect("boundary-spanning terminator");
+
+            assert_eq!(header.end, start + 4);
+            let mut following = header.bytes[header.end..].to_vec();
+            following.extend_from_slice(input);
+            assert_eq!(following, b"following", "split at byte {start}");
+        }
     }
 }

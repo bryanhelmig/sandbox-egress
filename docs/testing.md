@@ -34,6 +34,12 @@ separately. A parser boundary case accepts 64 fields and rejects field 65 with
 the stable `too-many-headers` response and diagnostic code, without copying
 attacker-controlled names or values into the event.
 
+A unit boundary case places the four-byte header terminator at every split
+around the proxy's 4 KiB read boundary and proves buffered tunnel bytes are
+preserved. The connection benchmark sends a full 1 MiB unterminated header and
+observes the real 431 response, guarding the incremental scan's CPU shape as
+well as its parsing result.
+
 Paired capacity cases hold one admitted slow header open, then prove the next
 socket is terminal under either the global or per-lease ceiling. The rejected
 connection must add one denial without adding an accepted, active, or spawned

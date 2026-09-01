@@ -166,6 +166,44 @@ fn denied_connect(criterion: &mut Criterion) {
         .expect("shutdown benchmark proxy");
 }
 
+fn oversized_header(criterion: &mut Criterion) {
+    const HEADER_BYTES: usize = 1024 * 1024;
+
+    let proxy = Proxy::start(
+        ProxyConfig::default()
+            .with_identity_reuse_quiet_period(Duration::ZERO)
+            .with_max_header_bytes(HEADER_BYTES),
+    )
+    .expect("start benchmark proxy");
+    let lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            Policy::builder().build().expect("valid policy"),
+        )
+        .expect("attach benchmark lease");
+    let endpoint = lease.endpoint().socket_addr();
+    let request = vec![b'a'; HEADER_BYTES];
+
+    criterion.bench_function("connect_oversized_header_1mib", |bencher| {
+        bencher.iter(|| {
+            let mut client = TcpStream::connect(endpoint).expect("connect proxy");
+            client.write_all(&request).expect("write oversized header");
+            let mut response = [0_u8; 256];
+            let bytes = client.read(&mut response).expect("read denial");
+            assert!(response[..bytes].starts_with(b"HTTP/1.1 431"));
+            black_box(bytes);
+            reset_on_drop(client);
+        });
+    });
+
+    lease
+        .close(Instant::now() + Duration::from_secs(2))
+        .expect("close benchmark lease");
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(2))
+        .expect("shutdown benchmark proxy");
+}
+
 fn reset_on_drop(stream: TcpStream) {
     let socket = Socket::from(stream);
     socket
@@ -225,6 +263,6 @@ criterion_group! {
         .warm_up_time(Duration::from_millis(250))
         .measurement_time(Duration::from_secs(1))
         .sample_size(20);
-    targets = allowed_connect, allowed_hostname, allowed_visible_sni, denied_connect
+    targets = allowed_connect, allowed_hostname, allowed_visible_sni, denied_connect, oversized_header
 }
 criterion_main!(benches);

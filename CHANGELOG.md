@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Scan growing CONNECT headers incrementally instead of repeatedly rescanning
+  the accumulated buffer.
 - Add paired end-to-end benchmarks for hostname CONNECT with and without
   visible-SNI enforcement.
 - Make the local factory compile the assembled crate package and declare its
