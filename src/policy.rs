@@ -301,6 +301,10 @@ impl PolicyBuilder {
         policy.hosts.dedup();
         policy.denied_hosts.sort_unstable();
         policy.denied_hosts.dedup();
+        policy.allowed_networks.sort_unstable();
+        policy.allowed_networks.dedup();
+        policy.denied_networks.sort_unstable();
+        policy.denied_networks.dedup();
         Ok(policy)
     }
 }
@@ -486,7 +490,7 @@ mod tests {
     }
 
     #[test]
-    fn build_normalizes_duplicate_host_rules() {
+    fn build_normalizes_duplicate_rules() {
         let policy = Policy::builder()
             .allow_host("example.com")
             .expect("valid exact grant")
@@ -500,11 +504,17 @@ mod tests {
             .expect("valid exact denial")
             .deny_host("blocked.example.com")
             .expect("valid duplicate denial")
+            .allow_network("10.0.0.0/8".parse().expect("valid grant network"))
+            .allow_network("10.0.0.0/8".parse().expect("valid duplicate grant"))
+            .deny_network("192.0.2.0/24".parse().expect("valid denial network"))
+            .deny_network("192.0.2.0/24".parse().expect("valid duplicate denial"))
             .build()
             .expect("valid policy");
 
         assert_eq!(policy.hosts.len(), 2);
         assert_eq!(policy.denied_hosts.len(), 1);
+        assert_eq!(policy.allowed_networks.len(), 1);
+        assert_eq!(policy.denied_networks.len(), 1);
     }
 
     #[test]

@@ -11,8 +11,9 @@ Changelog and versions follow Semantic Versioning.
   sequence allocation because they cannot identify an accepted TCP peer.
 - Atomically disable diagnostics after the caller-owned receiver disconnects,
   avoiding repeated rate-state work under later denial volume.
-- Canonically order and deduplicate exact and wildcard hostname grants and
-  denials when freezing a policy, avoiding redundant retained matching work.
+- Canonically order and deduplicate exact and wildcard hostname rules and
+  destination network rules when freezing a policy, avoiding redundant
+  retained matching work.
 - Add optional host-configured HTTP CONNECT chaining after local destination
   resolution and policy checks, sending only the approved numeric address and
   preserving cancellation, deadlines, bounded response parsing, and exact

@@ -5148,3 +5148,30 @@ factory passes the same 187 cases and all eight serialized resource lanes. Its
 rootless conformance image is
 `sha256:fdac242f9973bb657373d8412e977fe4ea8fe19f29e1097624a284fba4d32296`
 (40,958,603 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — recheck empty-lease lifecycle cost
+
+The next performance rotation reran the original synchronous attach plus
+certified-close benchmark three times on the exact 187-case tree. The three
+95% confidence intervals were 1.360–1.375, 1.391–1.408, and 1.380–1.398
+milliseconds. Criterion respectively reported noise-threshold movement, an
+apparent small regression, and no detected change.
+
+That 1.360–1.408 millisecond band overlaps the project's initial
+1.357–1.368 millisecond baseline closely enough that scheduler variation is a
+more credible explanation than a code effect. No tuning or production change
+is justified by the measurement.
+
+## 2026-09-01 — normalize repeated destination networks
+
+The simplification pass applied the existing freeze-time normalization rule
+consistently. Repeated CIDR grants and denials previously remained in the
+immutable policy and could add redundant address checks for every matching
+connection. `PolicyBuilder::build` now canonically sorts and deduplicates both
+network vectors, just as it already does for hostname vectors.
+
+The existing normalization proof now covers duplicate exact hosts, wildcard
+hosts, host denials, network grants, and network denials. It passed 25
+consecutive focused runs plus formatting and all-target Clippy. Public policy
+semantics and the deterministic test count remain unchanged at 187;
+whole-tree structural/cognitive complexity remains 776/2,300.
