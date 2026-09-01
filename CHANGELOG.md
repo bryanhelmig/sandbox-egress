@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Measure simultaneous idle-tunnel expiry with exact terminal sockets,
+  accounting, and descriptor/thread recovery.
 - Add an immutable opt-in per-lease tunnel idle timeout, reset by traffic in
   either direction, with exact denial accounting and certified-close
   preemption.

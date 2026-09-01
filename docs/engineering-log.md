@@ -3227,3 +3227,43 @@ two at 4,824 KiB in 1,109 ms. The 2,000-connection terminal lane returned to
 four and two at 5,132 KiB in 450 ms. The rootless 150/150 conformance image is
 `sha256:9fdd4d14741dce47c20c0f047f40432a66ea43a342ca9c3f498e34a56d0f59c4`
 (40,701,820 bytes).
+
+## 2026-09-01 — measure simultaneous idle-tunnel recovery
+
+The idle policy had deterministic two-endpoint closure proofs but not a
+process-level resource measurement under many simultaneous timers. The opt-in
+resource target now establishes 128 real loopback tunnels under one immutable
+lease and holds all guest and upstream sockets silent. It samples the live
+peak, waits for policy expiry, requires terminal reads on all 256 endpoints,
+and then samples recovery with the proxy alive and after shutdown. Final usage
+must report exactly 128 accepted and denied connections, zero active or
+completed connections, and zero bytes in either direction.
+
+The lane uses one upstream thread that retains every accepted socket rather
+than a thread per connection. It therefore exposes accidental proxy thread
+growth separately from harness growth. A two-second idle interval keeps all
+tunnels simultaneously active during setup without timing sleeps standing in
+for proof: the lease's active gauge must equal the configured batch before the
+peak sample. Guest and upstream reads carry five-second failure bounds, and a
+blocked timeout is not accepted as terminal cleanup.
+
+The 128-connection case passed ten consecutive release runs. In the final
+native four-lane resource run, the idle peak was 13,600 KiB RSS, 526
+descriptors, and six threads. After expiry it held 13,792 KiB, 13 descriptors,
+and five threads with the proxy alive; after shutdown it held 13,632 KiB, nine
+descriptors, and two threads. RSS is reported rather than thresholded because
+the process allocator may retain released pages; descriptor, thread, active
+ownership, and exact counters are enforced.
+
+Whole-tree SCC 4.0.0 complexity moves from 620/1,860 to 628/1,880
+structural/cognitive, entirely in the opt-in resource target and its script.
+Production code and the 150 deterministic cases are unchanged. The native and
+exact Rust 1.88 Linux factories passed documentation and package verification;
+the native factory also passed dependency policy checks. Linux's idle lane
+peaked at 8,412 KiB RSS, 521 descriptors, and six threads. With the proxy alive
+it recovered to 7,340 KiB, eight descriptors, and five threads; after shutdown
+it returned to 4,992 KiB, four descriptors, and two threads. The rootless
+150/150 conformance image remains byte-identical because production and the
+shipped deterministic cases are unchanged:
+`sha256:9fdd4d14741dce47c20c0f047f40432a66ea43a342ca9c3f498e34a56d0f59c4`
+(40,701,820 bytes).

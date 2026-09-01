@@ -235,17 +235,21 @@ p50/p95/p99 setup latency, peak RSS, threads, and file descriptors.
 The opt-in resource target first runs identity churn with the proxy still alive
 and samples each batch. A second lane synchronizes 64 host threads, holds all
 of their distinct attached leases, then releases their close calls together in
-four repeated batches. A third lane keeps one real lease and upstream alive,
-then alternates completed echo tunnels, upload-ceiling denials, channel-timed
-upstream resets after CONNECT success, and pre-DNS hostname denials. It waits
-for active ownership to return to zero and samples descriptor and thread
-recovery after every batch and final shutdown. Final accepted, completed,
-denied, upload, and download counters must exactly distinguish all four paths;
-the reset is neither a completion nor a policy denial. On Linux the collectors
-read `/proc`; on macOS they use `ps` and `lsof`; other targets compile and
-report unsupported counters as absent. Run
-`./scripts/measure-resources.sh [runs-per-batch] [batches]`; the concurrent lane
-can be adjusted with `SANDBOX_EGRESS_CONTROL_CONCURRENCY` and
+four repeated batches. A third lane establishes a configurable batch of silent
+tunnels under one idle-expiring lease. It samples their simultaneous peak,
+requires every guest and upstream socket to become terminal, and checks exact
+idle-denial counters plus recovered descriptors and threads. A fourth lane
+keeps one real lease and upstream alive, then alternates completed echo tunnels,
+upload-ceiling denials, channel-timed upstream resets after CONNECT success,
+and pre-DNS hostname denials. It waits for active ownership to return to zero
+and samples descriptor and thread recovery after every batch and final
+shutdown. Final accepted, completed, denied, upload, and download counters must
+exactly distinguish all four paths; the reset is neither a completion nor a
+policy denial. On Linux the collectors read `/proc`; on macOS they use `ps` and
+`lsof`; other targets compile and report unsupported counters as absent. Run
+`./scripts/measure-resources.sh [runs-per-batch] [batches] [idle-connections]`;
+the control lane can also be adjusted with
+`SANDBOX_EGRESS_CONTROL_CONCURRENCY` and
 `SANDBOX_EGRESS_CONTROL_BATCHES`.
 
 The committed tunnel conformance lane currently checks graceful half-close in

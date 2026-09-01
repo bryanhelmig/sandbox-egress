@@ -202,6 +202,123 @@ fn concurrent_management_churn_releases_process_resources() {
 
 #[test]
 #[ignore = "resource soak is opt-in; run scripts/measure-resources.sh"]
+fn concurrent_idle_expiry_releases_process_resources() {
+    let connections = env_number("SANDBOX_EGRESS_IDLE_CONNECTIONS", 128);
+    assert!(connections > 0 && connections < 0x00ff_ffff);
+
+    let process_start = Resources::sample();
+    let (port, accepted_rx, upstream) = start_idle_upstream(connections);
+    let proxy = Proxy::start(
+        ProxyConfig::default()
+            .with_max_connections(connections)
+            .with_identity_reuse_quiet_period(Duration::ZERO),
+    )
+    .expect("start idle proxy");
+    let lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            Policy::builder()
+                .allow_network("127.0.0.0/8".parse::<IpNet>().expect("loopback CIDR"))
+                .allow_port(port)
+                .max_connections(connections)
+                .expect("positive idle connection limit")
+                .idle_timeout(Duration::from_secs(2))
+                .build()
+                .expect("valid idle soak policy"),
+        )
+        .expect("attach idle soak lease");
+    thread::sleep(Duration::from_millis(25));
+    let idle_start = Resources::sample();
+    let started = Instant::now();
+    let request = format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
+    let mut clients = Vec::with_capacity(connections);
+    for _ in 0..connections {
+        clients.push(open_soak_tunnel(
+            lease.endpoint().socket_addr(),
+            request.as_bytes(),
+        ));
+    }
+    accepted_rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("all idle tunnels reached upstream");
+    assert_eq!(lease.usage().active_connections, connections as u64);
+    let peak = Resources::sample();
+    eprintln!(
+        "idle_soak event=peak connections={connections} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
+        started.elapsed().as_millis(),
+        peak.rss_kib,
+        peak.descriptors,
+        peak.threads,
+    );
+
+    for mut client in clients {
+        client
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("bound client idle read");
+        assert_terminal_socket(client.read(&mut [0_u8; 1]));
+    }
+    upstream.join().expect("idle upstream thread");
+    wait_for_no_active_connections(&lease);
+    let recovered = Resources::sample();
+    eprintln!(
+        "idle_soak event=recovered connections={connections} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
+        started.elapsed().as_millis(),
+        recovered.rss_kib,
+        recovered.descriptors,
+        recovered.threads,
+    );
+    assert_stable_non_memory_resources(idle_start, recovered);
+
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(2))
+        .expect("close idle-soak lease")
+        .usage();
+    assert_eq!(final_usage.accepted_connections, connections as u64);
+    assert_eq!(final_usage.active_connections, 0);
+    assert_eq!(final_usage.completed_connections, 0);
+    assert_eq!(final_usage.denied_connections, connections as u64);
+    assert_eq!(final_usage.uploaded_bytes, 0);
+    assert_eq!(final_usage.downloaded_bytes, 0);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(2))
+        .expect("proxy shutdown");
+    thread::sleep(Duration::from_millis(25));
+    let finished = Resources::sample();
+    eprintln!(
+        "idle_soak event=finish connections={connections} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
+        started.elapsed().as_millis(),
+        finished.rss_kib,
+        finished.descriptors,
+        finished.threads,
+    );
+    assert_stable_non_memory_resources(process_start, finished);
+}
+
+fn start_idle_upstream(
+    connections: usize,
+) -> (u16, std::sync::mpsc::Receiver<()>, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind idle upstream");
+    let port = listener.local_addr().expect("idle upstream address").port();
+    let (accepted_tx, accepted_rx) = std::sync::mpsc::sync_channel(1);
+    let upstream = thread::spawn(move || {
+        let mut streams = Vec::with_capacity(connections);
+        for _ in 0..connections {
+            let (stream, _) = listener.accept().expect("accept idle tunnel");
+            streams.push(stream);
+        }
+        accepted_tx.send(()).expect("report idle accepts");
+        for mut stream in streams {
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .expect("bound upstream idle read");
+            assert_terminal_socket(stream.read(&mut [0_u8; 1]));
+        }
+    });
+    (port, accepted_rx, upstream)
+}
+
+#[test]
+#[ignore = "resource soak is opt-in; run scripts/measure-resources.sh"]
 fn terminal_connection_churn_releases_process_resources() {
     let runs_per_batch = env_number("SANDBOX_EGRESS_SOAK_RUNS", 2_000);
     let batches = env_number("SANDBOX_EGRESS_SOAK_BATCHES", 4);
@@ -423,6 +540,21 @@ fn wait_for_no_active_connections(lease: &sandbox_egress::Lease) {
             "connection work did not return to zero"
         );
         thread::yield_now();
+    }
+}
+
+fn assert_terminal_socket(result: std::io::Result<usize>) {
+    match result {
+        Ok(0) => {}
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::ConnectionReset
+                    | std::io::ErrorKind::ConnectionAborted
+                    | std::io::ErrorKind::BrokenPipe
+                    | std::io::ErrorKind::NotConnected
+            ) => {}
+        result => panic!("expected terminal socket, got {result:?}"),
     }
 }
 
