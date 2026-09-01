@@ -118,6 +118,25 @@ The next resource harnesses add live connections, slow peers, admitted/denied
 counters, cleanup state, and bulk tunnel throughput. See
 [`testing.md`](testing.md) and [`roadmap.md`](roadmap.md).
 
+## Hostile header near-match baseline
+
+Recorded 2026-09-01 on the Apple M1 with Rust 1.97.1:
+
+```text
+command: cargo bench --bench connections header_1mib -- --noplot
+paired runs: 3
+ordinary unterminated header: 641.13 .. 652.31 us across intervals
+3-of-4-byte near matches:     640.98 .. 743.29 us across intervals
+```
+
+The hostile input repeats `\r\n\rX`, forcing frequent three-byte matches
+without ever completing the header terminator. Two near-match runs stayed in
+the same tight 641–650 microsecond range as the ordinary input; the third was
+noisy at 649–743 microseconds. Criterion reported no statistically significant
+change in any paired run. This supports retaining the existing incremental
+linear scan and the benchmark as a regression signal; it is not evidence for a
+new optimization.
+
 ## TLS authority default-path check
 
 Recorded 2026-08-31 on the same Apple M1 after adding opt-in ClientHello

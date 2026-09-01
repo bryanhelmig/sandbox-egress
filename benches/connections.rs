@@ -189,11 +189,26 @@ fn oversized_header(criterion: &mut Criterion) {
         .expect("attach benchmark lease");
     let endpoint = lease.endpoint().socket_addr();
     let request = vec![b'a'; HEADER_BYTES];
+    let near_terminator = b"\r\n\rX".repeat(HEADER_BYTES / 4);
 
     criterion.bench_function("connect_oversized_header_1mib", |bencher| {
         bencher.iter(|| {
             let mut client = TcpStream::connect(endpoint).expect("connect proxy");
             client.write_all(&request).expect("write oversized header");
+            let mut response = [0_u8; 256];
+            let bytes = client.read(&mut response).expect("read denial");
+            assert!(response[..bytes].starts_with(b"HTTP/1.1 431"));
+            black_box(bytes);
+            reset_on_drop(client);
+        });
+    });
+
+    criterion.bench_function("connect_near_terminator_header_1mib", |bencher| {
+        bencher.iter(|| {
+            let mut client = TcpStream::connect(endpoint).expect("connect proxy");
+            client
+                .write_all(&near_terminator)
+                .expect("write near-terminator header");
             let mut response = [0_u8; 256];
             let bytes = client.read(&mut response).expect("read denial");
             assert!(response[..bytes].starts_with(b"HTTP/1.1 431"));

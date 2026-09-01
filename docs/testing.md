@@ -53,6 +53,10 @@ separately. A parser boundary case accepts 64 fields and rejects field 65 with
 the stable `too-many-headers` response and diagnostic code, without copying
 attacker-controlled names or values into the event.
 
+The connection benchmark also sends a full 1 MiB header made from repeated
+`\r\n\rX` near matches. It must remain an ordinary bounded 431 denial and makes
+linear-scan CPU drift visible beside the existing all-`a` input.
+
 Authority cases require bracketed IPv6 to remain accepted while bracketed DNS,
 IPv4, and IPvFuture text return the exact `invalid-ipv6-literal` reason. A real
 listener case verifies that reason is preserved in the bounded 400 response.

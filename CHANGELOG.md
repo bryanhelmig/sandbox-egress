@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Add a reproducible 1 MiB near-terminator header benchmark; measurement
+  supports retaining the existing linear scanner without added machinery.
 - Give controlled and system resolvers the same absolute DNS name, and pin the
   crate's ASCII/ACE hostname, label-length, case, and trailing-dot boundaries.
 - Clarify that Linux `SO_MARK` bypass schemes must remove both `CAP_NET_ADMIN`

@@ -2247,3 +2247,40 @@ descriptors and five threads to four and two, finishing at 3,984 KiB RSS in
 1,081 ms. The rootless runner reproduced 112/112 as UID/GID 65534; image
 `sha256:6a5c358fc6b0527485a9a27185a502b3a4d7db130664f55aa90565b4750e3aa4`
 measured 40,410,919 bytes.
+
+## 2026-09-01 — retain the linear header scan under near matches
+
+The CONNECT header reader previously became quadratic when a large header
+arrived in many small reads. Retaining only the three-byte overlap needed to
+find `\r\n\r\n` across read boundaries reduced the 1 MiB all-`a` case from
+roughly 44 ms to 647–680 us. This cycle asks a different question: does an
+attacker who supplies three of the four terminator bytes on every candidate
+position recover a material CPU penalty?
+
+The connection benchmark now sends exactly 1 MiB of repeated `\r\n\rX` over a
+real socket, contains no complete terminator, and requires the same 431
+response as the ordinary oversized-header case. Three paired runs of
+`cargo bench --bench connections -- header_1mib` placed the ordinary input's
+confidence intervals between 641.13 and 652.31 us. Two near-match intervals
+were similarly tight at 640.98–649.91 us; one noisy interval widened to
+648.65–743.29 us. Criterion reported no statistically significant change in
+any paired run.
+
+The first standalone ordinary-input measurement also illustrates why the
+paired repetitions matter: its 650.96–741.15 us interval was initially labeled
+a regression, while an immediate repeat returned 644.08–653.65 us and no
+change. We are keeping the adversarial benchmark and the current scanner, not
+claiming an optimization from measurement noise. The full benchmark lane also
+found no change for allowed IP, allowed hostname, visible SNI, denied hostname,
+or empty-lease lifecycle paths.
+
+No production source changed. Whole-tree SCC 4.0.0 complexity moved from
+504/1,519 to 505/1,522 structural/cognitive, entirely in benchmark code. The
+native and exact Rust 1.88 Linux factories passed all 112 deterministic cases,
+doctests, documentation, package verification, and benchmark smoke; native
+dependency policy checks also passed. Linux's 500-lease lane returned from
+eight descriptors and five threads to four and two, finishing at 4,032 KiB RSS
+in 1,065 ms. The rootless runner reproduced 112/112 as UID/GID 65534. Because
+the runtime runner excludes benchmark artifacts, its image remained
+`sha256:6a5c358fc6b0527485a9a27185a502b3a4d7db130664f55aa90565b4750e3aa4`
+at 40,410,919 bytes.

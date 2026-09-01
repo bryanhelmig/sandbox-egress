@@ -25,7 +25,6 @@ services may supplement research but must not become test dependencies.
   paths, whitespace, IPv4 variants, and bracketed IPv6.
 - Absolute-form HTTP when only CONNECT is supported.
 - Request smuggling shapes and bytes following the CONNECT header.
-- Parser CPU behavior on adversarial near-matches.
 
 ## DNS, IP policy, and SSRF
 
