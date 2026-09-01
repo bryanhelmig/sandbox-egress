@@ -1654,6 +1654,72 @@ mod tests {
     mod dial_budget;
     mod dns_wire;
 
+    struct BoundaryReader {
+        step: u8,
+        extra_before_error: bool,
+    }
+
+    impl AsyncRead for BoundaryReader {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            _context: &mut Context<'_>,
+            buffer: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            match self.step {
+                0 => {
+                    buffer.put_slice(b"abc");
+                    self.step = 1;
+                    Poll::Ready(Ok(()))
+                }
+                1 if self.extra_before_error => {
+                    buffer.put_slice(b"x");
+                    self.step = 2;
+                    Poll::Ready(Ok(()))
+                }
+                _ => Poll::Ready(Err(io::Error::from(io::ErrorKind::ConnectionReset))),
+            }
+        }
+    }
+
+    #[test]
+    fn byte_limit_requires_an_observed_excess_byte() {
+        fn boundary_result(extra_before_error: bool) -> (io::Error, Usage) {
+            let counters = Arc::new(Counters::default());
+            let mut reader = Metered::new(
+                BoundaryReader {
+                    step: 0,
+                    extra_before_error,
+                },
+                Arc::clone(&counters),
+                Direction::Upload,
+                Some(3),
+                0,
+                None,
+            );
+            let runtime = RuntimeBuilder::new_current_thread()
+                .build()
+                .expect("test runtime");
+            let error = runtime.block_on(async {
+                let mut buffer = [0_u8; 8];
+                assert_eq!(reader.read(&mut buffer).await.expect("boundary read"), 3);
+                reader
+                    .read(&mut buffer)
+                    .await
+                    .expect_err("boundary outcome")
+            });
+            (error, counters.snapshot())
+        }
+
+        let (reset, reset_usage) = boundary_result(false);
+        assert_eq!(reset.kind(), io::ErrorKind::ConnectionReset);
+        assert!(!is_transfer_limit_error(&reset));
+        assert_eq!(reset_usage.uploaded_bytes, 3);
+
+        let (limited, limited_usage) = boundary_result(true);
+        assert!(is_transfer_limit_error(&limited));
+        assert_eq!(limited_usage.uploaded_bytes, 4);
+    }
+
     struct ActiveLookup(Arc<std::sync::atomic::AtomicUsize>);
 
     impl Drop for ActiveLookup {

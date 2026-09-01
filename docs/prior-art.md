@@ -168,6 +168,13 @@ lane with 128 such negotiations. Lease close must cancel all response parsing,
 terminate both guest and upstream sockets, and return exact final ownership and
 counters without waiting for either peer.
 
+Smokescreen's instrumented connection records the byte count returned by each
+Go `Read` or `Write` even when that operation also returns an error. Sandbox
+Egress additionally enforces per-tunnel byte ceilings, so it pins the adjacent
+ordering explicitly: an exact-boundary transport error is not relabeled as a
+policy denial, while a successfully observed excess byte is counted and denied
+before any later transport error.
+
 ## Host-cage capability boundary
 
 The current Lens cage review corrected a subtle deployment assumption around

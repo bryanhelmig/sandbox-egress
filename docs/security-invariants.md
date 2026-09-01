@@ -283,7 +283,11 @@ next read to that remainder, so the proxy forwards exactly the permitted
 prefix regardless of kernel read coalescing. The first nonempty read after
 exhaustion is accounted but not forwarded. A ceiling violation is a policy
 denial, distinct from an ordinary tunnel I/O failure, and increments the lease
-denial counter exactly once. An over-limit upload already coalesced with the
+denial counter exactly once. At the exact ceiling, a transport error observed
+before another successful nonempty read remains a transport error; the proxy
+does not invent an excess byte or denial. If it successfully observes an
+excess byte first, that byte is counted and the policy denial wins before a
+later transport failure. An over-limit upload already coalesced with the
 CONNECT header remains an earlier fail-closed case: it is denied in full before
 DNS or dialing.
 

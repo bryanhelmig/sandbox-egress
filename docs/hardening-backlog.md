@@ -43,8 +43,6 @@ contributor instead of preserving solved work as apparent backlog.
 
 ## Tunnelling and accounting
 
-- Accounting when a policy ceiling and an independent transport failure become
-  observable at nearly the same time.
 - Large full-duplex transfers and asymmetric traffic.
 
 ## Capacity and denial of service

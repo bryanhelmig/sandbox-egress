@@ -241,7 +241,10 @@ accounting, and require exactly one policy denial. Paired nonzero cases write
 one byte beyond a seven-byte ceiling in a single call and require exactly the
 seven-byte prefix on the other side, removing kernel read coalescing from
 policy behavior. This is separate from socket reset tests so transport failure
-cannot masquerade as policy enforcement.
+cannot masquerade as policy enforcement. A deterministic reader also pins the
+boundary ordering: a reset immediately after exactly three allowed bytes stays
+a reset with three bytes accounted, while one successful fourth-byte read is
+accounted and returned as the transfer-limit error before a later reset.
 
 Two ordinary FIN cases prove tunnel directions remain independent. After a
 guest finishes upload, an upstream may still send a delayed response; after an

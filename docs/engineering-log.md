@@ -4860,3 +4860,31 @@ dependency policy, package verification, benchmark smoke, and release builds.
 The rootless 180/180 image is
 `sha256:5f9072aebb39b1ac66adbfc39eaae9da305deecf5ee62023d0261817aa71614e`
 (40,903,722 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — define byte-limit and transport-error precedence
+
+The hardening rotation compared Sandbox Egress's metering with Smokescreen's
+instrumented connection. Smokescreen accounts the byte count returned alongside
+a Go I/O error; Sandbox Egress also has to decide whether an exact per-tunnel
+ceiling or an independent transport failure owns the terminal classification.
+The existing socket cases deliberately kept those paths separate, leaving that
+adjacent boundary unstated.
+
+A deterministic `AsyncRead` proof now drives both orderings. Three successful
+bytes at a three-byte limit followed immediately by reset preserve the reset,
+account exactly three bytes, and do not synthesize a policy failure. If a
+successful fourth byte is observed first, it is accounted, not forwarded, and
+returns the transfer-limit marker before the later reset can be polled. The
+security and testing contracts now state that precedence, and the completed
+backlog item is removed.
+
+The focused case passes and production code is unchanged. The deterministic
+test count rises from 180 to 181; whole-tree SCC 4.0.0 structural/cognitive
+complexity moves from 764/2,264 to 767/2,275, entirely in the test-only proof.
+
+The complete native and pinned Rust 1.88 factories pass all 181 deterministic
+tests, eight Linux resource lanes, six documentation examples, formatting,
+lints, dependency policy, package verification, benchmark smoke, and release
+builds. The rootless 181/181 image is
+`sha256:fd3da1b7eb0d0a7b7a2e5102fec03fc9ddd17355220383cb2364d27d4d1bb57d`
+(40,919,749 bytes) and runs as UID/GID 65534.
