@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Deduplicate approved DNS results in first-seen order so repeated records
+  cannot amplify sequential dial attempts.
 - Reject a zero header deadline, clamp process semaphore limits to Tokio's safe
   maximum, and return a typed error for an oversized per-lease limit.
 - Give the fixed 64-header CONNECT parser ceiling its own bounded

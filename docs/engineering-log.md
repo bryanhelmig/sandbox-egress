@@ -1188,3 +1188,29 @@ Its 500-lease Linux smoke held eight descriptors and five threads while live,
 returned to four descriptors and two threads, and finished at 4,000 KiB RSS.
 The validation branches and boundary tests move whole-tree
 structural/cognitive complexity from 369/1,084 to 371/1,090.
+
+## 2026-08-31 — collapse duplicate approved DNS dial targets
+
+### Finding
+
+DNS cardinality was bounded and every result was checked before dialing, but a
+legal 64-address answer containing the same approved IP 64 times produced 64
+sequential connection attempts. The absolute handshake deadline bounded total
+time, yet a hostile or broken resolver could still amplify connector work for
+no routing benefit. A recording-connector test reproduced all 64 attempts.
+
+### Result
+
+Resolution still validates the complete answer and rejects the whole set when
+any address is forbidden. Approved `SocketAddr` values are then deduplicated
+with a bounded set while retaining first-seen resolver order. The regression
+now observes one attempt and passed 20 consecutive runs. The mixed public plus
+IPv4-compatible metadata case was upgraded to the same recording connector and
+proves a forbidden later record yields zero attempts, not a partial early dial.
+
+The native factory and dependency audit passed 72 deterministic cases. The
+exact Rust 1.88 image passed the same factory and its serialized hostile lane.
+Its 500-lease Linux smoke held eight descriptors and five threads while live,
+returned to four descriptors and two threads, and finished at 3,988 KiB RSS.
+The bounded ordered set, validation loop, and recording test move whole-tree
+structural/cognitive complexity from 371/1,090 to 374/1,098.

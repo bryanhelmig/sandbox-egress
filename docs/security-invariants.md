@@ -52,6 +52,11 @@ policy or dialing; response ordering cannot select a truncated subset for the
 dialer. This bounds the proxy's collected address vector and dial attempts; the
 resolver still necessarily parses the DNS message it receives.
 
+Every address is policy-checked before the answer can reach the dialer. After
+that full-set validation, duplicate approved socket addresses are collapsed in
+first-seen order. Repeated records therefore consume one bounded answer slot
+each but cannot amplify sequential connection attempts.
+
 Dialing receives only approved `SocketAddr` values and shares the absolute
 handshake deadline. Lease cancellation drops the in-progress connect future;
 certified close waits for the owning tracked connection task to disappear.

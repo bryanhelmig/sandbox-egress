@@ -96,6 +96,11 @@ ceiling and uses a recording connector. It requires the bounded
 `dns-answer-too-large` denial, one denial counter increment, and zero dial
 attempts; the implementation may not silently truncate the answer.
 
+A duplicate-answer case supplies the same approved address in all 64 default
+slots and requires exactly one dial attempt. The mixed allowed/metadata case
+uses the same recording connector and requires zero attempts, proving the
+entire set is validated before first-seen-order deduplication reaches dialing.
+
 The equivalent internal connector seam holds a dial future pending after
 recording the exact checked `SocketAddr`. Tests release it only through lease
 cancellation or the absolute handshake deadline and observe its drop directly,
