@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Add local UDP DNS conformance proving zero cache capacity requeries and a
+  configured positive TTL ceiling expires before the next upstream lookup.
 - Pin positive and negative resolver-cache count and TTL ceilings, expose a
   narrowing host configuration, and recheck repeated answers after reuse.
 - Distinguish an enforced DNS deadline as `504 dns-timeout` from resolver

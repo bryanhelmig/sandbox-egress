@@ -2478,3 +2478,34 @@ descriptors and five threads to four and two, finishing at 4,044 KiB RSS in
 1,064 ms. The rootless runner reproduced 123/123 as UID/GID 65534; image
 `sha256:fc358fe7339c8ee16dc2031808b99cfbeb50dd42ce0ef535966744552a23b7e8`
 measured 40,436,156 bytes.
+
+## 2026-09-01 — exercise cache disable and expiry over local DNS
+
+Inspecting resolver options proved configuration wiring, but not Hickory's
+runtime behavior. A fixed local UDP DNS server now returns one loopback A
+record with a 60-second wire TTL. It uses a bounded receive timeout, emits only
+the two expected responses, and never contacts the public network.
+
+The zero-capacity case performs two identical lookups and requires two UDP
+queries. The expiry case keeps caching enabled, caps the otherwise 60-second
+answer at one second, requires an immediate repeat to consume no second server
+response, waits 1.2 seconds, and then requires a second upstream query. An
+initial 20 ms ceiling was rejected after the first run: ordinary scheduling
+overhead allowed the immediate repeat to outlive that window, so it consumed
+the server's second response and the later lookup timed out. The wider interval
+passed six native repetitions and the exact Linux factory.
+
+The local fixture originally walked every DNS label even though Hickory emits
+one fixed question. Replacing that loop with a direct terminator search reduced
+the conformance addition from 526/1,584 to 524/1,577 whole-tree SCC 4.0.0
+structural/cognitive complexity. Production behavior is unchanged apart from
+extracting the already-tested cache-option assignment, so no throughput claim
+or benchmark was made.
+
+The native and exact Rust 1.88 Linux factories passed all 125 deterministic
+cases, doctests, documentation, and package verification; native dependency
+policy checks also passed. Linux's 500-lease lane returned from eight
+descriptors and five threads to four and two, finishing at 3,992 KiB RSS in
+1,141 ms. The rootless runner reproduced 125/125 as UID/GID 65534; image
+`sha256:60982d7e314041fdbfdc60990e822f70034501c40887f4c67758b48c318ec99e`
+measured 40,456,922 bytes.

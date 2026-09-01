@@ -585,11 +585,17 @@ enum ResolverBackend {
 
 fn build_system_resolver(config: &ProxyConfig) -> Result<TokioResolver, String> {
     let mut builder = TokioResolver::builder_tokio().map_err(|error| error.to_string())?;
-    let options = builder.options_mut();
+    apply_resolver_cache_options(builder.options_mut(), config);
+    builder.build().map_err(|error| error.to_string())
+}
+
+fn apply_resolver_cache_options(
+    options: &mut hickory_resolver::config::ResolverOpts,
+    config: &ProxyConfig,
+) {
     options.cache_size = config.dns_cache_entries;
     options.positive_max_ttl = Some(config.dns_cache_max_ttl);
     options.negative_max_ttl = Some(config.dns_cache_max_ttl);
-    builder.build().map_err(|error| error.to_string())
 }
 
 impl ResolverBackend {
@@ -1499,6 +1505,63 @@ mod tests {
 
     struct CapturingResolver(mpsc::Sender<String>);
 
+    fn start_local_dns(expected_queries: usize) -> (SocketAddr, thread::JoinHandle<()>) {
+        let socket = std::net::UdpSocket::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .expect("bind local DNS server");
+        socket
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .expect("set DNS server timeout");
+        let address = socket.local_addr().expect("local DNS address");
+        let server = thread::spawn(move || {
+            let mut packet = [0_u8; 2_048];
+            for _ in 0..expected_queries {
+                let (length, peer) = socket.recv_from(&mut packet).expect("receive DNS query");
+                let response = local_a_response(&packet[..length]);
+                socket.send_to(&response, peer).expect("send DNS response");
+            }
+        });
+        (address, server)
+    }
+
+    fn local_a_response(query: &[u8]) -> Vec<u8> {
+        assert!(query.len() >= 17, "DNS query is too short");
+        let name_end = query[12..]
+            .iter()
+            .position(|byte| *byte == 0)
+            .map(|offset| 13 + offset)
+            .expect("DNS question terminator");
+        let question_end = name_end.checked_add(4).expect("bounded DNS question");
+        assert!(question_end <= query.len(), "complete DNS question");
+
+        let mut response = Vec::with_capacity(question_end + 16);
+        response.extend_from_slice(&query[..2]);
+        response.extend_from_slice(&[0x81, 0x80]);
+        response.extend_from_slice(&[0, 1, 0, 1, 0, 0, 0, 0]);
+        response.extend_from_slice(&query[12..question_end]);
+        response.extend_from_slice(&[0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 127, 0, 0, 1]);
+        response
+    }
+
+    fn local_dns_resolver(address: SocketAddr, config: &ProxyConfig) -> TokioResolver {
+        let mut connection = hickory_resolver::config::ConnectionConfig::udp();
+        connection.port = address.port();
+        let name_server =
+            hickory_resolver::config::NameServerConfig::new(address.ip(), true, vec![connection]);
+        let mut resolver_config = hickory_resolver::config::ResolverConfig::default();
+        resolver_config.add_name_server(name_server);
+        let mut builder = TokioResolver::builder_with_config(
+            resolver_config,
+            hickory_resolver::net::runtime::TokioRuntimeProvider::default(),
+        );
+        let options = builder.options_mut();
+        options.ip_strategy = hickory_resolver::config::LookupIpStrategy::Ipv4Only;
+        options.use_hosts_file = hickory_resolver::config::ResolveHosts::Never;
+        options.attempts = 1;
+        options.timeout = Duration::from_secs(1);
+        apply_resolver_cache_options(options, config);
+        builder.build().expect("build local DNS resolver")
+    }
+
     impl TestResolver for FixedAnswerResolver {
         fn lookup<'a>(
             &'a self,
@@ -2013,6 +2076,61 @@ mod tests {
             resolver.options().negative_max_ttl,
             Some(Duration::from_secs(19))
         );
+    }
+
+    #[test]
+    fn zero_capacity_resolver_cache_requeries_local_dns() {
+        let (address, server) = start_local_dns(2);
+        let config = ProxyConfig::default().with_dns_cache(0, Duration::from_secs(60));
+        let resolver = local_dns_resolver(address, &config);
+        let runtime = tokio::runtime::Runtime::new().expect("start resolver test runtime");
+
+        runtime.block_on(async {
+            for _ in 0..2 {
+                let answer = resolver
+                    .lookup_ip("cache-disabled.test.")
+                    .await
+                    .expect("resolve through local DNS");
+                assert_eq!(
+                    answer.iter().collect::<Vec<_>>(),
+                    vec![IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)]
+                );
+            }
+        });
+        server.join().expect("join local DNS server");
+    }
+
+    #[test]
+    fn resolver_cache_ttl_ceiling_expires_local_dns_answer() {
+        let (address, server) = start_local_dns(2);
+        let config = ProxyConfig::default().with_dns_cache(8, Duration::from_secs(1));
+        let resolver = local_dns_resolver(address, &config);
+        let runtime = tokio::runtime::Runtime::new().expect("start resolver test runtime");
+
+        runtime.block_on(async {
+            let first = resolver
+                .lookup_ip("cache-expiry.test.")
+                .await
+                .expect("resolve initial local answer");
+            let cached = resolver
+                .lookup_ip("cache-expiry.test.")
+                .await
+                .expect("resolve cached local answer");
+            assert_eq!(
+                first.iter().collect::<Vec<_>>(),
+                cached.iter().collect::<Vec<_>>()
+            );
+            tokio::time::sleep(Duration::from_millis(1_200)).await;
+            let expired = resolver
+                .lookup_ip("cache-expiry.test.")
+                .await
+                .expect("resolve expired local answer again");
+            assert_eq!(
+                first.iter().collect::<Vec<_>>(),
+                expired.iter().collect::<Vec<_>>()
+            );
+        });
+        server.join().expect("join local DNS server");
     }
 
     #[test]

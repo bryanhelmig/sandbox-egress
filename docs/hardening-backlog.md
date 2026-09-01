@@ -27,7 +27,7 @@ services may supplement research but must not become test dependencies.
 
 - A/AAAA answers containing a mix of allowed and forbidden addresses.
 - CNAME chains, loops, large answer sets, truncation, and malformed packets.
-- Real-resolver TTL expiry and zero-capacity cache behavior.
+- Negative-answer TTL expiry under a local resolver.
 - DNS rebinding between requests and after policy checks.
 - Proof that the dialer receives only the checked `SocketAddr`.
 - IPv4-mapped IPv6, IPv4-compatible forms, scoped IPv6, zone identifiers, and
