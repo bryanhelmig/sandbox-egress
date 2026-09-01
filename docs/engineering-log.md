@@ -2162,3 +2162,32 @@ descriptors and five threads to four and two, finishing at 3,932 KiB RSS in
 1,067 ms. The rootless runner reproduced 109/109 as UID/GID 65534; image
 `sha256:24d9268478d7ae257942e9b52666076ea46388d78c1323ab4d73cfda318f2716`
 measured 40,398,450 bytes.
+
+## 2026-09-01 — keep repeated close failures ownership-stable
+
+One public lifecycle case now records a real denied CONNECT, waits for its
+connection accounting to settle, and then forces three consecutive
+`DeadlineExceeded` results inside a 300 millisecond identity-reuse quiet
+period. Each error must return the same lease sequence, preserve an exact
+nonzero usage snapshot, and keep replacement attachment at `IdentityInUse`.
+The final retry must certify the identical snapshot as `FinalUsage`.
+
+The first exact Linux factory attempt exposed a race in the test premise. A
+client that has read the denial through EOF can still observe the connection
+guard immediately before its final active-counter decrement; that run captured
+one active connection where the test expected zero. The proof now has an
+explicit bounded wait for accounting quiescence before taking its baseline.
+No proxy behavior was changed or weakened. The corrected focused case passed
+ten consecutive runs.
+
+No production source changed, so no data-path benchmark was run. Whole-tree
+SCC 4.0.0 complexity moved from 498/1,506 to 502/1,514
+structural/cognitive, entirely in the lifecycle proof.
+
+The native and corrected exact Rust 1.88 Linux factories passed all 110
+deterministic cases, doctests, documentation, and package verification; native
+dependency policy checks also passed. Linux's 500-lease lane returned from
+eight descriptors and five threads to four and two, finishing at 3,960 KiB RSS
+in 1,067 ms. The rootless runner reproduced 110/110 as UID/GID 65534; image
+`sha256:3828250dce921f4b076a5062deb9cfccdb4e9bed2c59e13a02bfae92ba3de590`
+measured 40,402,723 bytes.

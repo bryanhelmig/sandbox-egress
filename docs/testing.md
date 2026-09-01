@@ -131,6 +131,11 @@ joins the proxy runtime first, then requires lease Drop to remain non-panicking
 and release its final local state owner even though the command receiver is
 gone.
 
+A public lifecycle case records a real denied request, then forces three
+consecutive close deadlines. Every error must return the same lease ID, retain
+the source identity, and preserve the exact nonzero usage snapshot. A later
+successful retry must certify that unchanged snapshot as final.
+
 Four barrier-synchronized cases race explicit proxy shutdown and best-effort
 proxy drop against both certified lease close and lease drop while a dial is
 pending. Explicit shutdown must succeed in both cases; where lease close is
@@ -146,7 +151,7 @@ exactly one executable for each conformance target, strips copies, and carries
 only those binaries into a Debian runner. The CLI's compile-time executable
 dependency is copied at its exact embedded path. The factory deletes its
 compilation tree only after collection, before committing the source-dependent
-layer. The final image runs as UID/GID 65534 and must reproduce all 109
+layer. The final image runs as UID/GID 65534 and must reproduce all 110
 deterministic cases without Cargo, source, or a build cache.
 
 Source-identity cases prove an IPv4 address and its mapped IPv6 transport

@@ -332,6 +332,60 @@ fn arrivals_that_prevent_quiet_close_return_the_owning_lease() {
 }
 
 #[test]
+fn repeated_failed_close_retries_preserve_identity_and_counters() {
+    let config =
+        ProxyConfig::default().with_identity_reuse_quiet_period(Duration::from_millis(300));
+    let proxy = Proxy::start(config).expect("start proxy");
+    let mut lease = attach_local(&proxy, Policy::builder().build().expect("valid policy"));
+    let lease_id = lease.id();
+    let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+    client
+        .write_all(b"CONNECT denied.test:443 HTTP/1.1\r\nHost: denied.test\r\n\r\n")
+        .expect("write denied CONNECT");
+    let mut response = String::new();
+    client.read_to_string(&mut response).expect("read denial");
+    assert!(response.contains("port-denied"), "{response}");
+    let accounting_deadline = Instant::now() + Duration::from_secs(1);
+    while lease.usage().active_connections != 0 && Instant::now() < accounting_deadline {
+        thread::yield_now();
+    }
+    let expected = lease.usage();
+    assert_eq!(expected.accepted_connections, 1);
+    assert_eq!(expected.denied_connections, 1);
+    assert_eq!(expected.active_connections, 0);
+
+    for attempt in 1..=3 {
+        let error = lease
+            .close(Instant::now() + Duration::from_millis(10))
+            .expect_err("short close must retain the lease");
+        assert_eq!(error.kind(), CloseErrorKind::DeadlineExceeded);
+        lease = error.into_lease();
+        assert_eq!(lease.id(), lease_id, "attempt {attempt} changed ownership");
+        assert_eq!(
+            lease.usage(),
+            expected,
+            "attempt {attempt} changed counters"
+        );
+        assert!(matches!(
+            proxy.attach(
+                PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                Policy::builder().build().expect("replacement policy"),
+            ),
+            Err(AttachError::IdentityInUse)
+        ));
+    }
+
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("retry must eventually certify close")
+        .usage();
+    assert_eq!(final_usage, expected);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
 fn hostname_policy_denies_before_dns() {
     let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
     let lease = attach_local(
