@@ -133,5 +133,27 @@ change: -3.88% .. +6.06%, p=0.56; no change detected
 
 Both benchmarks use the default `TlsAuthority::Disabled` policy. The result is
 evidence that merely linking the parser does not change connection setup
-measurably; it does not measure the opt-in parse path. A concurrent inspected
-ClientHello benchmark remains a follow-up.
+measurably; it does not measure the opt-in parse path.
+
+## Opt-in visible-SNI setup baseline
+
+Recorded 2026-08-31 on the same Apple M1 with Rust 1.97.1:
+
+```text
+command: cargo bench --bench connections
+runs: 4 paired runs
+hostname CONNECT, inspection disabled: 132.66 .. 176.76 us intervals
+hostname CONNECT, visible SNI required: 142.55 .. 164.60 us intervals
+```
+
+Both cases resolve `localhost`, connect to the same controlled upstream shape,
+forward the same valid ClientHello, and wait for a one-byte upstream
+acknowledgement. The inspected case additionally parses the bounded
+ClientHello, extracts SNI, checks equality with CONNECT authority, and checks
+for ECH. The upstream asserts byte-for-byte receipt in every iteration.
+
+The intervals overlap substantially and individual point estimates varied
+more than the difference between modes. No precise parser surcharge is claimed
+from this end-to-end test; DNS, scheduling, and socket setup dominate its
+noise. The retained benchmark gives future changes a realistic regression
+signal without pretending the current machine can isolate parser nanoseconds.

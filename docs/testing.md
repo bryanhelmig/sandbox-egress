@@ -147,6 +147,12 @@ reports aggregate connections per second and p50/p95/p99 client-observed setup
 latency. Setup latency ends at the `200 Connection Established` response;
 aggregate time also includes deterministic tunnel teardown.
 
+The connection Criterion suite also pairs two hostname CONNECT paths around
+the same valid ClientHello and upstream acknowledgement. One disables TLS
+inspection and one requires visible SNI. The controlled upstream asserts that
+both receive the exact ClientHello bytes, so the comparison includes policy
+enforcement rather than timing only the early 200 response.
+
 Each client sends a marker after setup. The controlled upstream consumes it
 and resets that completed tunnel, preventing rapid repetitions from exhausting
 the host's ephemeral ports with `TIME_WAIT` sockets. Dials are distributed

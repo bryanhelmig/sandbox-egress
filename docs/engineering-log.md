@@ -1242,3 +1242,36 @@ passed the same 72 cases. Its 500-lease Linux smoke held eight descriptors and
 five threads while live, returned to four descriptors and two threads, and
 finished at 4,012 KiB RSS. This factory-only change leaves whole-tree
 structural/cognitive complexity at 374/1,098.
+
+## 2026-08-31 — measure the opt-in visible-SNI path
+
+### Question
+
+The existing connection benchmark proved that linking the optional TLS parser
+did not slow the default path, but it never exercised the parser. Can an
+end-to-end comparison isolate the cost of actually enforcing visible SNI
+without confusing DNS, dialing, or incomplete tunnel setup for parser work?
+
+### Result
+
+A paired Criterion fixture now sends the same valid `localhost` ClientHello
+through hostname CONNECT with inspection disabled and with visible-SNI
+enforcement enabled. Both wait for an upstream acknowledgement, and the
+upstream asserts exact byte-for-byte receipt. An initially underspecified
+ClientHello was rejected by rustls; adding its supported-version and
+signature-algorithm extensions made the fixture valid and kept that fail-closed
+observation out of the retained measurement.
+
+Across four native M1 runs, the uninspected case produced 132.66–176.76
+microsecond confidence intervals and the inspected case produced
+142.55–164.60 microsecond intervals. Their broad overlap means socket, DNS, and
+scheduler noise dominate this macrobenchmark; no precise inspection surcharge
+or optimization claim is justified. The benchmark is retained as a realistic
+regression signal, while an optimization is not. The native factory passed all
+72 deterministic cases, including debug execution of both new benchmark paths,
+and verified the assembled 54-file crate. The benchmark fixture moves
+whole-tree structural/cognitive complexity from 374/1,098 to 381/1,116 without
+changing library code. The exact Rust 1.88 factory and serialized lane passed
+the same cases; its 500-lease Linux smoke returned to four descriptors and two
+threads at 4,056 KiB RSS. Cargo verified 54 packaged files in the native Git
+checkout and 53 in the clean container, where the VCS metadata file is absent.

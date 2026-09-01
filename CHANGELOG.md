@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Add paired end-to-end benchmarks for hostname CONNECT with and without
+  visible-SNI enforcement.
 - Make the local factory compile the assembled crate package and declare its
   future docs.rs location in package metadata.
 - Deduplicate approved DNS results in first-seen order so repeated records
