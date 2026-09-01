@@ -2961,3 +2961,29 @@ Because the resource executable is not shipped in the stripped runner, the
 image remains
 `sha256:911cf1e1b00046aeed79dad19d252c52863ada036992da6a0b201b8494ab6e97`
 (40,555,530 bytes).
+
+## 2026-09-01 — extend socket soak through reset and transfer denial
+
+The active-socket lane now exercises four terminal classifications per
+iteration under one immutable one-byte upload policy. A one-byte echo closes
+gracefully; a two-byte upload forwards exactly one byte and hits the transfer
+ceiling; a local upstream uses a channel barrier to wait until the guest has
+received CONNECT success before resetting; and a hostname denial stops before
+DNS. The barriers avoid timing sleeps and ensure the reset cannot be confused
+with pre-establishment refusal.
+
+At 500 iterations the lane owns 2,000 guest connections and requires exact
+final counters: 2,000 accepted, 500 completed, 1,000 denied, 1,500 uploaded
+bytes, 500 downloaded bytes, and zero active. The 500 resets must be neither
+completed nor denied. On macOS this took 425 ms, held batches at 13–14
+descriptors and 5–6 threads, and returned to 9 descriptors and 2 threads. The
+exact Rust 1.88 Linux lane took 433 ms, held 8–9 descriptors and 5–6 threads,
+and returned to 4 and 2 at 5,136 KiB RSS.
+
+Whole-tree SCC 4.0.0 complexity moved from 580/1,758 to 582/1,764
+structural/cognitive, entirely in the opt-in resource target. Production code,
+deterministic case count, and stripped image are unchanged. The native and
+exact Linux factories, package verification, and rootless 138/138 conformance
+run passed; the image remains
+`sha256:911cf1e1b00046aeed79dad19d252c52863ada036992da6a0b201b8494ab6e97`
+(40,555,530 bytes).

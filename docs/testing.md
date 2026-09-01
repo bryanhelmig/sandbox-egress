@@ -236,12 +236,14 @@ The opt-in resource target first runs identity churn with the proxy still alive
 and samples each batch. A second lane synchronizes 64 host threads, holds all
 of their distinct attached leases, then releases their close calls together in
 four repeated batches. A third lane keeps one real lease and upstream alive,
-then alternates completed echo tunnels with pre-DNS hostname denials. It waits
+then alternates completed echo tunnels, upload-ceiling denials, channel-timed
+upstream resets after CONNECT success, and pre-DNS hostname denials. It waits
 for active ownership to return to zero and samples descriptor and thread
-recovery after every batch and final shutdown; final counters must exactly
-match both terminal paths. On Linux the collectors read `/proc`; on macOS they
-use `ps` and `lsof`; other targets compile and report unsupported counters as
-absent. Run
+recovery after every batch and final shutdown. Final accepted, completed,
+denied, upload, and download counters must exactly distinguish all four paths;
+the reset is neither a completion nor a policy denial. On Linux the collectors
+read `/proc`; on macOS they use `ps` and `lsof`; other targets compile and
+report unsupported counters as absent. Run
 `./scripts/measure-resources.sh [runs-per-batch] [batches]`; the concurrent lane
 can be adjusted with `SANDBOX_EGRESS_CONTROL_CONCURRENCY` and
 `SANDBOX_EGRESS_CONTROL_BATCHES`.

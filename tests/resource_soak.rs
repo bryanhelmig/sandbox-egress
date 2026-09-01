@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use ipnet::IpNet;
 use sandbox_egress::{PeerIdentity, Policy, Proxy, ProxyConfig};
+use socket2::SockRef;
 
 #[derive(Clone, Copy, Debug)]
 struct Resources {
@@ -209,16 +210,8 @@ fn terminal_connection_churn_releases_process_resources() {
     assert!(completed_tunnels < 0x00ff_ffff);
 
     let process_start = Resources::sample();
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind soak upstream");
-    let port = listener.local_addr().expect("soak upstream address").port();
-    let upstream = thread::spawn(move || {
-        for _ in 0..completed_tunnels {
-            let (mut stream, _) = listener.accept().expect("accept soak tunnel");
-            let mut marker = [0_u8; 1];
-            stream.read_exact(&mut marker).expect("read soak marker");
-            stream.write_all(&marker).expect("echo soak marker");
-        }
-    });
+    let (port, reset_ready_rx, reset_release_tx, upstream) =
+        start_terminal_upstream(completed_tunnels);
     let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
     let lease = proxy
         .attach(
@@ -226,6 +219,7 @@ fn terminal_connection_churn_releases_process_resources() {
             Policy::builder()
                 .allow_network("127.0.0.0/8".parse::<IpNet>().expect("loopback CIDR"))
                 .allow_port(port)
+                .max_upload_bytes(1)
                 .build()
                 .expect("valid soak policy"),
         )
@@ -250,13 +244,22 @@ fn terminal_connection_churn_releases_process_resources() {
     for batch in 0..batches {
         for _ in 0..runs_per_batch {
             complete_soak_tunnel(lease.endpoint().socket_addr(), allowed_request.as_bytes());
+            limit_soak_tunnel(lease.endpoint().socket_addr(), allowed_request.as_bytes());
+            reset_soak_tunnel(
+                lease.endpoint().socket_addr(),
+                allowed_request.as_bytes(),
+                &reset_ready_rx,
+                &reset_release_tx,
+            );
             deny_soak_tunnel(lease.endpoint().socket_addr(), denied_request.as_bytes());
         }
         wait_for_no_active_connections(&lease);
         let current = Resources::sample();
         eprintln!(
-            "connection_soak event=batch batch={} completed={} denied={} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
+            "connection_soak event=batch batch={} completed={} transfer_limited={} reset={} host_denied={} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
             batch + 1,
+            (batch + 1).saturating_mul(runs_per_batch),
+            (batch + 1).saturating_mul(runs_per_batch),
             (batch + 1).saturating_mul(runs_per_batch),
             (batch + 1).saturating_mul(runs_per_batch),
             started.elapsed().as_millis(),
@@ -272,7 +275,19 @@ fn terminal_connection_churn_releases_process_resources() {
         .expect("close connection-soak lease")
         .usage();
     assert_eq!(final_usage.completed_connections, completed_tunnels as u64);
-    assert_eq!(final_usage.denied_connections, completed_tunnels as u64);
+    assert_eq!(
+        final_usage.denied_connections,
+        completed_tunnels.saturating_mul(2) as u64
+    );
+    assert_eq!(
+        final_usage.accepted_connections,
+        completed_tunnels.saturating_mul(4) as u64
+    );
+    assert_eq!(
+        final_usage.uploaded_bytes,
+        completed_tunnels.saturating_mul(3) as u64
+    );
+    assert_eq!(final_usage.downloaded_bytes, completed_tunnels as u64);
     assert_eq!(final_usage.active_connections, 0);
     proxy
         .shutdown(Instant::now() + Duration::from_secs(2))
@@ -281,7 +296,7 @@ fn terminal_connection_churn_releases_process_resources() {
     thread::sleep(Duration::from_millis(25));
     let finished = Resources::sample();
     eprintln!(
-        "connection_soak event=finish completed={completed_tunnels} denied={completed_tunnels} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
+        "connection_soak event=finish completed={completed_tunnels} transfer_limited={completed_tunnels} reset={completed_tunnels} host_denied={completed_tunnels} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
         started.elapsed().as_millis(),
         finished.rss_kib,
         finished.descriptors,
@@ -290,14 +305,48 @@ fn terminal_connection_churn_releases_process_resources() {
     assert_stable_non_memory_resources(process_start, finished);
 }
 
+fn start_terminal_upstream(
+    tunnels: usize,
+) -> (
+    u16,
+    std::sync::mpsc::Receiver<()>,
+    std::sync::mpsc::SyncSender<()>,
+    thread::JoinHandle<()>,
+) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind soak upstream");
+    let port = listener.local_addr().expect("soak upstream address").port();
+    let (reset_ready_tx, reset_ready_rx) = std::sync::mpsc::sync_channel(1);
+    let (reset_release_tx, reset_release_rx) = std::sync::mpsc::sync_channel(1);
+    let upstream = thread::spawn(move || {
+        for _ in 0..tunnels {
+            let (mut stream, _) = listener.accept().expect("accept soak tunnel");
+            let mut marker = [0_u8; 1];
+            stream.read_exact(&mut marker).expect("read soak marker");
+            stream.write_all(&marker).expect("echo soak marker");
+            drop(stream);
+
+            let (mut stream, _) = listener.accept().expect("accept limited tunnel");
+            let mut limited = Vec::new();
+            stream
+                .read_to_end(&mut limited)
+                .expect("read limited upload");
+            assert_eq!(limited, b"x");
+            drop(stream);
+
+            let (stream, _) = listener.accept().expect("accept reset tunnel");
+            reset_ready_tx.send(()).expect("report reset accept");
+            reset_release_rx.recv().expect("release upstream reset");
+            SockRef::from(&stream)
+                .set_linger(Some(Duration::ZERO))
+                .expect("arm upstream reset");
+            drop(stream);
+        }
+    });
+    (port, reset_ready_rx, reset_release_tx, upstream)
+}
+
 fn complete_soak_tunnel(endpoint: std::net::SocketAddr, request: &[u8]) {
-    let mut client = TcpStream::connect(endpoint).expect("connect soak proxy");
-    client.write_all(request).expect("write soak CONNECT");
-    let mut response = [0_u8; 39];
-    client
-        .read_exact(&mut response)
-        .expect("read soak CONNECT response");
-    assert_eq!(&response, b"HTTP/1.1 200 Connection Established\r\n\r\n");
+    let mut client = open_soak_tunnel(endpoint, request);
     client.write_all(b"x").expect("write soak marker");
     client
         .shutdown(Shutdown::Write)
@@ -305,6 +354,54 @@ fn complete_soak_tunnel(endpoint: std::net::SocketAddr, request: &[u8]) {
     let mut echoed = Vec::new();
     client.read_to_end(&mut echoed).expect("read soak echo");
     assert_eq!(echoed, b"x");
+}
+
+fn limit_soak_tunnel(endpoint: std::net::SocketAddr, request: &[u8]) {
+    let mut client = open_soak_tunnel(endpoint, request);
+    client.write_all(b"xy").expect("write limited marker");
+    client
+        .shutdown(Shutdown::Write)
+        .expect("finish limited upload");
+    client
+        .read_to_end(&mut Vec::new())
+        .expect("read limited tunnel closure");
+}
+
+fn reset_soak_tunnel(
+    endpoint: std::net::SocketAddr,
+    request: &[u8],
+    ready: &std::sync::mpsc::Receiver<()>,
+    release: &std::sync::mpsc::SyncSender<()>,
+) {
+    let mut client = open_soak_tunnel(endpoint, request);
+    ready.recv().expect("observe reset accept");
+    release.send(()).expect("release upstream reset");
+    client
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .expect("set reset read timeout");
+    match client.read(&mut [0_u8; 1]) {
+        Ok(0) => {}
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::ConnectionReset
+                    | std::io::ErrorKind::ConnectionAborted
+                    | std::io::ErrorKind::BrokenPipe
+                    | std::io::ErrorKind::NotConnected
+            ) => {}
+        result => panic!("expected terminal reset socket, got {result:?}"),
+    }
+}
+
+fn open_soak_tunnel(endpoint: std::net::SocketAddr, request: &[u8]) -> TcpStream {
+    let mut client = TcpStream::connect(endpoint).expect("connect soak proxy");
+    client.write_all(request).expect("write soak CONNECT");
+    let mut response = [0_u8; 39];
+    client
+        .read_exact(&mut response)
+        .expect("read soak CONNECT response");
+    assert_eq!(&response, b"HTTP/1.1 200 Connection Established\r\n\r\n");
+    client
 }
 
 fn deny_soak_tunnel(endpoint: std::net::SocketAddr, request: &[u8]) {
