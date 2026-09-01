@@ -4462,3 +4462,17 @@ eight descriptors, and five threads, and finished at 5,932 KiB, four
 descriptors, and two threads. The rootless 178/178 image is
 `sha256:1853aa84db5fa45ed8af6b5e4d5e36310f0b41ac534f6934e3fa6ab96105c87d`
 (40,892,714 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — reject borrowed connection-task ownership
+
+The next performance rotation tested whether an admitted task should borrow
+its lease state and cancellation token directly from `Admission` instead of
+retaining one owner of each. The candidate removed two hot-path shared-owner
+operations and two production lines, and all 120 library cases passed.
+
+Three baseline allowed-CONNECT intervals were 115.24–128.09,
+116.03–130.69, and 119.21–125.42 microseconds. Three candidate intervals were
+113.96–127.72, 116.58–133.18, and 118.07–135.12 microseconds. Every pair
+overlapped and Criterion detected no change. The candidate was discarded; the
+task's explicit independent ownership remains, and no performance, complexity,
+or behavior claim changes.
