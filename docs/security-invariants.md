@@ -28,6 +28,9 @@ The runtime reserves global and per-lease permits and obtains a task-tracker
 token under the lease lifecycle lock. Close takes the same lock, changes the
 state to revoking, and closes the tracker. Thus either admission belongs to the
 old lease and close waits for it, or admission sees revoking and is refused.
+Global and per-lease capacity refusals happen before task creation, do not
+increase accepted or active counts, and each increment the owning lease's
+denial counter.
 
 ## DNS and dialing
 

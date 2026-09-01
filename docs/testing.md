@@ -7,7 +7,8 @@ The suite is organized by claimed invariant rather than by source module.
 - Integration tests: real listener, real CONNECT client, pinned local upstream,
   allow/deny behavior, limits, accounting, and shutdown.
 - Concurrency tests: attach collisions, admission-versus-close races, many
-  simultaneous tunnels, and identity reuse after certified close.
+  simultaneous tunnels, global and per-lease saturation, and identity reuse
+  after certified close.
 - Hostile conformance tests: deterministic phase barriers for headers, DNS,
   dial, ClientHello, and tunnel. Each phase must prove close returns only after
   its work is gone.
@@ -25,6 +26,11 @@ header-too-large`), early EOF (`400 header-eof`), and the absolute slow-header
 deadline (`408 header-timeout`). Each case must close with one denial and no
 active connection; lease close during a still-pending header is tested
 separately.
+
+Paired capacity cases hold one admitted slow header open, then prove the next
+socket is terminal under either the global or per-lease ceiling. The rejected
+connection must add one denial without adding an accepted, active, or spawned
+connection task.
 
 Performance gates begin as recorded baselines, not brittle absolute numbers.
 Benchmarks cover attach/close, policy matching, admission contention, and

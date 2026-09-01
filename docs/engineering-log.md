@@ -772,3 +772,26 @@ microseconds with a -6.89% to +1.26% interval and `p=0.43`.
 The exact Rust 1.88 Linux image passed the same factory and hostile lane. Its
 500-lease smoke held eight descriptors and five threads while live, returned
 to four descriptors and two threads, and finished at 4,012 KiB RSS.
+
+## 2026-08-31 — symmetric admission-capacity accounting
+
+### Finding
+
+Both global and per-lease connection permits were reserved before task spawn,
+but their rejection accounting differed. Global saturation incremented the
+owning lease's denial counter; failure to acquire the per-lease permit returned
+early and disappeared from usage.
+
+### Result
+
+A paired real-socket test held one slow header open, forced the next connection
+through each ceiling, required a terminal rejected socket rather than accepting
+a read timeout, and finalized the lease. Before the fix, global saturation
+reported one denial and per-lease saturation reported zero. The retained
+four-line `let ... else` path now records the missing refusal.
+
+Both capacity cases passed 25 consecutive runs. The complete factory passed 31
+unit and 22 integration tests plus the hostile lane. Production `proxy.rs`
+complexity remained exactly 114 structural and 357 cognitive points; the
+whole-tree increase from 334/983 to 339/995 belongs to the new concurrency test
+helper and cases.

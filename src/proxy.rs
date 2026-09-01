@@ -356,7 +356,10 @@ impl LeaseState {
     }
 
     fn admit(self: &Arc<Self>) -> Option<Admission> {
-        let permit = self.permits.clone().try_acquire_owned().ok()?;
+        let Ok(permit) = self.permits.clone().try_acquire_owned() else {
+            self.counters.deny();
+            return None;
+        };
         let phase = self.phase.lock().expect("lease phase poisoned");
         if *phase != Phase::Open {
             self.counters.deny();
