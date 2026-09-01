@@ -7,7 +7,7 @@ links remain upstream-owned and are not vendored.
 | --- | --- | --- | --- |
 | [Stripe Smokescreen](https://github.com/stripe/smokescreen) | `d4da883a` | ACL and IP filtering, operational limits, diagnostics | Go daemon; no run lease |
 | [lens-sandbox-core](https://github.com/lensapp/lens-sandbox-core) | `2bc4ecc5` | broad Rust DNS/proxy/TLS/policy implementation and Linux cage boundary | shared mutable policy and detached connection lifecycle |
-| [nono](https://github.com/nolabs-ai/nono) | `8f15fc86` | supervisor-side proxy, credential boundary, audit | guest session token and accept-loop shutdown, not certified close |
+| [nono](https://github.com/nolabs-ai/nono) | `7989b578` | supervisor-side proxy, credential boundary, audit | guest session token and accept-loop shutdown, not certified close |
 | [motosan-sandbox](https://github.com/motosan-dev/motosan-sandbox) | `13eab245` | small per-run CONNECT proxy and hard routing | one proxy per run; spawned tunnels are not a shared lease |
 | [ressrf](https://github.com/timescale/ressrf) | `52fc89cf` | generated forbidden ranges, DNS-pinned transports, adversarial parser cases | policy/transport components rather than lease ownership |
 | [canister](https://github.com/dergraf/canister) | `27434158` | hostile L7 contracts, body limits, DLP | sandbox product, not reusable lifecycle primitive |
@@ -43,6 +43,20 @@ strengthen that invariant. Like the reviewed implementations, global
 saturation is fail-fast rather than a fairness queue. A two-lease proof pins
 correct refusal attribution and admission on retry after certified release;
 reserved shares remain a separate, optional scheduling design.
+
+## Hostname-denial comparison
+
+Smokescreen and nono both pin case-insensitive and trailing-root-dot hostname
+denials. Nono also tests that a wildcard denial covers subdomains but not its
+apex, plus a richer host-and-port deny syntax. Sandbox Egress adopts the first
+two normalization proofs and wildcard boundary because they fit its canonical
+hostname contract. It does not currently adopt compound host-and-port rules:
+ports remain a separate explicit allow dimension, and one implementation alone
+does not justify complicating that model.
+
+The nono pin advanced from `8f15fc86` to `7989b578` during this review. The
+intervening change only expanded environment variables in credential
+local-socket paths; it did not alter the proxy or the comparison above.
 
 ## Host-cage capability boundary
 

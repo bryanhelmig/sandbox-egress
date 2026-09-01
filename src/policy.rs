@@ -475,12 +475,16 @@ mod tests {
             .expect("valid exact grant")
             .deny_host("admin.example.com")
             .expect("valid exact denial")
+            .deny_host("*.internal.example.com")
+            .expect("valid wildcard denial")
             .build()
             .expect("valid policy");
 
         assert!(policy.allows_hostname("api.example.com"));
         assert!(policy.allows_hostname("deep.api.example.com"));
+        assert!(policy.allows_hostname("internal.example.com"));
         assert!(!policy.allows_hostname("admin.example.com"));
+        assert!(!policy.allows_hostname("deep.internal.example.com"));
         assert!(!policy.allows_hostname("example.com"));
     }
 

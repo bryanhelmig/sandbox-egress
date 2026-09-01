@@ -3723,3 +3723,37 @@ then returned after shutdown to 5,948 KiB, four descriptors, and two threads.
 The rootless 160/160 image is
 `sha256:7cb8903747c512e24b99f20037960ecf0b859884c3fbb69f15fbaf93eee71222`
 (40,740,438 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — compare and harden hostname normalization
+
+The pinned Smokescreen, lens-sandbox-core, and nono references were refreshed.
+Smokescreen remained at `d4da883a`, Lens remained at `2bc4ecc5`, and nono
+advanced from `8f15fc86` to `7989b578`. Nono's intervening change concerns
+environment expansion for credential local-socket paths and does not alter its
+proxy. The reproducible pin and comparison notes were updated.
+
+Both Smokescreen and nono explicitly prove that case changes and a trailing
+DNS root dot cannot bypass hostname denials. Nono additionally proves wildcard
+denial boundaries and supports compound host-and-port denies. Sandbox Egress
+retains its simpler orthogonal hostname/port model: one implementation's
+compound rule is not enough evidence to enlarge the core API. The shared
+normalization and wildcard lessons did identify a conformance gap in the new
+hostname-denial proof.
+
+The policy case now requires a wildcard denial to reject a deep subdomain but
+not its apex. The real-listener case sends both
+`AdMiN.ExAmPlE.TeSt.:443` and a deep name under a wildcard denial. Both receive
+`host-denied` before the capturing resolver or connector is called. Certified
+close returns exactly two accepted, two denied, and zero active connections.
+The two focused cases passed 25 consecutive repetitions.
+
+Production source and dependencies are unchanged, so no performance benchmark
+was run. Whole-tree SCC 4.0.0 complexity moves from 678/2,035 to 679/2,038
+structural/cognitive, entirely in the expanded proof. The native and exact
+Rust 1.88 Linux factories passed the unchanged 160 deterministic cases, five
+doctests, documentation, package verification, and all six Linux resource
+lanes; native dependency policy checks also passed. Linux's TLS lane peaked at
+14,972 KiB RSS, 265 descriptors, and six threads, then returned after shutdown
+to 6,172 KiB, four descriptors, and two threads. The rootless 160/160 image is
+`sha256:2b68af6bc83f31743126eaeb72220a3214bec49684e00b749086e767a54cac92`
+(40,740,569 bytes) and runs as UID/GID 65534.

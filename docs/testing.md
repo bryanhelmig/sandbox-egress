@@ -53,8 +53,10 @@ case against CONNECT and requires the stable `port-denied` response.
 Hostname precedence is pinned with an allowed wildcard, an overlapping exact
 grant, and an exact denial. The denial must win while unrelated shallow and
 deep subdomains remain allowed. Through the real listener, the denied hostname
-returns `host-denied`, produces no resolver or connector call, and closes with
-one accepted, one denied, and zero active connections.
+returns `host-denied` despite mixed case and a trailing DNS root dot. A deep
+name under a wildcard denial is rejected while the wildcard apex stays outside
+that denial. Neither listener denial produces a resolver or connector call;
+certified close returns two accepted, two denied, and zero active connections.
 
 Destination precedence is pinned both as a pure immutable-policy case and
 through the listener. A denied public `/24` overlaps an explicit `0.0.0.0/0`

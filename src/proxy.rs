@@ -2630,6 +2630,8 @@ mod tests {
             .expect("valid wildcard grant")
             .deny_host("admin.example.test")
             .expect("valid hostname denial")
+            .deny_host("*.internal.example.test")
+            .expect("valid wildcard denial")
             .allow_port(443)
             .build()
             .expect("valid policy");
@@ -2639,18 +2641,21 @@ mod tests {
                 policy,
             )
             .expect("attach lease");
-        let mut client =
-            std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
-        std::io::Write::write_all(
-            &mut client,
-            b"CONNECT admin.example.test:443 HTTP/1.1\r\nHost: admin.example.test\r\n\r\n",
-        )
-        .expect("write CONNECT");
-        let mut response = String::new();
-        std::io::Read::read_to_string(&mut client, &mut response).expect("read hostname denial");
+        for authority in [
+            "AdMiN.ExAmPlE.TeSt.:443",
+            "deep.secret.internal.example.test:443",
+        ] {
+            let mut client = std::net::TcpStream::connect(lease.endpoint().socket_addr())
+                .expect("connect proxy");
+            let request = format!("CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n\r\n");
+            std::io::Write::write_all(&mut client, request.as_bytes()).expect("write CONNECT");
+            let mut response = String::new();
+            std::io::Read::read_to_string(&mut client, &mut response)
+                .expect("read hostname denial");
 
-        assert!(response.starts_with("HTTP/1.1 403"), "{response}");
-        assert!(response.contains("host-denied"), "{response}");
+            assert!(response.starts_with("HTTP/1.1 403"), "{response}");
+            assert!(response.contains("host-denied"), "{response}");
+        }
         assert!(matches!(
             resolved_rx.try_recv(),
             Err(mpsc::TryRecvError::Empty)
@@ -2660,8 +2665,8 @@ mod tests {
             .close(Instant::now() + Duration::from_secs(1))
             .expect("close lease")
             .usage();
-        assert_eq!(usage.accepted_connections, 1);
-        assert_eq!(usage.denied_connections, 1);
+        assert_eq!(usage.accepted_connections, 2);
+        assert_eq!(usage.denied_connections, 2);
         assert_eq!(usage.active_connections, 0);
         proxy
             .shutdown(Instant::now() + Duration::from_secs(1))
