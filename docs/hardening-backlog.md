@@ -16,7 +16,9 @@ contributor instead of preserving solved work as apparent backlog.
 
 ## Request parsing and authority
 
-- Slowloris headers at every byte boundary and just below deadlines.
+- Slow-header schedules at every parser byte boundary and just below the
+  deadline; continuous activity is already pinned to the original absolute
+  deadline rather than extending it as an idle timeout.
 - Parser differentials beyond the committed authority, header-smuggling, and
   post-header byte matrices.
 

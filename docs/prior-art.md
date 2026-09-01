@@ -7,7 +7,7 @@ links remain upstream-owned and are not vendored.
 | --- | --- | --- | --- |
 | [Stripe Smokescreen](https://github.com/stripe/smokescreen) | `d4da883a` | ACL and IP filtering, operational limits, diagnostics | Go daemon; no run lease |
 | [lens-sandbox-core](https://github.com/lensapp/lens-sandbox-core) | `2bc4ecc5` | broad Rust DNS/proxy/TLS/policy implementation and Linux cage boundary | shared mutable policy and detached connection lifecycle |
-| [nono](https://github.com/nolabs-ai/nono) | `7989b578` | supervisor-side proxy, credential boundary, audit | guest session token and accept-loop shutdown, not certified close |
+| [nono](https://github.com/nolabs-ai/nono) | `46867b2f` | supervisor-side proxy, credential boundary, audit | guest session token and accept-loop shutdown, not certified close |
 | [motosan-sandbox](https://github.com/motosan-dev/motosan-sandbox) | `13eab245` | small per-run CONNECT proxy and hard routing | one proxy per run; spawned tunnels are not a shared lease |
 | [ressrf](https://github.com/timescale/ressrf) | `52fc89cf` | generated forbidden ranges, DNS-pinned transports, adversarial parser cases | policy/transport components rather than lease ownership |
 | [canister](https://github.com/dergraf/canister) | `27434158` | hostile L7 contracts, body limits, DLP | sandbox product, not reusable lifecycle primitive |
@@ -108,6 +108,17 @@ trusted deployments that deliberately need it. AWS and GCP metadata addresses
 reviewed in the same comparison are already inside the default link-local or
 non-global IPv6 floor; importing provider domain lists or broad internal DNS
 suffixes would duplicate the resolve-and-check guarantee and was not retained.
+
+A follow-up against current nono `46867b2f` and ressrf `52fc89cf` found no
+additional default address class to import. Nono's proxy inventory names AWS
+IPv4 and IPv6 metadata plus Google and Azure metadata hostnames. Ressrf's cloud
+tier additionally names the ECS task endpoint `169.254.170.2` and Azure
+WireServer. The whole IPv4 link-local range already covers both AWS IPv4
+addresses, the non-global IPv6 floor covers `fd00:ec2::254`, and the explicit
+WireServer rule covers the only globally classified address in that set.
+Sandbox Egress does not add hostname-deny literals: a hostname must first be
+allowed by the immutable run policy, and every answer is then checked against
+the address floor before the approved numeric address is dialed.
 
 ## Self-connection comparison
 

@@ -69,13 +69,17 @@ spellings while an overlapping IPv6 catch-all grant is present.
 
 Header conformance distinguishes a byte-ceiling violation (`431
 header-too-large`), early EOF (`400 header-eof`), and the absolute slow-header
-deadline (`408 header-timeout`). Each case must close with one denial and no
-active connection; lease close during a still-pending header is tested
+deadline (`408 header-timeout`). A bounded async-stream test writes another
+byte every millisecond and proves that activity cannot turn the absolute
+deadline into an idle timeout; a separate real-listener test checks the exact
+408 wire response and final accounting. Each case must close with one denial
+and no active connection; lease close during a still-pending header is tested
 separately. A parser boundary case accepts 64 fields and rejects field 65 with
-the stable `too-many-headers` response and diagnostic code, without copying
-attacker-controlled names or values into the event. The byte ceiling accepts a
-complete terminator whose last byte lands exactly at the configured limit and
-rejects the same terminator shifted one byte beyond it.
+the stable `too-many-headers`
+response and diagnostic code, without copying attacker-controlled names or
+values into the event. The byte ceiling accepts a complete terminator whose
+last byte lands exactly at the configured limit and rejects the same terminator
+shifted one byte beyond it.
 
 A fixed parser matrix rejects obsolete field folding, NUL and other control
 bytes, whitespace before a field name or colon, and non-ASCII CONNECT or Host

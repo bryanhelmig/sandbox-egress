@@ -4602,3 +4602,42 @@ five threads, and finished at 8,668 KiB, four descriptors, and two threads.
 The rootless 179/179 image is
 `sha256:03e37c866319b40374ceb5520399ea45c656e3ac22778db23c583bed203c5b82`
 (40,878,564 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — compare provider floors and pin absolute header time
+
+The next comparison rotation checked current nono `46867b2f` and ressrf
+`52fc89cf` provider inventories. AWS IMDS, ECS task metadata, and the AWS IPv6
+metadata endpoint are already covered by Sandbox Egress's link-local and
+non-global floors. Azure WireServer is already the explicit globally
+classified exception. Provider hostname literals add no stronger guarantee at
+this boundary because hostname access is allowlisted and every resolution is
+still checked before the approved numeric address is dialed. No blocklist
+change was retained.
+
+The hardening follow-up proves that continuous header activity cannot renew a
+run's absolute handshake deadline. A bounded duplex stream delivers one byte
+per millisecond for a 50 millisecond deadline and must still produce the stable
+`408 header-timeout` denial. The case passed 50 consecutive focused runs; the
+separate real-listener case passed 25 consecutive runs and retains exact wire
+response and final-accounting coverage.
+
+An initial combined real-socket test was deliberately discarded after one of
+17 runs observed `ConnectionReset`: continuing to write after the proxy sends
+its denial can make the kernel discard unread response bytes when closing with
+pending input. That makes it unsuitable evidence for deadline semantics, not a
+proxy deadline failure. Separating deterministic deadline behavior from the
+real wire response removes that transport race without weakening either claim.
+
+Generalizing the internal header reader from `TcpStream` to bounded
+`AsyncRead` adds no public API or runtime path. The deterministic count moves
+from 179 to 180. Whole-tree SCC 4.0.0 complexity moves from 754/2,238 to
+757/2,253 structural/cognitive, all in the isolated test and generic bound.
+
+The native and exact Rust 1.88 Linux factories passed all 180 deterministic
+cases, six doctests, documentation, package verification, benchmark smoke, and
+all six Linux resource lanes. Linux's TLS lane peaked at 14,736 KiB RSS, 265
+descriptors, and six threads, recovered to 10,668 KiB, eight descriptors, and
+five threads, and finished at 5,884 KiB, four descriptors, and two threads.
+The rootless 180/180 image is
+`sha256:f269178ebab0210338e0ad3241ed269f6c9c23214907dddf5250f83f44fba0c4`
+(40,903,102 bytes) and runs as UID/GID 65534.

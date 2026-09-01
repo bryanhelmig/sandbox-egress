@@ -1412,11 +1412,14 @@ impl Denial {
     }
 }
 
-async fn read_connect_header(
-    client: &mut TcpStream,
+async fn read_connect_header<R>(
+    client: &mut R,
     max_bytes: usize,
     deadline: TokioInstant,
-) -> Result<HeaderBlock, Denial> {
+) -> Result<HeaderBlock, Denial>
+where
+    R: AsyncRead + Unpin,
+{
     match complete_before_deadline(deadline, read_header(client, max_bytes)).await {
         Some(Ok(header)) => Ok(header),
         Some(Err(error)) if error.kind() == io::ErrorKind::InvalidData => {
@@ -3850,6 +3853,44 @@ mod tests {
 
         backoff.recover();
         assert_eq!(backoff.next_delay(), ACCEPT_RETRY_INITIAL);
+    }
+
+    #[test]
+    fn absolute_header_deadline_ignores_continuous_activity() {
+        let runtime = RuntimeBuilder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("test runtime");
+        runtime.block_on(async {
+            let (mut writer, mut reader) = tokio::io::duplex(64);
+            let sent = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let observed = Arc::clone(&sent);
+            let writer = tokio::spawn(async move {
+                loop {
+                    if writer.write_all(b"x").await.is_err() {
+                        break;
+                    }
+                    observed.fetch_add(1, Ordering::Relaxed);
+                    sleep(Duration::from_millis(1)).await;
+                }
+            });
+
+            let Err(denial) = read_connect_header(
+                &mut reader,
+                4096,
+                TokioInstant::now() + Duration::from_millis(50),
+            )
+            .await
+            else {
+                panic!("continuous reads must not renew the absolute deadline");
+            };
+
+            assert_eq!(denial.status, 408);
+            assert_eq!(denial.reason, "header-timeout");
+            assert!(sent.load(Ordering::Relaxed) > 1);
+            drop(reader);
+            writer.await.expect("join trickle writer");
+        });
     }
 
     #[test]
