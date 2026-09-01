@@ -34,6 +34,13 @@ socket is terminal under either the global or per-lease ceiling. The rejected
 connection must add one denial without adding an accepted, active, or spawned
 connection task.
 
+The close-success phase barrier receives the final snapshot while identity
+ownership is deliberately still retained, injects another unadmitted socket,
+and requires that socket to close without changing any final counter. It also
+proves cleanup readiness alone is not registry-release readiness. The case
+runs repeatedly because the pre-fix failure was an ordering race, not a parser
+value bug.
+
 Post-establishment upload and download ceiling cases send bytes across a
 zero-byte budget, prove the peer receives none, preserve attempted-byte
 accounting, and require exactly one policy denial. This is separate from socket

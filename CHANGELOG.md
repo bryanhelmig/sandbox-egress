@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Commit final counters under the lease lifecycle lock before close success,
+  preventing late unadmitted sockets from mutating `FinalUsage`.
 - Require native IPv6 destinations to be inside IANA's `2000::/3` global
   unicast block before applying the smaller special-purpose deny table.
 - Reject the full IANA `2001::/23` protocol-assignments umbrella by default,

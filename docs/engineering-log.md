@@ -1063,6 +1063,46 @@ The native factory, dependency audit, and exact Rust 1.88 Linux factory passed
 five threads while live, returned to four descriptors and two threads, and
 finished at 3,996 KiB RSS.
 
+## 2026-08-31 — make `FinalUsage` actually final
+
+### Finding
+
+The close waiter previously slept through the queued-socket drain interval and
+then read `final_snapshot`, but the identity remained in the listener registry
+until the synchronous caller received that reply and sent `Release`. A socket
+accepted in that delivery gap could observe `Revoking` and increment the denial
+counter after the supposedly final snapshot. The deterministic regression
+received cleanup readiness, attempted another admission, and reproduced the
+mutation from zero denials to one.
+
+Simply marking the lease `Closed` before replying would have been wrong:
+`Attach` treats `Closed` as replaceable, so a lost success reply could allow a
+new run even though the old caller retained a failed lease. The lifecycle now
+has a separate `Quiesced` phase. It freezes counters under the lifecycle lock
+but is not replaceable. Only observed close success advances to `Closed` and
+releases the registry entry.
+
+Unadmitted global-capacity, lease-capacity, and revoking sockets are now closed
+and accounted under that same lock. After quiescence, later sockets are still
+closed but do not alter counters. Diagnostics use bounded `try_send` with no
+callback, so completing their old-run event under the lock cannot wait on the
+consumer.
+
+The phase-barrier case now proves a late socket closes, final usage remains
+exactly equal, and identity ownership is retained; it passed 25 consecutive
+runs. The paired real-socket capacity cases remain green. Whole-tree
+structural/cognitive complexity moves from 359/1,052 to 364/1,069 for the new
+state and ordering proof.
+
+Criterion detected no connection-setup change: allowed loopback was
+103.79–110.66 microseconds (`p=0.11`) and hostname denial was 67.38–75.05
+microseconds (`p=0.54`).
+
+The native factory, dependency audit, and exact Rust 1.88 Linux factory passed
+66 deterministic cases. The Linux 500-lease smoke held eight descriptors and
+five threads while live, returned to four descriptors and two threads, and
+finished at 4,004 KiB RSS.
+
 Whole-tree structural/cognitive complexity moved from 350/1,020 to 356/1,036.
 With diagnostics disabled, Criterion detected no change: allowed loopback was
 102.17–117.52 microseconds (`p=0.23`) and hostname denial was 68.00–73.52

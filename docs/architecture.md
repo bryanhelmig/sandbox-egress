@@ -27,6 +27,12 @@ admission against revocation. A Tokio cancellation token ends async phase work;
 a `TaskTracker` turns task destruction into the close barrier. Counters are
 atomics so `Lease::usage` does not cross the runtime boundary.
 
+The internal lifecycle is `Open -> Revoking -> Quiesced -> Closed`. Quiescing
+commits final counters under the lifecycle lock after tracked work and the
+queued-socket drain interval finish. It does not release identity ownership;
+only the synchronous caller's observation of close success advances to
+`Closed` and sends the registry release.
+
 `Lease` is intentionally not `Clone`. `close(self, deadline)` either produces
 `FinalUsage` or a `CloseError` containing the still-owning lease.
 

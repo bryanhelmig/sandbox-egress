@@ -347,6 +347,7 @@ enum Command {
 enum Phase {
     Open,
     Revoking,
+    Quiesced,
     Closed,
 }
 
@@ -388,26 +389,33 @@ impl LeaseState {
         *self.phase.lock().expect("lease phase poisoned") == Phase::Closed
     }
 
-    fn admit(self: &Arc<Self>) -> Option<Admission> {
+    fn admit(self: &Arc<Self>, stream: TcpStream) -> Option<(Admission, TcpStream)> {
         let Ok(permit) = self.permits.clone().try_acquire_owned() else {
-            self.record_denial("lease-capacity");
+            self.reject_unadmitted(stream, "lease-capacity");
             return None;
         };
         let phase = self.phase.lock().expect("lease phase poisoned");
         if *phase != Phase::Open {
-            drop(phase);
-            self.record_denial("lease-revoking");
+            drop(permit);
+            drop(stream);
+            if *phase == Phase::Revoking {
+                self.counters.deny();
+                self.report_denial("lease-revoking");
+            }
             return None;
         }
         let tracking = self.tracker.token();
         self.counters.admit();
         drop(phase);
-        Some(Admission {
-            state: Arc::clone(self),
-            _tracking: tracking,
-            _permit: permit,
-            completed: false,
-        })
+        Some((
+            Admission {
+                state: Arc::clone(self),
+                _tracking: tracking,
+                _permit: permit,
+                completed: false,
+            },
+            stream,
+        ))
     }
 
     fn begin_close(&self) {
@@ -424,8 +432,29 @@ impl LeaseState {
         *phase = Phase::Closed;
     }
 
+    fn quiesce_and_snapshot(&self) -> FinalUsage {
+        let mut phase = self.phase.lock().expect("lease phase poisoned");
+        if *phase == Phase::Revoking {
+            *phase = Phase::Quiesced;
+        }
+        self.counters.final_snapshot()
+    }
+
+    fn reject_unadmitted(&self, stream: TcpStream, reason: &'static str) {
+        let phase = self.phase.lock().expect("lease phase poisoned");
+        drop(stream);
+        if matches!(*phase, Phase::Open | Phase::Revoking) {
+            self.counters.deny();
+            self.report_denial(reason);
+        }
+    }
+
     fn record_denial(&self, reason: &'static str) {
         self.counters.deny();
+        self.report_denial(reason);
+    }
+
+    fn report_denial(&self, reason: &'static str) {
         self.diagnostics
             .report(self.id, self.identity.clone(), DenialReason::new(reason));
     }
@@ -608,13 +637,11 @@ async fn run_proxy(
                     continue;
                 };
                 let Ok(global_permit) = global_permits.clone().try_acquire_owned() else {
-                    state.record_denial("global-capacity");
-                    drop(stream);
+                    state.reject_unadmitted(stream, "global-capacity");
                     continue;
                 };
-                let Some(admission) = state.admit() else {
+                let Some((admission, stream)) = state.admit(stream) else {
                     drop(global_permit);
-                    drop(stream);
                     continue;
                 };
                 let resolver = Arc::clone(&resolver);
@@ -662,7 +689,7 @@ fn spawn_close_wait(
         let close = async {
             state.tracker.wait().await;
             sleep(quiet_period).await;
-            state.counters.final_snapshot()
+            state.quiesce_and_snapshot()
         };
         let result = timeout_at(TokioInstant::from_std(deadline), close)
             .await
@@ -1580,6 +1607,7 @@ mod tests {
 
         let runtime = RuntimeBuilder::new_multi_thread()
             .worker_threads(1)
+            .enable_io()
             .enable_time()
             .build()
             .expect("test runtime");
@@ -1599,7 +1627,25 @@ mod tests {
             .expect("cleanup ready");
 
         assert_eq!(usage.usage().active_connections, 0);
-        assert_eq!(*state.phase.lock().expect("lease phase"), Phase::Revoking);
+        assert_eq!(*state.phase.lock().expect("lease phase"), Phase::Quiesced);
+        assert!(
+            !state.is_closed(),
+            "cleanup alone must retain identity ownership"
+        );
+        let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .expect("bind late client test");
+        let mut client = std::net::TcpStream::connect(listener.local_addr().expect("test address"))
+            .expect("connect late client test");
+        let (server, _) = listener.accept().expect("accept late client test");
+        server.set_nonblocking(true).expect("nonblocking server");
+        let server = {
+            let _runtime_guard = runtime.enter();
+            TcpStream::from_std(server).expect("Tokio late client stream")
+        };
+        state.reject_unadmitted(server, "late-test-connection");
+        assert_eq!(state.counters.snapshot(), usage.usage());
+        let mut byte = [0];
+        assert!(matches!(std::io::Read::read(&mut client, &mut byte), Ok(0)));
         state.mark_closed();
         assert!(state.is_closed());
     }

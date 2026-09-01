@@ -32,6 +32,10 @@ Global and per-lease capacity refusals happen before task creation, do not
 increase accepted or active counts, and each increment the owning lease's
 denial counter.
 
+Unadmitted sockets are closed and their optional denial accounting completes
+under the same lifecycle lock used to commit final counters. A socket observed
+after the final snapshot is still refused but cannot mutate that snapshot.
+
 ## DNS and dialing
 
 Hostname policy is checked before DNS. Every resolved address is checked after
@@ -97,8 +101,12 @@ host can override this deliberately with an explicit CIDR grant.
 
 `Lease::close` consumes the lease. On deadline or coordination failure the
 error returns ownership through `CloseError::into_lease`. A successful result
-is emitted only after the task tracker is closed and empty. Its counters are
-then immutable because no tracked task remains able to change them.
+is emitted only after the task tracker is closed and empty, the queued-socket
+drain interval has elapsed, and the state becomes internally quiesced under the
+lifecycle lock. Its counters are then immutable: tracked work is gone and
+later unadmitted sockets do not count. Quiescing alone does not make the
+identity reusable; if success delivery is lost, the lease retains ownership
+until a retry is observed successfully.
 
 ## Protocol claims
 
