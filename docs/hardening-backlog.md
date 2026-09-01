@@ -17,7 +17,6 @@ services may supplement research but must not become test dependencies.
 - Source-address reuse with accepted, queued, retransmitted, and delayed SYNs.
 - Old-run connections that arrive after a new policy is attached.
 - Host fencing requirements for Firecracker TAP/NAT/conntrack teardown.
-- Duplicate identity attach under high contention.
 
 ## Request parsing and authority
 

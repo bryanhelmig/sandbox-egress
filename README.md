@@ -227,7 +227,7 @@ docker run --rm sandbox-egress:dev
 
 The build stage is pinned to Rust 1.88 and runs the normal factory plus a small
 Linux resource smoke. The final image contains only the stripped conformance
-executables and runs all 96 deterministic cases as an unprivileged user. It
+executables and runs all 97 deterministic cases as an unprivileged user. It
 does not ship Cargo, the compiler, source tree, or build cache. Tests remain
 local and do not call public network services.
 

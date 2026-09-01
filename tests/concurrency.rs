@@ -2,6 +2,7 @@
 
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, TcpStream};
+use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -145,6 +146,54 @@ fn identity_cannot_be_attached_twice() {
         .close(Instant::now() + Duration::from_secs(1))
         .expect("close lease");
     proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
+fn exactly_one_concurrent_attach_owns_an_identity() {
+    const CONTENDERS: usize = 32;
+
+    let proxy = Arc::new(Proxy::start(ProxyConfig::default()).expect("start proxy"));
+    let identity = PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    let barrier = Arc::new(Barrier::new(CONTENDERS));
+    let mut contenders = Vec::with_capacity(CONTENDERS);
+
+    for _ in 0..CONTENDERS {
+        let proxy = Arc::clone(&proxy);
+        let identity = identity.clone();
+        let barrier = Arc::clone(&barrier);
+        contenders.push(thread::spawn(move || {
+            barrier.wait();
+            proxy.attach(identity, Policy::builder().build().expect("valid policy"))
+        }));
+    }
+
+    let mut winner = None;
+    let mut rejected = 0;
+    for contender in contenders {
+        match contender.join().expect("attach contender") {
+            Ok(lease) => assert!(winner.replace(lease).is_none(), "multiple leases won"),
+            Err(AttachError::IdentityInUse) => rejected += 1,
+            Err(error) => panic!("unexpected attach result: {error}"),
+        }
+    }
+
+    assert_eq!(rejected, CONTENDERS - 1);
+    let lease = winner.expect("one attach must win");
+    assert!(matches!(
+        proxy.attach(
+            PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            Policy::builder().build().expect("valid policy"),
+        ),
+        Err(AttachError::IdentityInUse)
+    ));
+    lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close winning lease");
+
+    Arc::into_inner(proxy)
+        .expect("all proxy references returned")
         .shutdown(Instant::now() + Duration::from_secs(1))
         .expect("proxy shutdown");
 }

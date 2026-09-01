@@ -5,12 +5,14 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Prove that 32 simultaneous host-side attachments produce exactly one owner
+  for a source identity and keep every losing policy detached.
 - Drain the listener's ready accept queue before close certification and before
   installing an identity mapping, preventing an old queued socket from
   inheriting a replacement lease under management-channel pressure.
 - Serialize only the stripped conformance executables into the unprivileged
   Docker runner, reducing the verified image content size by 96.4% without
-  dropping any of its 96 deterministic cases.
+  dropping any of its 97 deterministic cases.
 - Let a surviving lease consume the final counters already certified by a
   successful proxy-wide shutdown, including runtime-disconnect races.
 - Divide the remaining absolute handshake budget fairly across sequential

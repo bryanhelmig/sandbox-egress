@@ -1861,3 +1861,45 @@ doctests, documentation, and package verification. The serialized runner
 passed the same 96 cases as UID/GID 65534 and measured 40,350,627 bytes. The
 500-lease Linux smoke held eight descriptors and five threads while live,
 returned to four descriptors and two threads, and finished at 4,012 KiB RSS.
+
+## 2026-09-01 — serialize concurrent identity attachment
+
+### Prior-art check
+
+The pinned Smokescreen, lens-sandbox-core, and nono sources were compared at
+their admission and shutdown boundaries. Lens shares a semaphore across two
+listener tasks and reserves a permit before spawning. Nono's count check and
+increment are safe from overshoot in its present shape because one accept task
+executes both without a suspension point. Nono's shutdown signal does not join
+its accept task or its spawned handlers, while Lens's handlers are likewise
+detached process-lifetime work. Smokescreen has a stronger process-wide
+connection tracker, but no live-listener handoff of one source identity between
+ephemeral policies.
+
+The comparison supported the existing design rather than an implementation
+change: Sandbox Egress reserves both process and lease permits, obtains the
+lease tracker token before spawning, and serializes registry mutations on its
+single listener-owner command loop. A second shared registry lock would add
+coordination without strengthening the ownership proof.
+
+### Contention proof
+
+A new integration case releases 32 host threads from one barrier into
+`Proxy::attach` for the same source address. It requires exactly one lease to
+win, all 31 losing calls to return `IdentityInUse`, and a later attach to remain
+refused until the winner completes certified close. The case passed ten
+consecutive focused runs, the native factory, the exact Rust 1.88 Linux
+factory, and the unprivileged serialized runner.
+
+No production source changed. Whole-tree SCC 4.0.0 complexity moved from
+460/1,383 to 464/1,393 structural/cognitive, entirely in the conformance test.
+The native 500-lease smoke returned from 13 descriptors and five threads while
+live to nine descriptors and two threads, finishing at 8,848 KiB RSS. The
+Linux factory's 500-lease smoke returned from eight descriptors and five
+threads to four descriptors and two threads, finishing at 4,020 KiB RSS.
+
+All 97 deterministic cases, doctests, documentation, package verification,
+and dependency policy checks passed natively. The runner reproduced the same
+97 cases as UID/GID 65534; image content size was 40,348,913 bytes. The small
+size change from the preceding image is treated as build-layout noise, not a
+performance result.

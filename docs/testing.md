@@ -68,6 +68,13 @@ socket is terminal under either the global or per-lease ceiling. The rejected
 connection must add one denial without adding an accepted, active, or spawned
 connection task.
 
+A phase-synchronized identity contention case releases 32 host threads into
+`Proxy::attach` together. Exactly one immutable policy must acquire the source
+identity, all 31 other calls must return `IdentityInUse`, and another attach
+must remain refused until the winner completes certified close. This pins the
+single listener-owner command loop as the synchronization boundary without a
+second shared registry lock.
+
 The close-success phase barrier receives the final snapshot while identity
 ownership is deliberately still retained, injects another unadmitted socket,
 and requires that socket to close without changing any final counter. It also
@@ -110,7 +117,7 @@ resource lane in the builder. A checked collector reads Cargo's JSON artifact
 records, requires exactly one executable for each conformance target, strips
 copies, and carries only those binaries into a Debian runner. The CLI's
 compile-time executable dependency is copied at its exact embedded path. The
-final image runs as UID/GID 65534 and must reproduce all 96 deterministic
+final image runs as UID/GID 65534 and must reproduce all 97 deterministic
 cases without Cargo, source, or a build cache.
 
 Source-identity cases prove an IPv4 address and its mapped IPv6 transport

@@ -1,7 +1,7 @@
 # Prior art
 
-Reviewed on 2026-08-31. Commit pins make future comparisons reproducible; links
-remain upstream-owned and are not vendored.
+Reviewed through 2026-09-01. Commit pins make future comparisons reproducible;
+links remain upstream-owned and are not vendored.
 
 | Project | Reviewed commit | What to learn | Gap this crate targets |
 | --- | --- | --- | --- |
@@ -16,6 +16,30 @@ remain upstream-owned and are not vendored.
 
 Also relevant: Rama for composable mature proxy machinery and VEY/G3 for
 production daemon limits, metrics, ACLs, and per-user policy.
+
+## Admission and shutdown comparison
+
+The reviewed implementations reinforce two separate rules that should not be
+conflated. `lens-sandbox-core` shares one semaphore across its explicit and
+transparent listeners, acquires a permit before spawning a handler, and drops
+an accepted socket when the process-wide limit is full. `nono` has one accept
+loop; its active-count check and increment have no suspension point between
+them, so they are serialized by that task before each handler is spawned.
+
+Neither shape supplies the lifecycle certificate required here. Lens's
+connection handlers are detached process-lifetime tasks. Nono's `shutdown()`
+signals its accept loop through a watch channel, but its handle does not own a
+join result for the loop or the spawned handlers. Smokescreen performs stronger
+process-wide draining with a connection tracker, but it does not hand one
+source identity from an old run to a new policy on a shared live listener.
+
+Sandbox Egress therefore keeps its distinct boundary: reserve global and
+per-lease capacity before task creation, register the task under the immutable
+lease, and make certified lease close wait for that owned task set. One
+listener-owner command loop serializes identity installation. A 32-caller
+contention case proves exactly one attachment wins and every other caller sees
+`IdentityInUse`; adding a second registry synchronization scheme would not
+strengthen that invariant.
 
 ## Protocol references
 
