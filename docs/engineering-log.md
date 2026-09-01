@@ -3286,6 +3286,48 @@ shutdown to 6,108 KiB/four/two. The rootless 155/155 image is
 `sha256:2844e92a2ba01365f126b10301e4cf823c2f4963e31987c96526767024a20bad`
 (40,717,070 bytes).
 
+## 2026-09-01 — separate socket soak from host port exhaustion
+
+The new TLS lane made the full resource runner retain more test history in one
+process, which helped expose two factory assumptions rather than production
+defects. First, the script passed its 2,000-by-four management-churn dimensions
+to the terminal lane too. Each terminal iteration opens four guest sockets and
+three upstream sockets to the same loopback tuples. A native run completed two
+batches and then received `502 connect-failed` during the third as local
+ephemeral ports accumulated. That was measuring the host's same-tuple
+`TIME_WAIT` capacity, not descriptor, thread, or owned-task recovery.
+
+The terminal lane now has independent dimensions: 500 iterations by four
+batches by default, exposed as the fifth and sixth resource-runner arguments.
+The ordinary default still attaches and closes 8,000 management leases, while
+the terminal lane exercises 2,000 each of completion, upload-limit denial,
+upstream reset, and pre-DNS denial—8,000 guest and 6,000 upstream connections.
+The corrected native default completed in 16.19 seconds. Its terminal lane
+returned from 14 descriptors/six threads during work to 13/five with the proxy
+alive and nine/two after shutdown. Larger terminal dimensions remain explicit
+when host-kernel port behavior is the intended experiment.
+
+Second, merely widening the constrained TLS proof's post-deadline observation
+from one to five seconds failed on a repeated Linux factory. The target applied
+its 1 KiB receive-buffer request only after `accept`, racing the connector's
+send-queue saturation. Some runs could therefore stage megabytes in the
+default receive window and spend the observation bound draining test setup.
+The listener now receives the bound before any connection exists, so accepted
+sockets inherit it. Across 25 native repetitions the connector then prefills
+exactly 1,024 bytes and the 250 ms deadline permits only 48,128 or 49,152 of the
+roughly 64 KiB ClientHello before cancellation. The five-second read remains
+an independent harness failure bound; it is no longer expected to compensate
+for an unbounded setup race.
+
+Production code, deterministic case count, and whole-tree 648/1,946 SCC 4.0.0
+complexity are unchanged. The native factory, corrected default five-lane
+resource run, and exact Rust 1.88 Linux factory passed. Linux terminal churn
+now covers 2,000 instances of every path and returns to four descriptors and
+two threads; the TLS lane returned from 265/six to four/two. The rootless
+155/155 image is
+`sha256:c669bc5cb96beb81c33ae8e4b93424aa574c826354135cbdf81b7108bcae98c2`
+(40,717,343 bytes).
+
 ## 2026-09-01 — make DNS memory defaults reflect decoded response size
 
 The returned-address ceiling bounds Sandbox Egress's own `Vec<IpAddr>`, but it

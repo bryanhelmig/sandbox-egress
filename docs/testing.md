@@ -252,9 +252,10 @@ sample. Successful lease close must then cancel all of them, make every guest
 and upstream socket terminal, freeze exact zero-denial final counters, and
 recover descriptors and threads. On Linux the collectors read `/proc`; on
 macOS they use `ps` and `lsof`; other targets compile and report unsupported
-counters as absent. Run `./scripts/measure-resources.sh [runs-per-batch]
-[batches] [idle-connections] [TLS-connections]`; the control lane can also be
-adjusted with
+counters as absent. Run `./scripts/measure-resources.sh [lease-runs-per-batch]
+[lease-batches] [idle-connections] [TLS-connections]
+[terminal-runs-per-batch] [terminal-batches]`. Management churn remains
+adjustable with
 `SANDBOX_EGRESS_CONTROL_CONCURRENCY` and
 `SANDBOX_EGRESS_CONTROL_BATCHES`.
 

@@ -5,6 +5,9 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Give management-only and real-socket resource lanes independent run counts
+  so the default local measurement does not accidentally become a same-tuple
+  ephemeral-port ceiling test.
 - Measure many simultaneous near-limit partial `ClientHello` buffers, then
   require certified-close cancellation, exact accounting, terminal sockets,
   and descriptor/thread recovery.

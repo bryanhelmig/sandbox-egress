@@ -470,8 +470,8 @@ fn partial_large_client_hello() -> Vec<u8> {
 #[test]
 #[ignore = "resource soak is opt-in; run scripts/measure-resources.sh"]
 fn terminal_connection_churn_releases_process_resources() {
-    let runs_per_batch = env_number("SANDBOX_EGRESS_SOAK_RUNS", 2_000);
-    let batches = env_number("SANDBOX_EGRESS_SOAK_BATCHES", 4);
+    let runs_per_batch = env_number("SANDBOX_EGRESS_TERMINAL_RUNS", 500);
+    let batches = env_number("SANDBOX_EGRESS_TERMINAL_BATCHES", 4);
     assert!(runs_per_batch > 0 && batches > 0);
     let completed_tunnels = runs_per_batch.saturating_mul(batches);
     assert!(completed_tunnels < 0x00ff_ffff);

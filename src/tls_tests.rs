@@ -115,14 +115,14 @@ fn start_nonreading_target() -> (
 ) {
     let listener =
         std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind nonreading target");
+    socket2::SockRef::from(&listener)
+        .set_recv_buffer_size(1_024)
+        .expect("constrain inherited target receive buffer");
     let port = listener.local_addr().expect("nonreading address").port();
     let (release_tx, release_rx) = mpsc::channel();
     let (observed_tx, observed_rx) = mpsc::channel();
     let handle = thread::spawn(move || {
         let (mut stream, _) = listener.accept().expect("accept constrained dial");
-        socket2::SockRef::from(&stream)
-            .set_recv_buffer_size(1_024)
-            .expect("constrain target receive buffer");
         let _ = release_rx.recv();
         stream
             .set_read_timeout(Some(Duration::from_secs(5)))
@@ -554,6 +554,7 @@ fn absolute_handshake_deadline_cancels_blocked_client_hello_forwarding() {
     let forwarded = observed
         .checked_sub(prefilled)
         .expect("target observed the complete test prefill");
+    eprintln!("constrained_tls_forwarding prefilled_bytes={prefilled} forwarded_bytes={forwarded}");
     assert!(
         forwarded < hello.len(),
         "the constrained upstream unexpectedly received the full ClientHello"
