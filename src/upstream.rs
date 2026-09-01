@@ -40,9 +40,6 @@ pub(crate) async fn connect_via(
 
     let mut bytes = Vec::with_capacity(1_024);
     let end = loop {
-        if let Some(end) = find_header_end(&bytes) {
-            break end;
-        }
         if bytes.len() == MAX_RESPONSE_HEADER_BYTES {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -59,18 +56,22 @@ pub(crate) async fn connect_via(
                 "upstream proxy closed before a complete response",
             ));
         }
+        let scan_from = bytes.len().saturating_sub(3);
         bytes.extend_from_slice(&chunk[..read]);
+        if let Some(end) = find_header_end(&bytes, scan_from) {
+            break end;
+        }
     };
     validate_response(&bytes[..end])?;
     let prefix = bytes.split_off(end);
     Ok(UpstreamStream::with_prefix(stream, prefix))
 }
 
-fn find_header_end(bytes: &[u8]) -> Option<usize> {
-    bytes
+fn find_header_end(bytes: &[u8], scan_from: usize) -> Option<usize> {
+    bytes[scan_from..]
         .windows(4)
         .position(|window| window == b"\r\n\r\n")
-        .map(|index| index + 4)
+        .map(|index| scan_from + index + 4)
 }
 
 fn validate_response(bytes: &[u8]) -> io::Result<()> {
@@ -149,5 +150,17 @@ mod tests {
     fn malformed_response_is_rejected() {
         let error = validate_response(b"not HTTP\r\n\r\n").expect_err("malformed response");
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn incremental_scan_finds_terminators_split_across_reads() {
+        let response = b"HTTP/1.1 200 OK\r\nHeader: value\r\n\r\nprefix";
+        let expected = response.len() - b"prefix".len();
+        for first_read in expected.saturating_sub(3)..expected {
+            let mut bytes = response[..first_read].to_vec();
+            let scan_from = bytes.len().saturating_sub(3);
+            bytes.extend_from_slice(&response[first_read..]);
+            assert_eq!(find_header_end(&bytes, scan_from), Some(expected));
+        }
     }
 }

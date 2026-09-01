@@ -4279,3 +4279,32 @@ cases, six doctests, documentation, package verification, both upstream
 benchmark smokes, and all six Linux resource lanes. Production artifacts are
 unchanged, so the rootless image remains
 `sha256:f8b4bb00ca2425eeefe5f7368caeecf8926de3709113d21442f06f0a0bbfa0aa`.
+
+## 2026-09-01 — incrementally scan upstream responses
+
+The exact-parent comparison justified replacing full-prefix rescans with an
+incremental scan. After each read, the scanner now resumes three bytes before
+the old buffer end: the smallest overlap that still finds a four-byte header
+terminator divided across reads. A unit matrix covers each possible divided
+terminator position.
+
+Three alternating optimized A/B pairs measured the 32 KiB near-match response
+at 162.04–198.27 microseconds for this change versus 488.41–584.24
+microseconds for parent `ef0f873`. The ordinary successful upstream path
+remained overlapping: 123.40–154.02 versus 131.72–153.28 microseconds. This
+retains a roughly threefold hostile-input improvement without claiming a
+change to ordinary negotiation performance.
+
+Whole-tree SCC 4.0.0 complexity is 742 structural and 2,203 cognitive, one and
+three above the benchmark commit respectively; the production loop has fewer
+branches and the increase belongs to its boundary test.
+
+The native and exact Rust 1.88 Linux factories passed 176 deterministic cases,
+six doctests, documentation, package verification, both upstream benchmark
+smokes, and all six Linux resource lanes; native dependency policy checks also
+passed. Linux's TLS lane peaked at 14,848 KiB RSS, 265 descriptors, and six
+threads, recovered to 8,788 KiB, eight descriptors, and five threads, and
+finished at 5,960 KiB, four descriptors, and two threads. The rootless 176/176
+image is
+`sha256:edef1e2f9de754b1e690dfea53a8bf2421b6d889632fdf85cf02a90aebde09a8`
+(40,881,035 bytes) and runs as UID/GID 65534.
