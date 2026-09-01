@@ -4415,3 +4415,25 @@ change, and the candidate did not trend better.
 The lifetime-bearing wrapper was discarded. The existing explicit shared
 ownership remains simpler, no production source or test count changes, and no
 performance improvement is claimed.
+
+## 2026-09-01 — merge revocation phase and arrival generation
+
+The simplification rotation observed that lease phase and the generation used
+to certify an identity's quiet period lived behind two mutexes, even though
+every generation mutation was already ordered by the phase lock. The
+generation now belongs directly to `Phase::Revoking(u64)`. This makes the
+state-machine relationship explicit, removes a mutex from every lease, removes
+fifteen production lines, and eliminates nested lock ownership.
+
+The two sensitive quiet-period cases each passed thirty focused repetitions.
+The native and exact Rust 1.88 Linux factories passed the unchanged 178
+deterministic cases, six doctests, documentation, package verification,
+benchmark smoke, and all six Linux resource lanes; native dependency policy
+checks also passed. Linux's TLS lane peaked at 14,944 KiB RSS, 265 descriptors,
+and six threads, recovered to 8,008 KiB, eight descriptors, and five threads,
+and finished at 6,748 KiB, four descriptors, and two threads.
+
+Whole-tree SCC 4.0.0 complexity moves from 750/2,229 to 749/2,229
+structural/cognitive. The rootless 178/178 image is
+`sha256:3186a93287671d8533c0ef1c40857d1b283f243133609908de89029286c4f381`
+(40,892,697 bytes) and runs as UID/GID 65534.

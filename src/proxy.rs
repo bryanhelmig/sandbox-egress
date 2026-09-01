@@ -389,7 +389,7 @@ enum Command {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Phase {
     Open,
-    Revoking,
+    Revoking(u64),
     Quiesced,
     Closed,
 }
@@ -404,7 +404,6 @@ struct LeaseState {
     tracker: TaskTracker,
     permits: Arc<Semaphore>,
     counters: Arc<Counters>,
-    revocation_generation: Mutex<u64>,
     diagnostics: DiagnosticReporter,
 }
 
@@ -425,7 +424,6 @@ impl LeaseState {
             tracker: TaskTracker::new(),
             permits: Arc::new(Semaphore::new(max_connections)),
             counters: Arc::new(Counters::default()),
-            revocation_generation: Mutex::new(0),
             diagnostics,
         }
     }
@@ -444,11 +442,11 @@ impl LeaseState {
             self.reject_unadmitted(stream, "lease-capacity");
             return None;
         };
-        let phase = self.phase.lock().expect("lease phase poisoned");
+        let mut phase = self.phase.lock().expect("lease phase poisoned");
         if *phase != Phase::Open {
             drop(permit);
             drop(stream);
-            self.record_unadmitted_locked(*phase, "lease-revoking");
+            self.record_unadmitted_locked(&mut phase, "lease-revoking");
             return None;
         }
         let tracking = self.tracker.token();
@@ -468,7 +466,7 @@ impl LeaseState {
     fn begin_close(&self) {
         let mut phase = self.phase.lock().expect("lease phase poisoned");
         if *phase == Phase::Open {
-            *phase = Phase::Revoking;
+            *phase = Phase::Revoking(0);
             self.tracker.close();
             self.cancel.cancel();
         }
@@ -484,14 +482,9 @@ impl LeaseState {
         if *phase == Phase::Quiesced {
             return Some(self.counters.final_snapshot());
         }
-        if *phase != Phase::Revoking {
-            return None;
-        }
-        let generation = self
-            .revocation_generation
-            .lock()
-            .expect("revocation generation poisoned");
-        if *generation != expected || expected == u64::MAX {
+        if !matches!(*phase, Phase::Revoking(generation) if generation == expected)
+            || expected == u64::MAX
+        {
             return None;
         }
         *phase = Phase::Quiesced;
@@ -504,38 +497,30 @@ impl LeaseState {
     }
 
     fn reject_unadmitted(&self, stream: TcpStream, reason: &'static str) {
-        let phase = self.phase.lock().expect("lease phase poisoned");
+        let mut phase = self.phase.lock().expect("lease phase poisoned");
         drop(stream);
-        self.record_unadmitted_locked(*phase, reason);
+        self.record_unadmitted_locked(&mut phase, reason);
     }
 
-    fn record_unadmitted_locked(&self, phase: Phase, reason: &'static str) {
+    fn record_unadmitted_locked(&self, phase: &mut Phase, reason: &'static str) {
         // The caller's phase lock orders both accounting and generation
         // changes before the final quiescence check.
-        if matches!(phase, Phase::Open | Phase::Revoking) {
+        if matches!(phase, Phase::Open | Phase::Revoking(_)) {
             self.counters.deny();
             self.report_denial(reason);
-            if phase == Phase::Revoking {
-                self.note_revoking_arrival_locked();
+            if let Phase::Revoking(generation) = phase
+                && let Some(next) = generation.checked_add(1)
+            {
+                *generation = next;
             }
         }
     }
 
-    fn note_revoking_arrival_locked(&self) {
-        let mut generation = self
-            .revocation_generation
-            .lock()
-            .expect("revocation generation poisoned");
-        if let Some(next) = generation.checked_add(1) {
-            *generation = next;
-        }
-    }
-
     fn revocation_generation(&self) -> u64 {
-        *self
-            .revocation_generation
-            .lock()
-            .expect("revocation generation poisoned")
+        match *self.phase.lock().expect("lease phase poisoned") {
+            Phase::Revoking(generation) => generation,
+            _ => u64::MAX,
+        }
     }
 
     fn record_denial(&self, reason: &'static str) {
