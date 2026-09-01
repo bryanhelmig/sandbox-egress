@@ -5445,3 +5445,17 @@ is not execution evidence for Windows in this local repository. Windows
 therefore remains an explicit portability backlog item until that job is run
 in a published CI environment or an equivalent target is checked directly.
 No conditional code, dependency, or public claim changes in this pass.
+
+## 2026-09-01 — refresh the complexity comparison point
+
+The durable complexity document previously stopped at the early 18-file
+address-floor checkpoint. SCC 4.0.0 now records the exact 188-case tree at 28
+Rust files, 13,481 lines, 12,244 code lines, and 780/2,317 aggregate
+structural/cognitive estimates. `proxy.rs`, including its large `cfg(test)`
+body, is 267/899; `policy.rs` is 58/185.
+
+The checkpoint explicitly avoids treating the aggregate as shipped-binary
+complexity: integration tests, resource lanes, benchmarks, and fixed TLS
+fixtures are included. Its purpose is to give the next simplification pass a
+stable same-tool comparison point. No threshold or implementation change is
+introduced.

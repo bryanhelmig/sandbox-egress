@@ -63,3 +63,24 @@ proxy.rs: 116 structural, 357 cognitive
 
 This was accepted because reviewers can now audit network/prefix pairs directly,
 not because a lower aggregate score is inherently safer.
+
+## Current pre-release checkpoint
+
+Recorded 2026-09-01 with SCC 4.0.0 over the exact 188-case tree:
+
+```text
+files: 28
+lines: 13,481
+code lines: 12,244
+structural complexity estimate: 780
+cognitive complexity estimate: 2,317
+proxy.rs: 267 structural, 899 cognitive
+policy.rs: 58 structural, 185 cognitive
+```
+
+The aggregate includes integration tests, resource lanes, benchmarks, fixed
+TLS fixtures, and the large `cfg(test)` conformance body inside `proxy.rs`; it
+is not a shipped-binary complexity score. The rise from the early checkpoint
+tracks a much larger evidence matrix as well as implementation. Future work
+should compare the touched module and its tests separately, explain new branch
+shape, and prefer deletion when equivalent invariants remain covered.
