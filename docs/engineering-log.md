@@ -3123,3 +3123,52 @@ two at 4,856 KiB in 1,098 ms. The 2,000-connection terminal lane returned to
 four and two at 5,108 KiB in 448 ms. The rootless 144/144 conformance image is
 `sha256:92ace025f196b32512a25d581f114b2ece9dca0b9c1af3fd803950d726a21d7e`
 (40,615,724 bytes).
+
+## 2026-09-01 — close the absolute-deadline response gap
+
+An admission and shutdown audit found one handshake operation outside every
+deadline: after a checked upstream dial, the proxy wrote the 39-byte CONNECT
+success response with an unbounded `write_all`. A normal TCP send buffer makes
+that write usually immediate, but "usually" is weaker than the crate's
+absolute accept-to-handshake contract. Smokescreen's pinned implementation also
+reinforces the operational need by placing response writes under a configured
+write timeout, although its timeout model and lifecycle boundary differ.
+
+The audit also exposed a narrower runtime semantic. Tokio's timeout polls its
+inner future before its timer, so work that is immediately ready may be polled
+even when the supplied deadline was already elapsed. The retained
+`complete_before_deadline` helper first rejects an already-expired instant,
+then delegates in-flight timing to Tokio. Headers, DNS capacity and lookup,
+dial capacity and attempts, initial upload, ClientHello work, lease close, and
+proxy shutdown now use that one rule. The CONNECT success writer joins them;
+deadline expiry records the static `connect-response-timeout` denial and closes
+the socket rather than entering tunnel work.
+
+Two small proofs pin the boundary. An immediately ready future behind an
+expired deadline is never polled. The production response helper is then given
+a one-byte-capacity stream and a 20 ms deadline; it can expose only a strict
+prefix of the 39-byte response before returning. Both cases passed 25
+consecutive runs, and the existing deadline matrix continued to pass across
+headers, DNS, dial, initial upload, TLS inspection, close, and shutdown.
+
+A first implementation used a deadline-first `select` at every timeout site.
+It made the strict tie-breaking rule easy to state, but three
+control-normalized local CONNECT pairs were 1.5–13.7 microseconds slower. That
+variant was removed. The retained elapsed check plus maintained timeout was
+compared with `7f4195d` in five alternating three-second runs. Excluding one
+visible host outlier, previous proxy-minus-control medians were 77.10–84.39
+microseconds and retained medians were 79.12–82.71 microseconds; reversed-order
+differences crossed zero. No performance change is claimed. The detached
+baseline worktree and its artifacts were removed after measurement.
+
+Whole-tree SCC 4.0.0 complexity moves from 602/1,809 to 605/1,816
+structural/cognitive. `proxy.rs` moves from 233/797 to 236/804; the two proof
+functions add no measured complexity. The native and exact Rust 1.88 Linux
+factories passed 146 deterministic cases, documentation, and package
+verification; the native factory also passed dependency policy checks. Linux's
+64-caller control lane peaked at 5,268 KiB RSS and returned to four descriptors
+and two threads at 4,800 KiB in 181 ms. The 500-lease lane returned to four and
+two at 4,808 KiB in 1,079 ms. The 2,000-connection terminal lane returned to
+four and two at 5,244 KiB in 438 ms. The rootless 146/146 conformance image is
+`sha256:a030d1124f767858c5f9b8d1187750c164a5f1a9b0d23558719b0512977c6b6c`
+(40,663,581 bytes).

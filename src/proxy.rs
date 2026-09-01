@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-#[cfg(test)]
 use std::future::Future;
 use std::io;
 use std::net::{IpAddr, SocketAddr};
@@ -804,7 +803,13 @@ async fn run_proxy(
                         }
                         let mut success = true;
                         for state in leases.values() {
-                            if timeout_at(TokioInstant::from_std(deadline), state.tracker.wait()).await.is_err() {
+                            if complete_before_deadline(
+                                TokioInstant::from_std(deadline),
+                                state.tracker.wait(),
+                            )
+                            .await
+                            .is_none()
+                            {
                                 success = false;
                                 break;
                             }
@@ -876,9 +881,9 @@ fn spawn_close_wait(
             state.tracker.wait().await;
             quiesce_after_identity_quiet(&state, quiet_period, drain_sender.as_ref()).await
         };
-        let result = match timeout_at(TokioInstant::from_std(deadline), close).await {
-            Ok(result) => result,
-            Err(_) => Err(CloseErrorKind::DeadlineExceeded),
+        let result = match complete_before_deadline(TokioInstant::from_std(deadline), close).await {
+            Some(result) => result,
+            None => Err(CloseErrorKind::DeadlineExceeded),
         };
         let _ = reply.send(result);
     });
@@ -919,11 +924,23 @@ async fn drain_accept_queue(
     drained.await.map_err(|_| CloseErrorKind::RuntimeStopped)
 }
 
+async fn complete_before_deadline<T>(
+    deadline: TokioInstant,
+    work: impl Future<Output = T>,
+) -> Option<T> {
+    if TokioInstant::now() >= deadline {
+        return None;
+    }
+    timeout_at(deadline, work).await.ok()
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ConnectionDisposition {
     Completed,
     Denied,
 }
+
+const CONNECT_SUCCESS_RESPONSE: &[u8] = b"HTTP/1.1 200 Connection Established\r\n\r\n";
 
 async fn serve_connect(
     mut client: TcpStream,
@@ -994,9 +1011,9 @@ async fn serve_connect(
         return deny(&mut client, state, 502, "dial-failed").await;
     };
 
-    client
-        .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
-        .await?;
+    if !write_connect_success(&mut client, handshake_deadline).await? {
+        return reject_tunnel(&mut client, state, "connect-response-timeout").await;
+    }
     let buffered_upload = match state.policy.tls_authority {
         TlsAuthority::Disabled => match forward_uninspected_upload(
             &mut upstream,
@@ -1027,10 +1044,10 @@ async fn serve_connect(
                     .map_err(|_| "upstream-write-failed")?;
                 Ok::<usize, &'static str>(bytes)
             };
-            match timeout_at(handshake_deadline, inspection_and_forward).await {
-                Ok(Ok(bytes)) => bytes,
-                Ok(Err(reason)) => return reject_tunnel(&mut client, state, reason).await,
-                Err(_) => return reject_tunnel(&mut client, state, "client-hello-timeout").await,
+            match complete_before_deadline(handshake_deadline, inspection_and_forward).await {
+                Some(Ok(bytes)) => bytes,
+                Some(Err(reason)) => return reject_tunnel(&mut client, state, reason).await,
+                None => return reject_tunnel(&mut client, state, "client-hello-timeout").await,
             }
         }
     };
@@ -1099,7 +1116,9 @@ async fn dial_approved_addresses(
             .checked_add(attempt_budget)
             .unwrap_or(handshake_deadline)
             .min(handshake_deadline);
-        if let Ok(Ok(stream)) = timeout_at(attempt_deadline, connector.connect(address)).await {
+        if let Some(Ok(stream)) =
+            complete_before_deadline(attempt_deadline, connector.connect(address)).await
+        {
             return Some(stream);
         }
     }
@@ -1112,9 +1131,9 @@ async fn dial_with_budget(
     permits: &Arc<Semaphore>,
     handshake_deadline: TokioInstant,
 ) -> Result<Option<TcpStream>, Denial> {
-    let permit = timeout_at(handshake_deadline, permits.acquire())
+    let permit = complete_before_deadline(handshake_deadline, permits.acquire())
         .await
-        .map_err(|_| Denial::DIAL_CAPACITY)?
+        .ok_or(Denial::DIAL_CAPACITY)?
         .map_err(|_| Denial::DIAL_CAPACITY)?;
     let upstream = dial_approved_addresses(addresses, connector, handshake_deadline).await;
     drop(permit);
@@ -1131,10 +1150,28 @@ where
     W: AsyncWrite + Unpin,
 {
     state.counters.record_upload(bytes.len() as u64);
-    match timeout_at(handshake_deadline, upstream.write_all(bytes)).await {
-        Ok(Ok(())) => Ok(bytes.len()),
-        Ok(Err(_)) => Err("upstream-write-failed"),
-        Err(_) => Err("initial-upload-timeout"),
+    match complete_before_deadline(handshake_deadline, upstream.write_all(bytes)).await {
+        Some(Ok(())) => Ok(bytes.len()),
+        Some(Err(_)) => Err("upstream-write-failed"),
+        None => Err("initial-upload-timeout"),
+    }
+}
+
+async fn write_connect_success<W>(
+    client: &mut W,
+    handshake_deadline: TokioInstant,
+) -> io::Result<bool>
+where
+    W: AsyncWrite + Unpin,
+{
+    match complete_before_deadline(
+        handshake_deadline,
+        client.write_all(CONNECT_SUCCESS_RESPONSE),
+    )
+    .await
+    {
+        Some(result) => result.map(|()| true),
+        None => Ok(false),
     }
 }
 
@@ -1226,14 +1263,14 @@ async fn read_connect_header(
     max_bytes: usize,
     deadline: TokioInstant,
 ) -> Result<HeaderBlock, Denial> {
-    match timeout_at(deadline, read_header(client, max_bytes)).await {
-        Ok(Ok(header)) => Ok(header),
-        Ok(Err(error)) if error.kind() == io::ErrorKind::InvalidData => {
+    match complete_before_deadline(deadline, read_header(client, max_bytes)).await {
+        Some(Ok(header)) => Ok(header),
+        Some(Err(error)) if error.kind() == io::ErrorKind::InvalidData => {
             Err(Denial::HEADER_TOO_LARGE)
         }
-        Ok(Err(error)) if error.kind() == io::ErrorKind::UnexpectedEof => Err(Denial::HEADER_EOF),
-        Ok(Err(_)) => Err(Denial::HEADER_READ_FAILED),
-        Err(_) => Err(Denial::HEADER_TIMEOUT),
+        Some(Err(error)) if error.kind() == io::ErrorKind::UnexpectedEof => Err(Denial::HEADER_EOF),
+        Some(Err(_)) => Err(Denial::HEADER_READ_FAILED),
+        None => Err(Denial::HEADER_TIMEOUT),
     }
 }
 
@@ -1262,20 +1299,21 @@ async fn resolve_addresses(
         .checked_add(state.policy.dns_timeout)
         .unwrap_or(handshake_deadline)
         .min(handshake_deadline);
-    let dns_permit = timeout_at(dns_deadline, Arc::clone(dns_permits).acquire_owned())
-        .await
-        .map_err(|_| Denial::DNS_CAPACITY)?
-        .map_err(|_| Denial::DNS_CAPACITY)?;
-    let lookup = timeout_at(
+    let dns_permit =
+        complete_before_deadline(dns_deadline, Arc::clone(dns_permits).acquire_owned())
+            .await
+            .ok_or(Denial::DNS_CAPACITY)?
+            .map_err(|_| Denial::DNS_CAPACITY)?;
+    let lookup = complete_before_deadline(
         dns_deadline,
         resolver.lookup(&hostname, max_resolved_addresses),
     )
     .await;
     drop(dns_permit);
     let addresses = match lookup {
-        Ok(Ok(addresses)) => addresses,
-        Ok(Err(_)) => return Err(Denial::DNS_FAILED),
-        Err(_) => return Err(Denial::DNS_TIMEOUT),
+        Some(Ok(addresses)) => addresses,
+        Some(Err(_)) => return Err(Denial::DNS_FAILED),
+        None => return Err(Denial::DNS_TIMEOUT),
     };
     if addresses.is_empty() {
         return Err(Denial::DNS_EMPTY);
@@ -1471,6 +1509,7 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for Metered<T> {
 mod tests {
     use super::*;
 
+    mod deadlines;
     mod dial_budget;
     mod dns_wire;
 

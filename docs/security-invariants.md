@@ -203,6 +203,13 @@ Configuration and immutable policy construction reject durations too large for
 the platform clock to represent as deadlines. The connection path also uses
 checked deadline arithmetic, so elapsed startup time or a platform clock edge
 cannot turn a trusted configuration mistake into a panicking runtime task.
+Every deadline-wrapped operation checks whether its absolute deadline has
+already elapsed before polling work, then uses Tokio's maintained timer while
+that work is pending. This applies to headers, DNS capacity and lookup, dial
+capacity and attempts, the CONNECT success response, initial upload forwarding,
+ClientHello inspection, and management close. In particular, a ready operation
+cannot begin after an already-expired deadline merely because the timeout
+wrapper polls its inner future first.
 The process header deadline must also be nonzero. Global connection, DNS, and
 dial limits are clamped to Tokio's semaphore maximum, and a per-lease limit
 beyond that maximum returns a typed policy error before attachment; extreme

@@ -83,6 +83,30 @@ retained implementation uses a borrowed permit, paid once around outbound
 connection establishment and released before tunnel traffic; it adds no
 per-byte or tunnel-lifetime work.
 
+## Absolute-deadline comparison
+
+Recorded 2026-09-01 on the same Apple M1 against `7f4195d`. A first
+implementation replaced every Tokio timeout with a deadline-first selector.
+Across three control-normalized pairs it was 1.5–13.7 microseconds slower on
+the local CONNECT path, so it was discarded.
+
+The retained implementation performs one explicit elapsed-deadline check and
+then uses Tokio's maintained timeout, including a newly bounded CONNECT success
+write. Five alternating three-second comparisons used the direct loopback TCP
+control in each process:
+
+```text
+command: cargo bench --bench connections -- loopback \
+         --noplot --sample-size 50 --measurement-time 3
+previous proxy-minus-control medians: 77.10, 77.39, 78.85, 84.39 us
+retained proxy-minus-control medians: 79.57, 79.12, 82.71, 80.87 us
+excluded host outlier: retained 107.09 us versus previous 77.39 us
+```
+
+The ordinary intervals overlap and the paired differences cross zero in
+reversed order. No setup-latency change is claimed. The larger selector was not
+retained; the deterministic deadline semantics and bounded response write are.
+
 ## Initial sustained CONNECT baseline
 
 Recorded 2026-08-31 on the same Apple M1 with Rust 1.97.1:

@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Make every absolute deadline reject already-expired work before polling, and
+  bring the CONNECT success response under the handshake deadline.
 - Add a separate process-wide outbound-dial budget with deadline-bound waiting,
   a distinct `dial-capacity` denial, lease-owned cancellation, and release
   before tunnel lifetime.

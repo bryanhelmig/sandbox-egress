@@ -91,9 +91,10 @@ a fair share of the remaining absolute handshake budget so a pending first
 address cannot consume all fallback time or create parallel socket
 amplification. An opt-in TLS authority phase incrementally parses a bounded
 ClientHello, compares visible SNI with CONNECT authority, and applies the
-lease's explicit ECH policy before forwarding those bytes. The ordinary path
-does not instantiate the parser. A bounded bidirectional copy loop accounts
-bytes.
+lease's explicit ECH policy before forwarding those bytes. The CONNECT success
+write and any initial tunnel bytes remain inside the same absolute handshake
+deadline. The ordinary path does not instantiate the parser. A bounded
+bidirectional copy loop accounts bytes.
 
 ## Why one package
 

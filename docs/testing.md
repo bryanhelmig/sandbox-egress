@@ -359,6 +359,14 @@ timestamp without sending any header bytes. It must immediately return the
 bounded `header-timeout` denial, proving scheduler delay cannot reset either
 absolute deadline when the spawned task begins.
 
+The shared deadline primitive is tested with work that would complete
+immediately: when the supplied deadline is already expired, the work is never
+polled. The production CONNECT-success writer is then exercised through a
+one-byte-capacity in-memory stream. It cannot finish the 39-byte response and
+must return at the handshake deadline with only a strict prefix observable.
+This pins the response write as part of the handshake rather than an unbounded
+gap between dialing and ClientHello or tunnel work.
+
 The TLS conformance module uses Rustls to accept incrementally fragmented
 ClientHello records, plus a focused extension walk only after syntactic
 acceptance to detect ECH. Real proxy tests prove that a matching coalesced
