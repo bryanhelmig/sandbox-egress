@@ -118,6 +118,21 @@ The next resource harnesses add live connections, slow peers, admitted/denied
 counters, cleanup state, and bulk tunnel throughput. See
 [`testing.md`](testing.md) and [`roadmap.md`](roadmap.md).
 
+## Rejected shared-config handoff
+
+Recorded 2026-09-01 on the same Apple M1. A prospective change wrapped the
+process config in `Arc` so each admitted connection cloned one pointer instead
+of the configuration value. Five sustained 10,000-connection runs moved the
+median from 19,663 to 20,321 connections/second, but both sets were noisy.
+
+Criterion then compared the ordinary loopback CONNECT path in both orders. The
+first pair reported the value clone 4.0%–17.1% slower than the shared pointer
+(`p < 0.05`). After saving the clone build first and comparing the shared build
+back against it, the interval spanned 6.6% faster to 20.2% slower (`p = 0.60`):
+no change detected. The implementation was reverted. The default config's
+dynamic fields are empty, so an atomic reference-count operation was not
+retained on every connection without a reproducible benefit.
+
 ## Hostile header near-match baseline
 
 Recorded 2026-09-01 on the Apple M1 with Rust 1.97.1:

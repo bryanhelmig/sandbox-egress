@@ -2638,3 +2638,24 @@ native dependency policy passed. The stripped conformance image excludes the
 resource target and was therefore byte-identical at
 `sha256:1b29c3f1c3fc757112dc4e4591ee011ee5fbfe5d9aaefa96095d359f9db80b5d`
 (40,491,607 bytes); its rootless runner reproduced 128/128 as UID/GID 65534.
+
+## 2026-09-01 — reject shared config ownership on the connection path
+
+A fresh five-run sustained baseline measured 16,584–20,902 connections/second
+with a 19,663 median. Each admitted task currently clones `ProxyConfig`; a
+prospective three-line change instead stored it in `Arc` and cloned the pointer.
+Five changed runs measured 16,277–22,260 connections/second with a 20,321
+median, but the distributions overlapped and both contained large p99 host
+scheduling outliers.
+
+The first Criterion pair appeared positive: reverting from the shared pointer
+to the value clone measured 4.0%–17.1% slower (`p < 0.05`). Reversing the order
+did not reproduce it. With the clone build saved first, the shared build's
+interval ranged from 6.6% faster to 20.2% slower (`p = 0.60`), explicitly no
+detected change. The default configuration has no diagnostics and an empty
+NAT64 vector, so cloning it does not allocate; replacing that copy with an
+atomic strong-count update has no clear theoretical win either.
+
+The source change was discarded. No correctness, resource, complexity,
+factory, or throughput claim changed. The negative result is retained so a
+future optimization pass does not infer a win from the first noisy comparison.
