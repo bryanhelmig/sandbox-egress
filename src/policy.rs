@@ -330,7 +330,7 @@ fn extract_rfc6052_ipv4(address: Ipv6Addr, prefix_len: u8) -> Ipv4Addr {
     Ipv4Addr::from(octets)
 }
 
-// Derived from the IANA special-purpose registries, reviewed 2026-08-31.
+// Derived from the IANA special-purpose registries, reviewed 2026-09-01.
 const FORBIDDEN_V4_PREFIXES: &[(u32, u32)] = &[
     (0x0000_0000, 8),  // 0.0.0.0/8, this network
     (0x0a00_0000, 8),  // 10.0.0.0/8, private

@@ -1944,3 +1944,33 @@ returned from eight descriptors and five threads to four descriptors and two
 threads, finishing at 4,020 KiB RSS. The serialized runner reproduced all 100
 cases as UID/GID 65534 and measured 40,359,099 bytes; the roughly 10 KiB increase
 is test payload, not a proxy performance result.
+
+## 2026-09-01 — refresh the address floor and reject config indirection
+
+### Registry refresh
+
+The production prefix table was checked against the current IANA
+[IPv4](https://www.iana.org/assignments/iana-ipv4-special-registry) and
+[IPv6](https://www.iana.org/assignments/iana-ipv6-special-registry)
+special-purpose registries, both last updated 2025-10-09. No newly unguarded
+destination class was found. The code remains deliberately conservative: it
+rejects the full `192.0.0.0/24` and `2001::/23` assignment umbrellas by default,
+including globally reachable exceptions that an operator may explicitly grant.
+Only the source review date changed.
+
+### Rejected allocation optimization
+
+Each admitted task currently owns a clone of immutable `ProxyConfig`. A trial
+stored the config in `Arc` instead, replacing any configured NAT64-prefix vector
+copy with an atomic reference-count increment. To make the copy nontrivial, the
+existing real-loopback CONNECT benchmark temporarily registered 64 distinct
+NAT64 prefixes.
+
+The pre-change repeated interval was 106.04–119.67 microseconds with a 111.72
+microsecond point estimate. The `Arc` trial measured 109.32–110.98 microseconds
+with Criterion's change interval spanning -5.87% to +3.15% (`p = 0.70`), then
+109.82–111.53 microseconds on repetition. Criterion detected no improvement.
+Local socket setup dominates the vector copy, while `Arc` would add shared
+ownership and an atomic operation to every connection. The production and
+temporary benchmark changes were therefore removed exactly; this log is the
+only retained result.
