@@ -441,9 +441,19 @@ across several upstream destination ports as a second guard against per-tuple
 limits. Sustained capacity still remains host-specific evidence.
 
 `./scripts/measure-throughput.sh [MiB per tunnel] [concurrency]
-[upload|download|both]` opens every CONNECT tunnel before releasing a shared
-start barrier. Controlled peers then move bounded chunks in one direction and
-perform an explicit teardown exchange. The test checks aggregate byte counters
-exactly after certified close, including one marker byte per tunnel in the
-opposite direction. This is a same-host regression measure, not a network
-bandwidth claim.
+[upload|download|both] [idle timeout ms]` opens every CONNECT tunnel before
+releasing a shared start barrier. Controlled peers then move bounded chunks in
+one direction and perform an explicit teardown exchange. The test checks
+aggregate byte counters exactly after certified close, including one marker
+byte per tunnel in the opposite direction. Zero leaves idle expiry disabled; a
+positive fourth argument measures the opt-in activity-clock cost while
+continuous traffic keeps every tunnel alive. This is a same-host regression
+measure, not a network bandwidth claim.
+
+The tunnel lane separately pins idle semantics. One case proves an established
+silent tunnel closes both guest and upstream and contributes exactly one
+`tunnel-idle-timeout` denial. Separate upload-and-echo and download-only cases
+move bytes for longer than the configured interval, proving traffic from
+either side postpones expiry, then observe closure only after traffic stops.
+The certified-close case uses a much longer idle interval and proves revocation
+preempts the waiter without misclassifying shutdown as a denial.

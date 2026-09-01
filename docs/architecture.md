@@ -94,7 +94,11 @@ ClientHello, compares visible SNI with CONNECT authority, and applies the
 lease's explicit ECH policy before forwarding those bytes. The CONNECT success
 write and any initial tunnel bytes remain inside the same absolute handshake
 deadline. The ordinary path does not instantiate the parser. A bounded
-bidirectional copy loop accounts bytes.
+bidirectional copy loop accounts bytes. An optional policy idle timeout gives
+the two metered readers one shared activity clock. Either upload or download
+resets it; no timer task is spawned, and the default path allocates no activity
+channel. Idle expiry drops the copy future and its owned sockets together, so
+it does not wait for either remote endpoint.
 
 ## Why one package
 

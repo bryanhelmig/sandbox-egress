@@ -3172,3 +3172,58 @@ two at 4,808 KiB in 1,079 ms. The 2,000-connection terminal lane returned to
 four and two at 5,244 KiB in 438 ms. The rootless 146/146 conformance image is
 `sha256:a030d1124f767858c5f9b8d1187750c164a5f1a9b0d23558719b0512977c6b6c`
 (40,663,581 bytes).
+
+## 2026-09-01 — expire silent tunnels by immutable policy
+
+The founding requirements call for absolute handshake deadlines, not merely
+idle socket timeouts. Reviewing that distinction against Smokescreen exposed
+the other half of the operational boundary: Sandbox Egress bounded every
+pre-tunnel phase and byte count, but a successfully established tunnel could
+remain silent while retaining global and per-lease connection capacity for the
+entire run. `PolicyBuilder::idle_timeout` now supplies an optional nonzero
+duration frozen into one lease. It is disabled by default so the crate does not
+silently break applications that legitimately hold quiet connections.
+
+The clock begins only after CONNECT success and optional ClientHello
+inspection. The two metered readers share one Tokio watch value; every
+successful nonempty read in either direction replaces its timestamp. One
+future sleeps to the observed deadline and rechecks the channel generation,
+without spawning another task. Using the generation rather than timestamp
+equality ensures two reads sharing one platform clock tick still count as
+activity. Expiry records the static `tunnel-idle-timeout` denial and drops the
+bidirectional copy and both owned sockets. A biased copy branch prevents a
+simultaneously ready graceful completion from being mislabeled. Lease
+cancellation drops the entire tunnel future first, so certified close still
+preempts the idle waiter and remains the stronger guarantee.
+
+The first activity case used upload followed by an immediate echo. Review
+caught that this proved upload activity but not a download-only flow, so a
+separate one-way sender was added before the claim was documented. Silent
+expiry, upload-and-echo activity, download-only activity, and close preemption
+each passed 25 consecutive focused runs. The cases require exact terminal
+behavior on both endpoints and exact counters: one idle denial, no completion,
+and only the bytes actually read. Zero and unrepresentable durations fail at
+policy construction.
+
+A detached `2f1e883` worktree supplied five alternating data-plane comparisons
+and was removed afterward. Each direction moved 1 GiB through eight established
+loopback tunnels. The previous default medians were 3,369 MiB/s upload and
+3,446 MiB/s download; the current disabled-default medians were 3,335 and
+3,464 MiB/s (-1.0% and +0.5%). That crossing difference is within host noise,
+so no default-path throughput change is claimed. With a 1,000 ms idle timeout,
+continuous traffic measured 3,249 and 3,406 MiB/s, 2.6% and 1.7% below the
+current default. The opt-in timestamp update cost is retained; the default
+allocates no activity channel.
+
+Whole-tree SCC 4.0.0 complexity moves from 605/1,816 to 620/1,860
+structural/cognitive. `proxy.rs` moves from 236/804 to 241/820; the remaining
+increase is immutable policy validation, three deterministic tunnel proofs,
+and the opt-in measurement switch. The native and exact Rust 1.88 Linux
+factories passed 150 deterministic cases, documentation, and package
+verification; the native factory also passed dependency policy checks. Linux's
+64-caller control lane peaked at 5,264 KiB RSS and returned to four descriptors
+and two threads at 4,792 KiB in 191 ms. The 500-lease lane returned to four and
+two at 4,824 KiB in 1,109 ms. The 2,000-connection terminal lane returned to
+four and two at 5,132 KiB in 450 ms. The rootless 150/150 conformance image is
+`sha256:9fdd4d14741dce47c20c0f047f40432a66ea43a342ca9c3f498e34a56d0f59c4`
+(40,701,820 bytes).

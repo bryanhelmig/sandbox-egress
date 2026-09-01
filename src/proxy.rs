@@ -14,8 +14,8 @@ use hickory_resolver::TokioResolver;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Builder as RuntimeBuilder;
-use tokio::sync::{Semaphore, mpsc as tokio_mpsc};
-use tokio::time::{Instant as TokioInstant, sleep, timeout_at};
+use tokio::sync::{Semaphore, mpsc as tokio_mpsc, watch};
+use tokio::time::{Instant as TokioInstant, sleep, sleep_until, timeout_at};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tokio_util::task::task_tracker::TaskTrackerToken;
@@ -1061,12 +1061,18 @@ async fn tunnel_bidirectionally(
     state: &LeaseState,
     buffered_upload: usize,
 ) -> io::Result<ConnectionDisposition> {
+    let activity = state.policy.idle_timeout.map(|timeout| {
+        let (sender, receiver) = watch::channel(TokioInstant::now());
+        (timeout, sender, receiver)
+    });
+    let activity_sender = activity.as_ref().map(|(_, sender, _)| sender.clone());
     let mut client = Metered::new(
         client,
         Arc::clone(&state.counters),
         Direction::Upload,
         state.policy.max_upload_bytes,
         buffered_upload as u64,
+        activity_sender.clone(),
     );
     let mut upstream = Metered::new(
         upstream,
@@ -1074,14 +1080,45 @@ async fn tunnel_bidirectionally(
         Direction::Download,
         state.policy.max_download_bytes,
         0,
+        activity_sender,
     );
-    match tokio::io::copy_bidirectional(&mut client, &mut upstream).await {
+    let copy = tokio::io::copy_bidirectional(&mut client, &mut upstream);
+    let result = match activity {
+        Some((timeout, _sender, receiver)) => {
+            tokio::select! {
+                biased;
+                result = copy => result,
+                () = wait_for_tunnel_idle(receiver, timeout) => {
+                    state.record_denial("tunnel-idle-timeout");
+                    return Ok(ConnectionDisposition::Denied);
+                }
+            }
+        }
+        None => copy.await,
+    };
+    match result {
         Ok(_) => Ok(ConnectionDisposition::Completed),
         Err(error) if is_transfer_limit_error(&error) => {
             state.record_denial("transfer-limit");
             Ok(ConnectionDisposition::Denied)
         }
         Err(error) => Err(error),
+    }
+}
+
+async fn wait_for_tunnel_idle(mut activity: watch::Receiver<TokioInstant>, timeout: Duration) {
+    loop {
+        let observed = *activity.borrow_and_update();
+        let deadline = observed
+            .checked_add(timeout)
+            .expect("validated idle timeout deadline");
+        sleep_until(deadline).await;
+        if !activity
+            .has_changed()
+            .expect("tunnel activity sender is retained")
+        {
+            return;
+        }
     }
 }
 
@@ -1197,6 +1234,7 @@ async fn inspect_tls_tunnel(
         Direction::Upload,
         state.policy.max_upload_bytes,
         initial_len as u64,
+        None,
     );
     let hello = read_client_hello(&mut metered, initial, max_bytes)
         .await
@@ -1428,6 +1466,7 @@ struct Metered<T> {
     direction: Direction,
     limit: Option<u64>,
     transferred: u64,
+    activity: Option<watch::Sender<TokioInstant>>,
 }
 
 impl<T> Metered<T> {
@@ -1437,6 +1476,7 @@ impl<T> Metered<T> {
         direction: Direction,
         limit: Option<u64>,
         transferred: u64,
+        activity: Option<watch::Sender<TokioInstant>>,
     ) -> Self {
         Self {
             inner,
@@ -1444,6 +1484,7 @@ impl<T> Metered<T> {
             direction,
             limit,
             transferred,
+            activity,
         }
     }
 }
@@ -1474,6 +1515,11 @@ impl<T: AsyncRead + Unpin> AsyncRead for Metered<T> {
         };
         if let Poll::Ready(Ok(())) = result {
             let bytes = (buffer.filled().len() - before) as u64;
+            if bytes > 0
+                && let Some(activity) = &self.activity
+            {
+                activity.send_replace(TokioInstant::now());
+            }
             match self.direction {
                 Direction::Upload => self.counters.record_upload(bytes),
                 Direction::Download => self.counters.record_download(bytes),

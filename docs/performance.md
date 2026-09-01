@@ -159,6 +159,27 @@ to 2,352 and 2,508 MiB/sec. Four workers measured 3,071 and 3,104 MiB/sec. The
 existing two-worker runtime was retained because it won the data-plane test and
 its result reproduced after the comparison.
 
+## Opt-in tunnel idle-timeout comparison
+
+Recorded 2026-09-01 on the same Apple M1 with Rust 1.97.1, comparing the
+working tree against `2f1e883`. Five alternating 1 GiB-per-direction runs used
+eight established loopback tunnels:
+
+```text
+command: ./scripts/measure-throughput.sh 128 8 both [idle timeout ms]
+previous default median: upload 3,369; download 3,446 MiB/sec
+current default median:  upload 3,335; download 3,464 MiB/sec
+enabled 1000 ms median:  upload 3,249; download 3,406 MiB/sec
+```
+
+The disabled default moved -1.0% for upload and +0.5% for download versus the
+previous commit, inside the observed run-to-run variation. No default-path
+throughput change is claimed. Enabling the activity clock measured 2.6% lower
+upload and 1.7% lower download than the current default medians. That opt-in
+cost updates one shared activity value after each successful nonempty read; it
+is retained in exchange for bounded silent tunnel lifetime. These are local
+regression measurements, not portable bandwidth promises.
+
 ## Required next measurements
 
 The next resource harnesses add live connections, slow peers, admitted/denied

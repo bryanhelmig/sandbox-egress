@@ -82,6 +82,7 @@ pub struct Policy {
     pub(crate) max_connections: usize,
     pub(crate) dns_timeout: Duration,
     pub(crate) handshake_timeout: Duration,
+    pub(crate) idle_timeout: Option<Duration>,
     pub(crate) max_upload_bytes: Option<u64>,
     pub(crate) max_download_bytes: Option<u64>,
     pub(crate) tls_authority: TlsAuthority,
@@ -129,6 +130,7 @@ pub struct PolicyBuilder {
     max_connections: usize,
     dns_timeout: Duration,
     handshake_timeout: Duration,
+    idle_timeout: Option<Duration>,
     max_upload_bytes: Option<u64>,
     max_download_bytes: Option<u64>,
     tls_authority: TlsAuthority,
@@ -188,6 +190,13 @@ impl PolicyBuilder {
         self
     }
 
+    /// End an established tunnel after this duration passes without bytes in
+    /// either direction. Idle expiry is disabled unless configured.
+    pub fn idle_timeout(mut self, timeout: Duration) -> Self {
+        self.idle_timeout = Some(timeout);
+        self
+    }
+
     /// Set the maximum bytes uploaded over one tunnel.
     ///
     /// After CONNECT succeeds, the proxy forwards exactly the permitted
@@ -231,13 +240,22 @@ impl PolicyBuilder {
     /// complete handshake deadline, or a timeout too large for a runtime
     /// deadline.
     pub fn build(self) -> Result<Policy, PolicyError> {
-        if self.dns_timeout.is_zero() || self.handshake_timeout.is_zero() {
+        if self.dns_timeout.is_zero()
+            || self.handshake_timeout.is_zero()
+            || self.idle_timeout.is_some_and(|timeout| timeout.is_zero())
+        {
             return Err(PolicyError::ZeroTimeout);
         }
         if self.dns_timeout > self.handshake_timeout {
             return Err(PolicyError::DnsTimeoutExceedsHandshake);
         }
         if Instant::now().checked_add(self.handshake_timeout).is_none() {
+            return Err(PolicyError::TimeoutTooLarge);
+        }
+        if self
+            .idle_timeout
+            .is_some_and(|timeout| Instant::now().checked_add(timeout).is_none())
+        {
             return Err(PolicyError::TimeoutTooLarge);
         }
         Ok(Policy {
@@ -247,6 +265,7 @@ impl PolicyBuilder {
             max_connections: self.max_connections,
             dns_timeout: self.dns_timeout,
             handshake_timeout: self.handshake_timeout,
+            idle_timeout: self.idle_timeout,
             max_upload_bytes: self.max_upload_bytes,
             max_download_bytes: self.max_download_bytes,
             tls_authority: self.tls_authority,
@@ -263,6 +282,7 @@ impl Default for PolicyBuilder {
             max_connections: 64,
             dns_timeout: Duration::from_secs(3),
             handshake_timeout: Duration::from_secs(10),
+            idle_timeout: None,
             max_upload_bytes: None,
             max_download_bytes: None,
             tls_authority: TlsAuthority::Disabled,
@@ -462,6 +482,24 @@ mod tests {
             Policy::builder()
                 .dns_timeout(Duration::MAX)
                 .handshake_timeout(Duration::MAX)
+                .build()
+                .unwrap_err(),
+            PolicyError::TimeoutTooLarge
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_idle_deadlines() {
+        assert_eq!(
+            Policy::builder()
+                .idle_timeout(Duration::ZERO)
+                .build()
+                .unwrap_err(),
+            PolicyError::ZeroTimeout
+        );
+        assert_eq!(
+            Policy::builder()
+                .idle_timeout(Duration::MAX)
                 .build()
                 .unwrap_err(),
             PolicyError::TimeoutTooLarge

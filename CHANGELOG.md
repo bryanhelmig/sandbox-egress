@@ -5,6 +5,9 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Add an immutable opt-in per-lease tunnel idle timeout, reset by traffic in
+  either direction, with exact denial accounting and certified-close
+  preemption.
 - Make every absolute deadline reject already-expired work before polling, and
   bring the CONNECT success response under the handshake deadline.
 - Add a separate process-wide outbound-dial budget with deadline-bound waiting,

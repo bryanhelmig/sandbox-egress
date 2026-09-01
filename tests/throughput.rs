@@ -27,6 +27,14 @@ fn environment_usize(name: &str, default: usize) -> usize {
         .unwrap_or(default)
 }
 
+fn environment_idle_timeout() -> Option<Duration> {
+    std::env::var("SANDBOX_EGRESS_THROUGHPUT_IDLE_MS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|milliseconds| *milliseconds > 0)
+        .map(Duration::from_millis)
+}
+
 fn direction() -> Direction {
     match std::env::var("SANDBOX_EGRESS_THROUGHPUT_DIRECTION").as_deref() {
         Ok("download") => Direction::Download,
@@ -151,6 +159,7 @@ fn concurrent_tunnel_throughput() {
     let mebibytes = environment_usize("SANDBOX_EGRESS_THROUGHPUT_MIB", 32);
     let bytes = mebibytes.checked_mul(1_024 * 1_024).expect("byte count");
     let concurrency = environment_usize("SANDBOX_EGRESS_THROUGHPUT_CONCURRENCY", 8);
+    let idle_timeout = environment_idle_timeout();
     let direction = direction();
     let start = Arc::new(Barrier::new(concurrency * 2 + 1));
     let (upstream_port, upstream_thread) =
@@ -158,13 +167,15 @@ fn concurrent_tunnel_throughput() {
 
     let proxy = Proxy::start(ProxyConfig::default().with_max_connections(concurrency * 2))
         .expect("start proxy");
-    let policy = Policy::builder()
+    let mut policy = Policy::builder()
         .allow_network("127.0.0.0/8".parse::<IpNet>().expect("loopback CIDR"))
         .allow_port(upstream_port)
         .max_connections(concurrency * 2)
-        .expect("positive connection limit")
-        .build()
-        .expect("valid policy");
+        .expect("positive connection limit");
+    if let Some(timeout) = idle_timeout {
+        policy = policy.idle_timeout(timeout);
+    }
+    let policy = policy.build().expect("valid policy");
     let lease = proxy
         .attach(
             PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -219,7 +230,8 @@ fn concurrent_tunnel_throughput() {
     let mib_per_second = f64::from(u32::try_from(total_mebibytes).expect("total MiB fits u32"))
         / elapsed.as_secs_f64();
     eprintln!(
-        "throughput direction={direction:?} mebibytes_per_tunnel={mebibytes} concurrency={concurrency} elapsed_ms={} mebibytes_per_second={mib_per_second:.1} upload_bytes={} download_bytes={}",
+        "throughput direction={direction:?} mebibytes_per_tunnel={mebibytes} concurrency={concurrency} idle_timeout_ms={} elapsed_ms={} mebibytes_per_second={mib_per_second:.1} upload_bytes={} download_bytes={}",
+        idle_timeout.map_or(0, |timeout| timeout.as_millis()),
         elapsed.as_millis(),
         final_usage.uploaded_bytes,
         final_usage.downloaded_bytes,

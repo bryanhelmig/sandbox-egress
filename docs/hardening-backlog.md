@@ -54,7 +54,8 @@ contributor instead of preserving solved work as apparent backlog.
   cleanup; concurrent caller recovery is measured, but outstanding host calls
   are not currently capped inside the crate.
 - Stable RSS, threads, tasks, sockets, and descriptors under long-lived,
-  concurrent, and backpressured tunnel soak.
+  concurrent, and backpressured tunnel soak, including sustained traffic that
+  keeps configured idle timers alive.
 - Allocation and copy overhead per connection and per transferred byte.
 - Long-duration downstream diagnostic retention and aggregation behavior; the
   proxy-side reason cardinality, emission rate, and channel work are bounded.

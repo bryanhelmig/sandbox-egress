@@ -225,6 +225,16 @@ denial counter exactly once. An over-limit upload already coalesced with the
 CONNECT header remains an earlier fail-closed case: it is denied in full before
 DNS or dialing.
 
+An immutable policy may also set a nonzero tunnel idle timeout. Its clock
+starts only after CONNECT success and any configured ClientHello inspection;
+handshake work remains governed by the absolute handshake deadline. Every
+nonempty read from either tunnel direction resets one shared clock. When the
+clock expires, the proxy records one static `tunnel-idle-timeout` denial and
+drops the bidirectional copy, stopping both socket directions without waiting
+for a peer. Lease cancellation races ahead of that timer and remains the
+certifying shutdown boundary. Idle expiry is disabled by default, so callers
+must choose a duration appropriate for the applications their run may use.
+
 An ordinary EOF is directional. The proxy propagates it as a write-half
 shutdown and continues the reverse copy until that direction also ends. Only
 two graceful direction endings count as a completed tunnel. A connection reset

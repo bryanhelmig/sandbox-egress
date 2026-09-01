@@ -62,6 +62,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .allow_port(443)
         // Optional: require visible TLS SNI to repeat the CONNECT hostname.
         .require_tls_sni()
+        // Optional: release a tunnel that moves no bytes in either direction.
+        .idle_timeout(Duration::from_secs(60))
         .max_connections(8)?
         .build()?;
 
@@ -164,6 +166,8 @@ The current vertical slice provides:
   `AllowOuterSni` mode is available for integrations that knowingly accept an
   unverifiable encrypted inner name;
 - upload/download accounting and optional transfer ceilings;
+- an optional per-run tunnel idle timeout, reset by bytes moving in either
+  direction and disabled by default;
 - opt-in structured denial events with process-wide rate limiting and
   nonblocking bounded-channel delivery;
 - explicit lease and proxy shutdown deadlines.

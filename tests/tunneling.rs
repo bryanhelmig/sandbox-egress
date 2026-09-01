@@ -148,6 +148,21 @@ fn attach_for_ports(
         .expect("attach lease")
 }
 
+fn attach_with_idle_timeout(proxy: &Proxy, port: u16, timeout: Duration) -> sandbox_egress::Lease {
+    let policy = Policy::builder()
+        .allow_network("127.0.0.0/8".parse::<IpNet>().expect("loopback test CIDR"))
+        .allow_port(port)
+        .idle_timeout(timeout)
+        .build()
+        .expect("valid idle policy");
+    proxy
+        .attach(
+            PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            policy,
+        )
+        .expect("attach idle lease")
+}
+
 fn open_tunnel(endpoint: SocketAddr, port: u16) -> TcpStream {
     let mut client = TcpStream::connect(endpoint).expect("connect proxy");
     client
@@ -494,7 +509,7 @@ fn exact_download_limit_is_independent_for_each_tunnel() {
 fn close_interrupts_both_sides_of_an_idle_tunnel() {
     let (port, accepted, peer_closed, peer_thread) = start_blocked_peer();
     let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
-    let lease = attach_for_ports(&proxy, &[port], None);
+    let lease = attach_with_idle_timeout(&proxy, port, Duration::from_secs(10));
     let mut client = open_tunnel(lease.endpoint().socket_addr(), port);
     accepted
         .recv_timeout(Duration::from_secs(1))
@@ -507,6 +522,7 @@ fn close_interrupts_both_sides_of_an_idle_tunnel() {
         .usage();
     assert!(started.elapsed() < Duration::from_millis(500));
     assert_eq!(final_usage.active_connections, 0);
+    assert_eq!(final_usage.denied_connections, 0);
 
     client
         .set_read_timeout(Some(Duration::from_millis(250)))
@@ -518,6 +534,141 @@ fn close_interrupts_both_sides_of_an_idle_tunnel() {
             .expect("upstream closure result"),
     );
     peer_thread.join().expect("blocked peer thread");
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
+fn idle_timeout_closes_both_sides_and_counts_one_denial() {
+    let (port, accepted, peer_closed, peer_thread) = start_blocked_peer();
+    let proxy =
+        Proxy::start(ProxyConfig::default().with_identity_reuse_quiet_period(Duration::ZERO))
+            .expect("start proxy");
+    let lease = attach_with_idle_timeout(&proxy, port, Duration::from_millis(50));
+    let mut client = open_tunnel(lease.endpoint().socket_addr(), port);
+    client
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .expect("client idle timeout bound");
+    accepted
+        .recv_timeout(Duration::from_secs(1))
+        .expect("upstream accepted proxy");
+
+    assert_terminal_read(client.read(&mut [0_u8; 1]));
+    assert_terminal_read(
+        peer_closed
+            .recv_timeout(Duration::from_secs(1))
+            .expect("upstream idle closure"),
+    );
+    peer_thread.join().expect("idle upstream thread");
+
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close idle-expired lease")
+        .usage();
+    assert_eq!(final_usage.accepted_connections, 1);
+    assert_eq!(final_usage.active_connections, 0);
+    assert_eq!(final_usage.completed_connections, 0);
+    assert_eq!(final_usage.denied_connections, 1);
+    assert_eq!(final_usage.uploaded_bytes, 0);
+    assert_eq!(final_usage.downloaded_bytes, 0);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
+fn upload_activity_postpones_idle_timeout() {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind echo upstream");
+    let port = listener.local_addr().expect("echo upstream address").port();
+    let upstream = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept proxy");
+        let mut byte = [0_u8; 1];
+        loop {
+            match stream.read(&mut byte) {
+                Ok(0) => break,
+                Ok(1) => stream.write_all(&byte).expect("echo byte"),
+                Ok(bytes) => panic!("unexpected echo read size {bytes}"),
+                Err(error) => panic!("echo read failed: {error}"),
+            }
+        }
+    });
+    let proxy =
+        Proxy::start(ProxyConfig::default().with_identity_reuse_quiet_period(Duration::ZERO))
+            .expect("start proxy");
+    let lease = attach_with_idle_timeout(&proxy, port, Duration::from_millis(200));
+    let mut client = open_tunnel(lease.endpoint().socket_addr(), port);
+    client
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .expect("client activity timeout bound");
+
+    for _ in 0..5 {
+        thread::sleep(Duration::from_millis(50));
+        client.write_all(b"x").expect("write activity byte");
+        let mut echoed = [0_u8; 1];
+        client.read_exact(&mut echoed).expect("read activity byte");
+        assert_eq!(&echoed, b"x");
+    }
+    assert_terminal_read(client.read(&mut [0_u8; 1]));
+    upstream.join().expect("echo upstream thread");
+
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close activity lease")
+        .usage();
+    assert_eq!(final_usage.active_connections, 0);
+    assert_eq!(final_usage.completed_connections, 0);
+    assert_eq!(final_usage.denied_connections, 1);
+    assert_eq!(final_usage.uploaded_bytes, 5);
+    assert_eq!(final_usage.downloaded_bytes, 5);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
+fn download_activity_postpones_idle_timeout() {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind sender upstream");
+    let port = listener
+        .local_addr()
+        .expect("sender upstream address")
+        .port();
+    let upstream = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept proxy");
+        for _ in 0..5 {
+            thread::sleep(Duration::from_millis(50));
+            stream.write_all(b"x").expect("send activity byte");
+        }
+        assert_terminal_read(stream.read(&mut [0_u8; 1]));
+    });
+    let proxy =
+        Proxy::start(ProxyConfig::default().with_identity_reuse_quiet_period(Duration::ZERO))
+            .expect("start proxy");
+    let lease = attach_with_idle_timeout(&proxy, port, Duration::from_millis(200));
+    let mut client = open_tunnel(lease.endpoint().socket_addr(), port);
+    client
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .expect("client activity timeout bound");
+
+    for _ in 0..5 {
+        let mut received = [0_u8; 1];
+        client
+            .read_exact(&mut received)
+            .expect("read activity byte");
+        assert_eq!(&received, b"x");
+    }
+    assert_terminal_read(client.read(&mut [0_u8; 1]));
+    upstream.join().expect("sender upstream thread");
+
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close download-active lease")
+        .usage();
+    assert_eq!(final_usage.active_connections, 0);
+    assert_eq!(final_usage.completed_connections, 0);
+    assert_eq!(final_usage.denied_connections, 1);
+    assert_eq!(final_usage.uploaded_bytes, 0);
+    assert_eq!(final_usage.downloaded_bytes, 5);
     proxy
         .shutdown(Instant::now() + Duration::from_secs(1))
         .expect("proxy shutdown");
