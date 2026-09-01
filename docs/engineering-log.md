@@ -2341,3 +2341,31 @@ descriptors and five threads to four and two, finishing at 3,932 KiB RSS in
 1,073 ms. The rootless runner reproduced 115/115 as UID/GID 65534; image
 `sha256:dfcd57a000466a33516c7274e438f787fbcb6041f78ca8c32dff2d0549834c3a`
 measured 40,414,382 bytes.
+
+## 2026-09-01 — distinguish missing SNI from non-TLS tunnels
+
+Visible-SNI mode previously had parser-level evidence for a valid ClientHello
+without SNI, but no public-path proof for that input or for a tunnel that does
+not begin with TLS. Both must fail closed, yet their operational causes should
+remain distinguishable without logging attacker-controlled bytes.
+
+One real two-connection case now sends a valid no-SNI ClientHello and a fixed
+non-TLS byte string through the same lease. It requires the stable bounded
+reasons `tls-sni-missing` and `client-hello-invalid`, respectively. Both
+already-connected upstreams must observe zero bytes. Certified close then
+requires exactly two accepted and denied connections, zero completed or active
+connections, and exact attempted-upload accounting. The focused case passed
+ten consecutive runs.
+
+Production behavior already held the invariant, so no data-path benchmark was
+run. Whole-tree SCC 4.0.0 complexity moved from 513/1,545 to 514/1,547
+structural/cognitive; the loop-based conformance proof added only one
+structural and two cognitive points.
+
+The native and exact Rust 1.88 Linux factories passed all 116 deterministic
+cases, doctests, documentation, and package verification; native dependency
+policy checks also passed. Linux's 500-lease lane returned from eight
+descriptors and five threads to four and two, finishing at 4,012 KiB RSS in
+1,041 ms. The rootless runner reproduced 116/116 as UID/GID 65534; image
+`sha256:e2d9b5ef3769972bf8fba26903e87409eadf89bb7cc6a285d426f40f12e99fdb`
+measured 40,421,194 bytes.

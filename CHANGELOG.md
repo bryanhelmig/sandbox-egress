@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Prove visible-SNI mode gives valid no-SNI and non-TLS inputs distinct bounded
+  denials while forwarding neither input upstream.
 - Reject ClientHello SNI lists with multiple hostnames and prove that no
   ambiguous handshake bytes reach the upstream.
 - Prove certified close terminates both hostile writers when upload and

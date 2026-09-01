@@ -1,6 +1,6 @@
 use std::future::Future;
 use std::io;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Shutdown, SocketAddr};
 use std::pin::Pin;
 use std::sync::{Arc, mpsc};
 use std::thread;
@@ -254,6 +254,91 @@ fn multiple_tls_sni_names_are_never_forwarded_upstream() {
     assert_eq!(final_usage.downloaded_bytes, 0);
     assert_eq!(final_usage.denied_connections, 1);
     assert_eq!(final_usage.active_connections, 0);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
+fn missing_sni_and_non_tls_have_distinct_bounded_denials() {
+    let (missing_port, missing_observed, missing_target) = start_tls_denial_observer();
+    let (plain_port, plain_observed, plain_target) = start_tls_denial_observer();
+    let (diagnostic_tx, diagnostic_rx) = mpsc::sync_channel(2);
+    let proxy = Proxy::start_with_test_resolver(
+        ProxyConfig::default()
+            .with_identity_reuse_quiet_period(Duration::ZERO)
+            .with_diagnostic_channel(diagnostic_tx, 10),
+        Arc::new(StaticResolver(IpAddr::V4(Ipv4Addr::LOCALHOST))),
+    )
+    .expect("start diagnostic TLS proxy");
+    let policy = Policy::builder()
+        .allow_host("allowed.test")
+        .expect("valid test hostname")
+        .allow_network("127.0.0.0/8".parse().expect("valid loopback test network"))
+        .allow_port(missing_port)
+        .allow_port(plain_port)
+        .require_tls_sni()
+        .build()
+        .expect("valid diagnostic TLS policy");
+    let lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            policy,
+        )
+        .expect("attach diagnostic TLS lease");
+    let missing_hello = client_hello(None, false);
+    let plain_bytes = b"this is not a TLS record".to_vec();
+    let expected_upload = (missing_hello.len() + plain_bytes.len()) as u64;
+
+    for (port, payload, reason, observed, target) in [
+        (
+            missing_port,
+            missing_hello,
+            "tls-sni-missing",
+            missing_observed,
+            missing_target,
+        ),
+        (
+            plain_port,
+            plain_bytes,
+            "client-hello-invalid",
+            plain_observed,
+            plain_target,
+        ),
+    ] {
+        let mut client = open_tls_tunnel(&lease, "allowed.test", port);
+        std::io::Write::write_all(&mut client, &payload).expect("write denied tunnel bytes");
+        client
+            .shutdown(Shutdown::Write)
+            .expect("finish denied tunnel upload");
+        assert_tunnel_closed(&mut client);
+        assert_eq!(
+            observed
+                .recv_timeout(Duration::from_secs(1))
+                .expect("observed denied target"),
+            0
+        );
+        assert_eq!(
+            diagnostic_rx
+                .recv_timeout(Duration::from_secs(1))
+                .expect("TLS denial diagnostic")
+                .reason
+                .as_str(),
+            reason
+        );
+        target.join().expect("denied TLS target");
+    }
+
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close diagnostic TLS lease")
+        .usage();
+    assert_eq!(final_usage.accepted_connections, 2);
+    assert_eq!(final_usage.active_connections, 0);
+    assert_eq!(final_usage.denied_connections, 2);
+    assert_eq!(final_usage.completed_connections, 0);
+    assert_eq!(final_usage.uploaded_bytes, expected_upload);
+    assert_eq!(final_usage.downloaded_bytes, 0);
     proxy
         .shutdown(Instant::now() + Duration::from_secs(1))
         .expect("proxy shutdown");

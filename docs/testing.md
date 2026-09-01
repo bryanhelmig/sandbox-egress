@@ -163,7 +163,7 @@ exactly one executable for each conformance target, strips copies, and carries
 only those binaries into a Debian runner. The CLI's compile-time executable
 dependency is copied at its exact embedded path. The factory deletes its
 compilation tree only after collection, before committing the source-dependent
-layer. The final image runs as UID/GID 65534 and must reproduce all 115
+layer. The final image runs as UID/GID 65534 and must reproduce all 116
 deterministic cases without Cargo, source, or a build cache.
 
 Source-identity cases prove an IPv4 address and its mapped IPv6 transport
@@ -269,6 +269,12 @@ one denial, and send zero bytes upstream. Separate phase tests hold a partial
 ClientHello open and prove that both lease close and the absolute handshake
 deadline end the client, upstream socket, parser work, and active connection
 count.
+
+A two-connection public-path case distinguishes a syntactically valid
+ClientHello with no SNI from bytes that are not a TLS record. It requires the
+stable `tls-sni-missing` and `client-hello-invalid` diagnostics respectively,
+zero bytes at both upstreams, exact attempted-upload accounting, two denials,
+and no completed or active connections.
 
 A fixed valid ClientHello includes a GREASE cipher-suite value and a GREASE
 extension before SNI. Rustls must accept it, the focused extension walk must
