@@ -205,8 +205,10 @@ checks only the visible outer SNI. It cannot know the encrypted inner name.
 Neither mode terminates TLS or checks the application authority inside the
 encrypted tunnel, so Sandbox Egress does not claim to eliminate every form of
 domain fronting. Plain HTTP forwarding, transparent interception,
-arbitrary resolver backends, and configurable destination-range tables are also
-not yet implemented. These gaps are tracked rather than hidden.
+arbitrary resolver backends, configurable destination-range tables, and
+connection-attempt rate or burst ceilings are also not yet implemented.
+Concurrency limits bound simultaneous owned work; they do not bound rapid
+terminal requests over time. These gaps are tracked rather than hidden.
 
 Global connection, resolver, and outbound-dial work are bounded independently.
 The defaults are 1,024 admitted connections, 32 concurrent DNS lookups, and
