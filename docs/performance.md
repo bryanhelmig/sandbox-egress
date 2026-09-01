@@ -231,6 +231,20 @@ with p99 latency from 41.7 to 160.1 ms. This is a capacity-planning observation,
 not a configured concurrency recommendation. Production code and runtime
 tuning remain unchanged.
 
+The final three-run sweep at revision `0e634ef` reproduced the same curve on
+the 187-case implementation:
+
+```text
+concurrency:                 1        8       32       64      128      256
+median connections/sec: 6,792   19,919   21,295   21,949   20,524   17,742
+median p99 latency (us):   165      431    1,231    2,315    5,932   68,420
+```
+
+Absolute medians improved in this local run, but no code-path change explains
+that movement and no speedup is claimed. The stable signal is the curve:
+throughput again levels around 32–64 clients and 256 clients sharply increase
+tail latency. Runtime tuning remains unchanged.
+
 The same five-run command in the pinned Rust 1.88 Linux container on the local
 two-vCPU arm64 VM measured 27,421–31,592 connections/second (median 29,989),
 p50 984–1,077 microseconds, p95 1,598–1,856 microseconds, and p99

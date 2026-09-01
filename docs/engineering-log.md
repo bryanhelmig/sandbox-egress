@@ -5265,3 +5265,17 @@ benchmark smoke targets under optimized code generation. The package audit
 lists 69 intended source, test, benchmark, documentation, and factory files;
 there is no configured Git remote. Production behavior and complexity are
 unchanged.
+
+## 2026-09-01 — reproduce the final connection curve
+
+The final performance rotation ran the six-point, three-repeat fixed-work
+sweep on revision `0e634ef`. Median rates for concurrency 1, 8, 32, 64, 128,
+and 256 were 6,792, 19,919, 21,295, 21,949, 20,524, and 17,742 connections per
+second. Median p99 setup latencies were 165, 431, 1,231, 2,315, 5,932, and
+68,420 microseconds.
+
+The absolute numbers are somewhat better than the previous local sweep without
+a causal hot-path change, so no speedup is claimed. The repeated shape is the
+useful evidence: throughput saturates around 32–64 callers and 256 callers
+materially worsen tail latency. No runtime tuning or production code is
+changed.
