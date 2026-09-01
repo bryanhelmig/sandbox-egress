@@ -106,6 +106,11 @@ denials override both grants and the ordinary public-IP behavior. The example
 permits 443 explicitly; the thin executable makes the same HTTPS-only choice
 on behalf of its intentionally smaller command-line surface.
 
+Hostname rules authorize names, not arbitrary numeric authorities. An allowed
+hostname may resolve to an otherwise ordinary public address, but a direct IP
+literal requires an explicit `allow_network` grant. Both paths still honor
+network denials, translated-address checks, and the proxy-endpoint guard.
+
 ## Why a lease?
 
 Starting a connection and ending a run are concurrent events. A connection may

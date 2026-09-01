@@ -149,6 +149,12 @@ that full-set validation, duplicate approved socket addresses are collapsed in
 first-seen order. Repeated records therefore consume one bounded answer slot
 each but cannot amplify sequential connection attempts.
 
+A hostname grant authorizes the canonical requested name and then subjects
+every answer to the destination floor. It does not authorize an equivalent
+numeric request-target. A direct IPv4 or IPv6 literal requires an explicit
+network grant, and an overlapping network denial still wins. This keeps a
+domain-scoped policy from silently becoming a general public-IP policy.
+
 Numeric-looking legacy host spellings are not trusted as IP literals. If a
 host policy deliberately permits one as a hostname, the production resolver
 still returns ordinary addresses and the complete result set crosses the same
