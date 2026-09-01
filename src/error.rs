@@ -1,5 +1,4 @@
 use std::fmt;
-use std::io;
 
 use thiserror::Error;
 
@@ -18,9 +17,6 @@ pub enum ProxyError {
     /// Proxy-wide shutdown exceeded its deadline.
     #[error("proxy shutdown exceeded its deadline")]
     ShutdownTimeout,
-    /// An operating-system I/O operation failed.
-    #[error("proxy I/O failed: {0}")]
-    Io(#[from] io::Error),
 }
 
 /// Invalid immutable policy construction.

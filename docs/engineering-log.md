@@ -826,3 +826,25 @@ median download), so no throughput change was claimed.
 The exact Rust 1.88 Linux image passed the factory and hostile lane. Its
 500-lease smoke held eight descriptors and five threads while live, returned
 to four descriptors and two threads, and finished at 3,928 KiB RSS.
+
+## 2026-08-31 — remove unused direct tracing surface
+
+The simplification review found `tracing` declared directly even though no
+production or test code called it. Hickory still uses tracing internally, but
+removing Sandbox Egress's declaration also disabled the unused default
+attributes feature and removed `tracing-attributes` from the resolved graph.
+The lockfile lost that proc-macro package and its direct `syn` edge.
+
+`ProxyError::Io` was also removed: no public operation constructed it, and all
+actual start/shutdown failures already map to initialization, stopped-runtime,
+or shutdown-timeout variants. Keeping an unreachable public variant would
+promise a distinction the crate does not make.
+
+The locked native factory, docs, package, and hostile lane all passed. Source
+dropped four lines, direct runtime dependencies dropped from nine to eight,
+and whole-tree structural/cognitive complexity stayed at 342/1,000. This was a
+contract and compile-surface cleanup, not a runtime performance claim.
+
+A cold exact-Rust-1.88 Linux rebuild passed the same factory and hostile lane.
+Its 500-lease smoke held eight descriptors and five threads while live,
+returned to four descriptors and two threads, and finished at 3,952 KiB RSS.
