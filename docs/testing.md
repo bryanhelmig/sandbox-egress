@@ -315,6 +315,11 @@ AAAA questions for both alias and target, returns `169.254.169.254` for the
 target, and requires the ordinary resolved-address denial with zero connector
 calls. This proves alias following cannot inherit hostname trust at the IP
 boundary.
+An incomplete-wire case answers each A/AAAA attempt with only the two-byte
+transaction identifier. It requires exactly six questions, a bounded
+`dns-failed` response, zero connector calls, and exact final denial accounting.
+The focused case is repeated 25 times; broader malformed response shapes remain
+an explicit hardening inventory rather than an implied claim.
 A deterministic failover case holds the first approved connector future
 pending under a 400 ms absolute deadline and maps the second address to a local
 listener. It must connect through the second address in resolver order; the old

@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Pin an incomplete DNS wire reply to six bounded resolver questions, an
+  immediate `dns-failed` denial, zero dial attempts, and exact lease cleanup.
 - Prove an allowed CNAME that resolves to a metadata address is rejected after
   real wire alias following and never reaches the connector.
 - Extend resource measurement through repeated completed tunnels,

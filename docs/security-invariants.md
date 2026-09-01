@@ -135,6 +135,12 @@ address, then requires `resolved-address-denied` with zero connector calls.
 The CONNECT hostname remains the authority rule; every terminal address still
 passes the destination floor independently.
 
+Malformed resolver input cannot fall through to dialing. A real UDP fixture
+returns only the query transaction identifier, omitting even the DNS header.
+The maintained resolver makes six bounded A/AAAA attempts, after which the
+connection receives `dns-failed`; the connector remains untouched and close
+certifies the denial.
+
 Approved addresses retain resolver order and are dialed one at a time. Before
 each attempt, the remaining absolute handshake time is divided evenly across
 the addresses not yet tried. A pending early address therefore cannot consume

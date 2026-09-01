@@ -3017,3 +3017,30 @@ in 1,060 ms. The 2,000-connection terminal lane returned to four and two at
 5,160 KiB in 436 ms. The rootless 139/139 conformance image is
 `sha256:ed2e8ed16d0d4667e8084c8c8bbd777a3ad74ce3762516142c332ed45fc5fd70`
 (40,557,141 bytes).
+
+## 2026-09-01 — bound incomplete DNS wire replies
+
+A local UDP authority now returns only the two-byte transaction identifier for
+every A and AAAA question, omitting even the DNS header. The production Hickory
+path makes exactly six questions—three attempts across both address
+families—then reports a protocol failure. The proxy returns `502 dns-failed`
+within the one-second test bound, records no connector attempts, and certified
+close reports exactly one denial. The focused case passed 25 consecutive runs.
+Broader malformed response matrices remain open; this commits one minimal
+failure shape and its retry amplification rather than generalizing from it.
+
+The first assertion expected the lease's 200 ms DNS deadline to win and exposed
+the actual immediate `dns-failed` classification. The first server helper then
+accepted any positive query count. Measuring six stable questions allowed that
+loop and stop channel to be replaced by the existing exact-count UDP fixture.
+The final proof therefore adds no measured structural or cognitive complexity:
+the whole tree remains at 590/1,790, and production code is unchanged.
+
+The native and exact Rust 1.88 Linux factories passed 140 deterministic cases,
+documentation, and package verification. Linux's 64-caller control lane peaked
+at 5,320 KiB RSS and returned to four descriptors and two threads at 4,860 KiB
+in 177 ms. The 500-lease lane returned to four and two at 4,868 KiB in 1,111
+ms. The 2,000-connection terminal lane returned to four and two at 5,180 KiB
+in 433 ms. The rootless 140/140 conformance image is
+`sha256:44d85c05ace8552dd073130eada044287415097f5dc5dd293b647d14e60c21df`
+(40,558,939 bytes).

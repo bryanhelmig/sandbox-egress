@@ -1576,6 +1576,10 @@ mod tests {
         response
     }
 
+    fn local_incomplete_dns_response(query: &[u8]) -> Vec<u8> {
+        query[..2].to_vec()
+    }
+
     fn local_cname_metadata_response(query: &[u8]) -> Vec<u8> {
         const TARGET: &[u8] = b"\x08metadata\x04test\x00";
 
@@ -2253,6 +2257,59 @@ mod tests {
             .usage();
         assert_eq!(final_usage.denied_connections, 1);
         server.join().expect("join local DNS server");
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
+    }
+
+    #[test]
+    fn malformed_dns_replies_are_bounded_and_never_dialed() {
+        let (address, server) = start_local_dns(6, local_incomplete_dns_response);
+        let dial_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let connector = Arc::new(RejectingConnector(Arc::clone(&dial_attempts)));
+        let proxy = Proxy::start_with_test_connector(
+            ProxyConfig::default()
+                .with_dns_server(address)
+                .with_dns_cache(0, Duration::ZERO),
+            connector,
+        )
+        .expect("start malformed DNS proxy");
+        let policy = Policy::builder()
+            .allow_host("malformed.test")
+            .expect("valid hostname")
+            .allow_port(443)
+            .dns_timeout(Duration::from_millis(200))
+            .handshake_timeout(Duration::from_secs(1))
+            .build()
+            .expect("valid policy");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                policy,
+            )
+            .expect("attach malformed DNS lease");
+        let started = Instant::now();
+        let mut client =
+            std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+        std::io::Write::write_all(
+            &mut client,
+            b"CONNECT malformed.test:443 HTTP/1.1\r\nHost: malformed.test\r\n\r\n",
+        )
+        .expect("write malformed-DNS CONNECT");
+        let mut response = String::new();
+        std::io::Read::read_to_string(&mut client, &mut response)
+            .expect("read malformed DNS denial");
+
+        assert!(response.starts_with("HTTP/1.1 502"), "{response}");
+        assert!(response.contains("dns-failed"), "{response}");
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert_eq!(dial_attempts.load(Ordering::Acquire), 0);
+        let final_usage = lease
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("close malformed DNS lease")
+            .usage();
+        assert_eq!(final_usage.denied_connections, 1);
+        server.join().expect("join malformed DNS server");
         proxy
             .shutdown(Instant::now() + Duration::from_secs(1))
             .expect("proxy shutdown");
