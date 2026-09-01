@@ -5008,3 +5008,21 @@ calls for a black-box Linux/Firecracker harness covering the same escape paths.
 No runtime behavior, public API, dependencies, tests, or complexity changed.
 This pass deliberately does not put OS-specific cage machinery into the
 embeddable proxy crate or weaken the meaning of successful `Lease::close`.
+
+## 2026-09-01 — reject a hostname-index optimization
+
+The next performance rotation tested whether the deliberately simple linear
+hostname-rule vectors become a meaningful connection bottleneck. A temporary
+end-to-end Criterion case installed 1,024 unmatched exact hostname grants and
+requested a denied hostname. Three runs measured 64.54–75.58 microseconds. The
+equivalent empty-policy control measured 65.33–79.86 microseconds across three
+runs on the same tree.
+
+No end-to-end regression was detectable: TCP setup, parsing, denial writing,
+and close dominate this path. A hash index would add another representation,
+hashing behavior, and small-policy overhead without measured benefit. The
+candidate idea and temporary benchmark are discarded; the existing vectors
+remain. Ordinary allowed-hostname control intervals were also recorded at
+138.68–169.75 microseconds, with ordinary host resolution and upstream setup
+still dominating. Production code, permanent benchmarks, and behavior are
+unchanged.
