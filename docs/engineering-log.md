@@ -2914,3 +2914,21 @@ four descriptors and two threads at 4,800 KiB in 182 ms. The following
 138/138 conformance image is
 `sha256:911cf1e1b00046aeed79dad19d252c52863ada036992da6a0b201b8494ab6e97`
 (40,555,530 bytes).
+
+## 2026-09-01 — remove solved work from the hardening backlog
+
+The hardening inventory had accumulated items that were already pinned by
+named conformance cases and documented invariants. Examples included every
+revocation phase, close reply races, global and per-lease pre-spawn admission,
+mixed allowed/forbidden DNS sets, checked-address-only dialing, transition
+address forms, the CONNECT authority matrix, TLS fragmentation and GREASE,
+counter saturation, and the Docker/resource/complexity factory itself. Leaving
+them as open bullets would direct future contributors toward duplicating work.
+
+The backlog now states its lifecycle rule and links to the testing record and
+this log for completed evidence. Thirty-one solved or purely methodological
+bullets were removed or consolidated. The remaining list emphasizes unresolved
+host-kernel identity limits, broader parser and resolver behavior, evolving TLS
+compatibility, terminal-path resources under active tunnels, admission
+fairness, control-plane saturation, and deployment integration. No security
+claim, public API, source, test, dependency, or factory behavior changed.
