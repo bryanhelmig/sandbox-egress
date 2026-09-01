@@ -5382,3 +5382,19 @@ no change or within its noise threshold. Saving one small allocation did not
 improve the measured connection path, while prefix draining adds mutation and
 partial-move mechanics. The candidate was removed and production code is
 unchanged.
+
+## 2026-09-01 — certify the 188-case Linux factory
+
+The exact post-deadline-hardening tree passes the complete pinned Rust 1.88
+factory: 188 deterministic cases, six doctests, all-target lint and benchmark
+smoke, documentation, package verification, and all eight serialized release
+resource lanes. The stripped runner repeats all 188 cases as UID/GID 65534.
+
+Every resource lane returned to four descriptors and two threads at process
+finish. Representative peaks were 521 descriptors for 128 silent tunnels, 69
+threads for 64 simultaneous host callers, 14,524 KiB RSS for 64 partial
+60,020-byte ClientHellos, and 521 descriptors for 128 partial upstream proxy
+responses. The final image is
+`sha256:48076b3ea27c62cadc99443f681354f7983a3bb6a01c2382cb07271e2636f015`
+at 40,983,005 bytes. This is reproducibility evidence, not a production image
+or a claim about resources outside the measured factory matrix.
