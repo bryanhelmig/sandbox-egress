@@ -4394,3 +4394,24 @@ to 8,572 KiB, eight descriptors, and five threads, and finished at 5,956 KiB,
 four descriptors, and two threads. The rootless 178/178 image is
 `sha256:67616fd4ef80064a9b0c931ebdc0a9fc5f837915063cff37dfedfaadf3172e9f`
 (40,896,008 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — reject borrowed byte-accounting counters
+
+The next performance rotation began with five fresh 10,000-connection load
+runs at concurrency 64 and sixteen loopback destinations. They completed at
+15,724–22,035 connections/second (median 17,818); four p50 observations were
+1,733–1,940 microseconds, while p95 and p99 showed host-scheduling tails. The
+spread reinforces the rule that a small source-level reduction needs paired
+microbenchmark evidence before it can be retained.
+
+A candidate let each tunnel's metering wrappers borrow the lease counters
+instead of retaining three `Arc` owners. All 120 library cases passed. Three
+optimized allowed-CONNECT measurements were 114.07–125.06,
+116.27–133.75, and 118.43–136.47 microseconds. The three immediately preceding
+baseline intervals were 110.58–131.63, 110.08–125.45, and
+117.25–133.52 microseconds. Every pair overlapped, Criterion detected no
+change, and the candidate did not trend better.
+
+The lifetime-bearing wrapper was discarded. The existing explicit shared
+ownership remains simpler, no production source or test count changes, and no
+performance improvement is claimed.
