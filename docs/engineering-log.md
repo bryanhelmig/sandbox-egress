@@ -5491,3 +5491,29 @@ second median under the same workload shape. The new median is 1.0 percent
 higher and remains inside the observed run-to-run spread, so there is no
 performance regression or optimization claim. Production configuration stays
 unchanged.
+
+## 2026-09-01 — certify the final local candidate
+
+The exact 188-case tree passes the complete locked local factory: formatting,
+all-target and all-feature compilation, pedantic lint, 188 deterministic tests,
+benchmark smoke, six doctests, warning-denied documentation, a verified
+69-file package, and dependency advisory, license, ban, and source policy.
+
+Four scheduler-sensitive boundaries then passed 10 strict repetitions each:
+a queued old socket cannot inherit a replacement policy, a revoking arrival
+restarts the quiet interval, an already-expired close deadline revokes before
+returning the owning lease, and close interrupts simultaneous bidirectional
+backpressure. The repetition shell stopped on the first failure; all 40
+complete cases passed.
+
+The same 188 deterministic cases and both benchmark binaries also pass under
+the locked optimized all-target build. This checks the release code-generation
+path separately from the ordinary debug factory and introduces no profile- or
+platform-specific exception.
+
+Repository checks find no working-tree changes, remotes, placeholder markers,
+prohibited Rust blocks, or prohibited test-harness references. Every shell
+entry point parses and is executable, the package list remains 69 files, and
+the commit graph passes full object verification. One unreachable blob from a
+discarded experiment remains in the local object database; it is not reachable
+from the 187-commit history or package and has no release effect.
