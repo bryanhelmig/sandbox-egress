@@ -149,9 +149,16 @@ impl Proxy {
     /// # Errors
     ///
     /// Returns [`AttachError::IdentityInUse`] until the previous lease has
-    /// closed successfully or completed best-effort cleanup.
+    /// closed successfully or completed best-effort cleanup. It returns
+    /// [`AttachError::LeaseIdExhausted`] rather than reusing a diagnostic
+    /// sequence after process-local exhaustion.
     pub fn attach(&self, identity: PeerIdentity, policy: Policy) -> Result<Lease, AttachError> {
-        let id = self.next_lease_id.fetch_add(1, Ordering::Relaxed);
+        let id = self
+            .next_lease_id
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                current.checked_add(1)
+            })
+            .map_err(|_| AttachError::LeaseIdExhausted)?;
         let state = Arc::new(LeaseState::new(
             id,
             identity,
@@ -167,6 +174,7 @@ impl Proxy {
             .map_err(|_| AttachError::RuntimeStopped)?;
         reply_rx.recv().map_err(|_| AttachError::RuntimeStopped)??;
         Ok(Lease {
+            id,
             endpoint: self.endpoint,
             commands: self.commands.clone(),
             state: Some(state),
@@ -213,6 +221,7 @@ impl Drop for Proxy {
 
 /// Exclusive management handle for one run's proxy identity and work.
 pub struct Lease {
+    id: u64,
     endpoint: Endpoint,
     commands: tokio_mpsc::UnboundedSender<Command>,
     state: Option<Arc<LeaseState>>,
@@ -223,12 +232,17 @@ impl std::fmt::Debug for Lease {
         formatter
             .debug_struct("Lease")
             .field("endpoint", &self.endpoint)
-            .field("id", &self.state.as_ref().map(|state| state.id))
+            .field("id", &self.id)
             .finish_non_exhaustive()
     }
 }
 
 impl Lease {
+    /// Return the unique process-local sequence for correlating host diagnostics.
+    pub const fn id(&self) -> u64 {
+        self.id
+    }
+
     /// Return the proxy URL for this run.
     pub const fn endpoint(&self) -> Endpoint {
         self.endpoint
@@ -381,6 +395,7 @@ impl LeaseState {
         };
         let phase = self.phase.lock().expect("lease phase poisoned");
         if *phase != Phase::Open {
+            drop(phase);
             self.record_denial("lease-revoking");
             return None;
         }
@@ -412,7 +427,7 @@ impl LeaseState {
     fn record_denial(&self, reason: &'static str) {
         self.counters.deny();
         self.diagnostics
-            .report(self.identity.clone(), DenialReason::new(reason));
+            .report(self.id, self.identity.clone(), DenialReason::new(reason));
     }
 }
 
@@ -1662,5 +1677,22 @@ mod tests {
 
         let retained = leases.get(&identity).expect("replacement retained");
         assert!(Arc::ptr_eq(retained, &replacement));
+    }
+
+    #[test]
+    fn exhausted_lease_sequence_fails_closed_instead_of_wrapping() {
+        let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+        proxy.next_lease_id.store(u64::MAX, Ordering::Relaxed);
+
+        assert!(matches!(
+            proxy.attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                Policy::builder().build().expect("valid policy"),
+            ),
+            Err(AttachError::LeaseIdExhausted)
+        ));
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
     }
 }

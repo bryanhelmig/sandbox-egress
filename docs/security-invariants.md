@@ -116,9 +116,12 @@ bytes upstream, but the upstream TCP connection has already occurred.
 
 Diagnostics are disabled by default. When configured, every lease-owned policy
 or capacity denial increments accounting before attempting delivery. Events
-contain only the host-authenticated peer identity, a crate-owned static reason
-code, and a process-wide suppression count; guest-provided authority text is
-never copied into an event.
+contain only the proxy-assigned lease sequence, host-authenticated peer
+identity, a crate-owned static reason code, and a process-wide suppression
+count; guest-provided authority text is never copied into an event. The lease
+sequence distinguishes an old queued event after its source IP is reassigned.
+Lease attachment fails explicitly if the process-local sequence is exhausted;
+it never wraps into an earlier run's diagnostic identity.
 
 Delivery uses `SyncSender::try_send`, so a full or disconnected caller-owned
 channel cannot block proxy work. A process-wide one-second window bounds

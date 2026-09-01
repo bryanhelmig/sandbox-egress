@@ -47,6 +47,9 @@ pub enum AttachError {
     /// Another open or revoking lease owns the identity.
     #[error("peer identity is already attached or still revoking")]
     IdentityInUse,
+    /// The proxy cannot assign another unique process-local lease sequence.
+    #[error("proxy lease sequence is exhausted")]
+    LeaseIdExhausted,
     /// The proxy runtime stopped before attachment completed.
     #[error("proxy runtime stopped during attachment")]
     RuntimeStopped,

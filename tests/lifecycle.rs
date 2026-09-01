@@ -268,7 +268,7 @@ fn hostname_policy_denies_before_dns() {
 }
 
 #[test]
-fn denial_diagnostic_contains_only_bounded_identity_and_reason() {
+fn diagnostics_retain_lease_attribution_across_identity_reuse() {
     let (diagnostic_tx, diagnostic_rx) = mpsc::sync_channel(4);
     let proxy = Proxy::start(ProxyConfig::default().with_diagnostic_channel(diagnostic_tx, 10))
         .expect("start proxy");
@@ -285,17 +285,46 @@ fn denial_diagnostic_contains_only_bounded_identity_and_reason() {
         .expect("write CONNECT");
     let mut response = String::new();
     client.read_to_string(&mut response).expect("read denial");
-
-    let event = diagnostic_rx
-        .recv_timeout(Duration::from_secs(1))
-        .expect("denial diagnostic");
-    assert_eq!(event.identity, identity);
-    assert_eq!(event.reason.as_str(), "host-denied");
-    assert_eq!(event.suppressed_before, 0);
-
+    let old_lease_id = lease.id();
     lease
         .close(Instant::now() + Duration::from_secs(1))
-        .expect("close lease");
+        .expect("close first lease");
+
+    let replacement = proxy
+        .attach(
+            identity.clone(),
+            Policy::builder().build().expect("valid policy"),
+        )
+        .expect("reuse identity after certified close");
+    let mut client = TcpStream::connect(replacement.endpoint().socket_addr())
+        .expect("connect replacement lease");
+    client
+        .write_all(b"CONNECT another-attacker-value.invalid:443 HTTP/1.1\r\n\r\n")
+        .expect("write replacement CONNECT");
+    let mut response = String::new();
+    client
+        .read_to_string(&mut response)
+        .expect("read replacement denial");
+
+    let old_event = diagnostic_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("old denial diagnostic");
+    let replacement_event = diagnostic_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("replacement denial diagnostic");
+    assert_eq!(old_event.lease_id, old_lease_id);
+    assert_eq!(old_event.identity, identity);
+    assert_eq!(old_event.reason.as_str(), "host-denied");
+    assert_eq!(old_event.suppressed_before, 0);
+    assert_ne!(replacement.id(), old_lease_id);
+    assert_eq!(replacement_event.lease_id, replacement.id());
+    assert_eq!(replacement_event.identity, identity);
+    assert_eq!(replacement_event.reason.as_str(), "host-denied");
+    assert_eq!(replacement_event.suppressed_before, 0);
+
+    replacement
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close replacement lease");
     proxy
         .shutdown(Instant::now() + Duration::from_secs(1))
         .expect("proxy shutdown");

@@ -30,6 +30,8 @@ impl fmt::Display for DenialReason {
 /// A nonblocking operational event emitted for a denied connection.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DiagnosticEvent {
+    /// Proxy-assigned sequence that distinguishes reuse of the same identity.
+    pub lease_id: u64,
     /// Host-authenticated identity that owned the denied connection.
     pub identity: PeerIdentity,
     /// Stable denial code. This never contains guest-provided text.
@@ -83,11 +85,11 @@ impl DiagnosticReporter {
         }))
     }
 
-    pub(crate) fn report(&self, identity: PeerIdentity, reason: DenialReason) {
-        self.report_at(identity, reason, Instant::now());
+    pub(crate) fn report(&self, lease_id: u64, identity: PeerIdentity, reason: DenialReason) {
+        self.report_at(lease_id, identity, reason, Instant::now());
     }
 
-    fn report_at(&self, identity: PeerIdentity, reason: DenialReason, now: Instant) {
+    fn report_at(&self, lease_id: u64, identity: PeerIdentity, reason: DenialReason, now: Instant) {
         let Some(inner) = &self.0 else { return };
         let event = {
             let mut state = inner.state.lock().expect("diagnostic rate state poisoned");
@@ -101,6 +103,7 @@ impl DiagnosticReporter {
             }
             state.emitted += 1;
             DiagnosticEvent {
+                lease_id,
                 identity,
                 reason,
                 suppressed_before: std::mem::take(&mut state.suppressed),
@@ -122,11 +125,13 @@ impl DiagnosticReporter {
 #[cfg(test)]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr};
+    use std::thread;
 
     use super::*;
 
     const REASON: DenialReason = DenialReason::new("test-denial");
     const IDENTITY: PeerIdentity = PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    const LEASE_ID: u64 = 7;
 
     #[test]
     fn rate_limit_reports_suppression_in_the_next_window() {
@@ -137,10 +142,10 @@ mod tests {
         }));
         let started = Instant::now();
 
-        reporter.report_at(IDENTITY.clone(), REASON, started);
-        reporter.report_at(IDENTITY.clone(), REASON, started);
-        reporter.report_at(IDENTITY.clone(), REASON, started);
-        reporter.report_at(IDENTITY, REASON, started + DIAGNOSTIC_WINDOW);
+        reporter.report_at(LEASE_ID, IDENTITY.clone(), REASON, started);
+        reporter.report_at(LEASE_ID, IDENTITY.clone(), REASON, started);
+        reporter.report_at(LEASE_ID, IDENTITY.clone(), REASON, started);
+        reporter.report_at(LEASE_ID, IDENTITY, REASON, started + DIAGNOSTIC_WINDOW);
 
         let events: Vec<_> = receiver.try_iter().collect();
         assert_eq!(events.len(), 3);
@@ -158,10 +163,10 @@ mod tests {
         }));
         let started = Instant::now();
 
-        reporter.report_at(IDENTITY.clone(), REASON, started);
-        reporter.report_at(IDENTITY, REASON, started);
+        reporter.report_at(LEASE_ID, IDENTITY.clone(), REASON, started);
+        reporter.report_at(LEASE_ID, IDENTITY, REASON, started);
         assert_eq!(receiver.recv().expect("first event").suppressed_before, 0);
-        reporter.report_at(IDENTITY, REASON, started + DIAGNOSTIC_WINDOW);
+        reporter.report_at(LEASE_ID, IDENTITY, REASON, started + DIAGNOSTIC_WINDOW);
 
         assert_eq!(
             receiver
@@ -169,6 +174,46 @@ mod tests {
                 .expect("next-window event")
                 .suppressed_before,
             1
+        );
+    }
+
+    #[test]
+    fn concurrent_reporters_share_one_exact_process_limit() {
+        const THREADS: usize = 8;
+        const EVENTS_PER_THREAD: usize = 100;
+        const LIMIT: u32 = 100;
+
+        let (sender, receiver) = mpsc::sync_channel(usize::try_from(LIMIT).unwrap() + 1);
+        let reporter = DiagnosticReporter::new(Some(&DiagnosticConfig {
+            sender,
+            max_events_per_second: LIMIT,
+        }));
+        let started = Instant::now();
+        let threads: Vec<_> = (0..THREADS)
+            .map(|_| {
+                let reporter = reporter.clone();
+                thread::spawn(move || {
+                    for _ in 0..EVENTS_PER_THREAD {
+                        reporter.report_at(LEASE_ID, IDENTITY.clone(), REASON, started);
+                    }
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().expect("reporter thread");
+        }
+        reporter.report_at(LEASE_ID, IDENTITY, REASON, started + DIAGNOSTIC_WINDOW);
+
+        let events: Vec<_> = receiver.try_iter().collect();
+        assert_eq!(events.len(), usize::try_from(LIMIT).unwrap() + 1);
+        assert!(
+            events[..events.len() - 1]
+                .iter()
+                .all(|event| event.suppressed_before == 0)
+        );
+        assert_eq!(
+            events.last().expect("next-window event").suppressed_before,
+            u64::try_from(THREADS * EVENTS_PER_THREAD).unwrap() - u64::from(LIMIT)
         );
     }
 }

@@ -965,15 +965,31 @@ no logging thread and performs no blocking callback.
 An opt-in process-wide one-second window limits delivery to a caller-selected
 rate clamped within `1..=10_000`. A full channel and excess rate both suppress
 without blocking. Suppression accumulates with saturation and is attached to
-the next event the channel accepts. Events contain source identity, a
-crate-owned static reason code, and the suppression count—never the requested
-hostname or another guest-controlled string.
+the next event the channel accepts. Events contain a proxy-assigned lease
+sequence, source identity, a crate-owned static reason code, and the suppression
+count—never the requested hostname or another guest-controlled string.
 
 All lease-owned policy and capacity denials now cross one `record_denial`
 boundary that increments usage before attempting diagnostics. Deterministic
 clock tests cover rate suppression; a one-slot channel proves backpressure;
-and a public real-socket case verifies the bounded event shape. The complete
-native and exact Rust 1.88 factories passed 63 deterministic cases.
+and a public real-socket case verifies the bounded event shape across certified
+close and source-IP reuse. Eight concurrent reporters also prove one exact
+process-wide limit: 800 same-window reports deliver 100 and carry 700
+suppressed into the next event. The identity-reuse case passed 25 consecutive
+runs.
+
+The review also found the pre-existing internal lease sequence used wrapping
+`fetch_add`. Once exposed for correlation, that would make its uniqueness claim
+technically false at exhaustion. Attachment now reserves the next sequence with
+a checked atomic update and returns `AttachError::LeaseIdExhausted` rather than
+wrapping. A boundary test drives that terminal state directly.
+
+With the attribution follow-up, the complete native and exact Rust 1.88
+factories passed 65 deterministic cases. The whole-tree structural/cognitive
+report is 361/1,059; most of the increase from 356/1,036 is the concurrent,
+reuse, and exhaustion evidence. The Linux 500-lease smoke retained five live
+threads and eight descriptors, returned to two threads and four descriptors,
+and finished at 4,060 KiB RSS.
 
 Whole-tree structural/cognitive complexity moved from 350/1,020 to 356/1,036.
 With diagnostics disabled, Criterion detected no change: allowed loopback was

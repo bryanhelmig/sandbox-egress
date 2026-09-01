@@ -47,8 +47,14 @@ zero.
 Diagnostic limiter tests use an injected monotonic instant rather than sleeps.
 They prove a fixed-window excess and a full channel are both nonblocking and
 appear in the next delivered event's saturating suppression count. A public
-real-socket case proves a hostname denial carries only source identity and the
-fixed `host-denied` reason, not the guest-controlled hostname.
+real-socket case queues one hostname denial, closes the lease, reuses the same
+source IP, and queues another. The events must carry distinct proxy-assigned
+lease sequences, source identity, and the fixed `host-denied` reason—not either
+guest-controlled hostname.
+
+A direct sequence-boundary case sets the next internal lease sequence to
+`u64::MAX` and requires typed attachment failure. It may not wrap into a value
+that could alias an earlier run.
 
 Performance gates begin as recorded baselines, not brittle absolute numbers.
 Benchmarks cover attach/close, policy matching, admission contention, and

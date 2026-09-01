@@ -6,7 +6,8 @@ Changelog and versions follow Semantic Versioning.
 ## Unreleased
 
 - Add opt-in, rate-limited structured denial events through a caller-owned
-  bounded channel, without a logging dependency or blocking callback.
+  bounded channel, without a logging dependency or blocking callback. Events
+  retain a non-wrapping lease sequence across source-identity reuse.
 - Saturate cumulative usage counters at `u64::MAX` so final accounting cannot
   wrap or panic at the integer boundary.
 - Bound accepted DNS answer cardinality and reject oversized sets before any
