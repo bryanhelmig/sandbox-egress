@@ -12,6 +12,11 @@ reach that control plane.
 spoof it and cannot bypass the proxy. The supervisor must fence the old
 namespace/NAT path before calling `Lease::close`.
 
+Attachment rejects unspecified and multicast source addresses because neither
+can identify the peer of an accepted TCP connection. Rejection happens before
+allocating the process-local lease sequence. IPv4-mapped IPv6 input is first
+canonicalized, so a mapped multicast address cannot bypass that validation.
+
 If the host's egress cage exempts trusted proxy sockets with Linux `SO_MARK`,
 every untrusted process in that network namespace must lack both
 `CAP_NET_ADMIN` and `CAP_NET_RAW`. Since Linux 5.17 either capability can set a

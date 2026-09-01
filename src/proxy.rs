@@ -154,13 +154,17 @@ impl Proxy {
     ///
     /// # Errors
     ///
-    /// Returns [`AttachError::IdentityInUse`] until the previous lease has
-    /// closed successfully or completed best-effort cleanup. It returns
+    /// Returns [`AttachError::InvalidIdentity`] for an unspecified or multicast
+    /// source address and [`AttachError::IdentityInUse`] until the previous lease
+    /// has closed successfully or completed best-effort cleanup. It returns
     /// [`AttachError::LeaseIdExhausted`] rather than reusing a diagnostic
     /// sequence after process-local exhaustion, and
     /// [`AttachError::ProxyStopping`] after proxy-wide shutdown begins.
     pub fn attach(&self, identity: PeerIdentity, policy: Policy) -> Result<Lease, AttachError> {
         let identity = identity.canonical();
+        if !identity.is_attachable() {
+            return Err(AttachError::InvalidIdentity);
+        }
         let id = self
             .next_lease_id
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {

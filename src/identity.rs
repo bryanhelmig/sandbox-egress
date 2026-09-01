@@ -22,6 +22,12 @@ impl PeerIdentity {
             identity => identity,
         }
     }
+
+    pub(crate) const fn is_attachable(&self) -> bool {
+        match self {
+            Self::SourceIp(address) => !address.is_unspecified() && !address.is_multicast(),
+        }
+    }
 }
 
 /// The HTTP proxy endpoint to expose inside the guest.

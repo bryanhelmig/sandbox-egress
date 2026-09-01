@@ -97,6 +97,9 @@ pub enum PolicyError {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum AttachError {
+    /// The identity cannot occur as the source of an accepted TCP connection.
+    #[error("peer identity cannot identify an accepted connection")]
+    InvalidIdentity,
     /// Another open or revoking lease owns the identity.
     #[error("peer identity is already attached or still revoking")]
     IdentityInUse,

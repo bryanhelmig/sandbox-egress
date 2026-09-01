@@ -5099,3 +5099,24 @@ with no proxy or egress-policy change.
 
 The two table pins now point at the reviewed heads. No Sandbox Egress feature,
 dependency, or behavior change is justified by these deltas.
+
+## 2026-09-01 — reject impossible source identities
+
+The final hardening review followed the host-cage contract back into the
+attachment API. `PeerIdentity::SourceIp` accepted unspecified and multicast
+addresses even though neither can appear as the peer of an accepted TCP
+connection. Such a lease could never own traffic, but still received a sequence
+and looked successfully installed to the supervisor.
+
+Attachment now canonicalizes the address and rejects those impossible forms
+with `AttachError::InvalidIdentity` before allocating a lease sequence or
+sending a runtime command. A public matrix covers IPv4 and IPv6 unspecified,
+multicast, and IPv4-mapped multicast forms, then requires the first concrete
+source identity to receive lease ID 1. Ordinary unicast and loopback identities
+remain unchanged. Twenty-five consecutive focused runs pass. The deterministic
+test count rises from 185 to 186; whole-tree structural/cognitive complexity
+moves from 771/2,285 to 775/2,297, mostly in the explicit five-shape proof.
+
+The complete native factory passes all 186 deterministic tests, six
+documentation examples, formatting, all-target lints, documentation,
+dependency policy, package verification, benchmark smoke, and release build.

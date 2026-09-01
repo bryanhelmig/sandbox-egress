@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Reject unspecified and multicast source identities before attachment or lease
+  sequence allocation because they cannot identify an accepted TCP peer.
 - Atomically disable diagnostics after the caller-owned receiver disconnects,
   avoiding repeated rate-state work under later denial volume.
 - Canonically order and deduplicate exact and wildcard hostname grants and

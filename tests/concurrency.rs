@@ -79,6 +79,40 @@ fn global_capacity_is_reserved_and_accounted_before_spawn() {
 }
 
 #[test]
+fn impossible_source_identities_fail_before_consuming_a_lease_id() {
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    for address in [
+        IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+        IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+        IpAddr::V4(Ipv4Addr::new(224, 0, 0, 1)),
+        IpAddr::V6("ff02::1".parse().expect("IPv6 multicast")),
+        IpAddr::V6(Ipv4Addr::new(224, 0, 0, 1).to_ipv6_mapped()),
+    ] {
+        assert!(matches!(
+            proxy.attach(
+                PeerIdentity::SourceIp(address),
+                Policy::builder().build().expect("valid policy"),
+            ),
+            Err(AttachError::InvalidIdentity)
+        ));
+    }
+
+    let lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            Policy::builder().build().expect("valid policy"),
+        )
+        .expect("attach concrete source identity");
+    assert_eq!(lease.id(), 1);
+    lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close lease");
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
 fn global_capacity_rejection_is_attributed_and_retry_recovers() {
     let proxy = Proxy::start(
         ProxyConfig::default()
