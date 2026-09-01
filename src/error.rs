@@ -29,6 +29,9 @@ pub enum PolicyError {
     /// A lease must admit at least one possible connection.
     #[error("connection limit must be greater than zero")]
     ZeroConnectionLimit,
+    /// A connection limit must fit the asynchronous runtime's semaphore.
+    #[error("connection limit is too large for the runtime")]
+    ConnectionLimitTooLarge,
     /// Deadlines must be positive.
     #[error("timeouts must be greater than zero")]
     ZeroTimeout,

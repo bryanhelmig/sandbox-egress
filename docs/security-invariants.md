@@ -67,6 +67,10 @@ Configuration and immutable policy construction reject durations too large for
 the platform clock to represent as deadlines. The connection path also uses
 checked deadline arithmetic, so elapsed startup time or a platform clock edge
 cannot turn a trusted configuration mistake into a panicking runtime task.
+The process header deadline must also be nonzero. Global connection and DNS
+limits are clamped to Tokio's semaphore maximum, and a per-lease limit beyond
+that maximum returns a typed policy error before attachment; extreme host
+configuration cannot reach a panicking semaphore constructor.
 
 Per-tunnel byte ceilings count bytes read from the guest or upstream. Bytes in
 the read that crosses a ceiling are accounted but not forwarded. A ceiling

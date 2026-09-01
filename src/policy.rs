@@ -162,10 +162,14 @@ impl PolicyBuilder {
     ///
     /// # Errors
     ///
-    /// Returns an error when `max` is zero.
+    /// Returns an error when `max` is zero or too large for the runtime's
+    /// admission semaphore.
     pub fn max_connections(mut self, max: usize) -> Result<Self, PolicyError> {
         if max == 0 {
             return Err(PolicyError::ZeroConnectionLimit);
+        }
+        if max > tokio::sync::Semaphore::MAX_PERMITS {
+            return Err(PolicyError::ConnectionLimitTooLarge);
         }
         self.max_connections = max;
         Ok(self)
@@ -373,6 +377,19 @@ mod tests {
                 .build()
                 .unwrap_err(),
             PolicyError::TimeoutTooLarge
+        );
+    }
+
+    #[test]
+    fn rejects_a_connection_limit_above_the_runtime_bound() {
+        Policy::builder()
+            .max_connections(tokio::sync::Semaphore::MAX_PERMITS)
+            .expect("runtime maximum is valid")
+            .build()
+            .expect("boundary policy");
+        assert_eq!(
+            Policy::builder().max_connections(usize::MAX).unwrap_err(),
+            PolicyError::ConnectionLimitTooLarge
         );
     }
 

@@ -22,6 +22,9 @@ pub struct ProxyConfig {
 
 impl ProxyConfig {
     pub(crate) fn validate(&self) -> Result<(), &'static str> {
+        if self.header_timeout.is_zero() {
+            return Err("header timeout must be nonzero");
+        }
         let now = Instant::now();
         if now.checked_add(self.header_timeout).is_none() {
             return Err("header timeout is too large");
@@ -38,17 +41,19 @@ impl ProxyConfig {
         self
     }
 
-    /// Set the process-wide concurrent connection ceiling.
+    /// Set the process-wide concurrent connection ceiling, clamped to the
+    /// runtime semaphore's safe range.
     pub fn with_max_connections(mut self, max: usize) -> Self {
-        self.max_connections = max.max(1);
+        self.max_connections = max.clamp(1, tokio::sync::Semaphore::MAX_PERMITS);
         self
     }
 
-    /// Set the process-wide ceiling for DNS lookups executing concurrently.
+    /// Set the process-wide ceiling for DNS lookups executing concurrently,
+    /// clamped to the runtime semaphore's safe range.
     /// Connections waiting for a permit remain subject to their DNS and
     /// absolute handshake deadlines.
     pub fn with_max_concurrent_dns(mut self, max: usize) -> Self {
-        self.max_concurrent_dns = max.max(1);
+        self.max_concurrent_dns = max.clamp(1, tokio::sync::Semaphore::MAX_PERMITS);
         self
     }
 
@@ -75,8 +80,8 @@ impl ProxyConfig {
 
     /// Set the absolute deadline for receiving a complete CONNECT header.
     ///
-    /// [`Proxy::start`](crate::Proxy::start) rejects durations that cannot be
-    /// represented as a runtime deadline.
+    /// [`Proxy::start`](crate::Proxy::start) rejects zero and durations that
+    /// cannot be represented as a runtime deadline.
     pub fn with_header_timeout(mut self, timeout: Duration) -> Self {
         self.header_timeout = timeout;
         self
@@ -152,6 +157,14 @@ mod tests {
     }
 
     #[test]
+    fn rejects_a_zero_header_deadline() {
+        assert!(matches!(
+            crate::Proxy::start(ProxyConfig::default().with_header_timeout(Duration::ZERO)),
+            Err(crate::ProxyError::Initialization(_))
+        ));
+    }
+
+    #[test]
     fn resolved_address_ceiling_stays_bounded() {
         assert_eq!(
             ProxyConfig::default()
@@ -186,5 +199,21 @@ mod tests {
                 .max_events_per_second,
             10_000
         );
+    }
+
+    #[test]
+    fn runtime_semaphore_limits_stay_within_the_runtime_bound() {
+        let config = ProxyConfig::default()
+            .with_max_connections(usize::MAX)
+            .with_max_concurrent_dns(usize::MAX);
+        assert_eq!(config.max_connections, tokio::sync::Semaphore::MAX_PERMITS);
+        assert_eq!(
+            config.max_concurrent_dns,
+            tokio::sync::Semaphore::MAX_PERMITS
+        );
+        crate::Proxy::start(config)
+            .expect("clamped global limit starts")
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
     }
 }

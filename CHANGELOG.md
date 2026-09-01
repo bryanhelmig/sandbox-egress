@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Reject a zero header deadline, clamp process semaphore limits to Tokio's safe
+  maximum, and return a typed error for an oversized per-lease limit.
 - Give the fixed 64-header CONNECT parser ceiling its own bounded
   `too-many-headers` response and diagnostic reason.
 - Let a close retry immediately certify an already-quiesced lease without

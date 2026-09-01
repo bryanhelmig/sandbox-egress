@@ -1160,3 +1160,31 @@ Its 500-lease Linux smoke held eight descriptors and five threads while live,
 returned to four descriptors and two threads, and finished at 3,996 KiB RSS.
 The constant, one production match arm, and boundary evidence move whole-tree
 structural/cognitive complexity from 367/1,079 to 369/1,084.
+
+## 2026-08-31 — reject unusable and panic-shaped host limits
+
+### Finding
+
+Policy construction rejected zero DNS and handshake deadlines, but proxy
+configuration accepted a zero header deadline and started a listener whose
+requests immediately exhausted that budget. More seriously, the infallible
+global connection and DNS limit setters accepted `usize::MAX`, and the
+fallible per-lease setter did too. Those values eventually reached
+`tokio::sync::Semaphore::new`, which documents a finite `MAX_PERMITS` and
+panics above it.
+
+### Result
+
+Proxy startup now rejects a zero header deadline. Infallible process setters
+clamp both ends to `1..=Semaphore::MAX_PERMITS`; the already-fallible per-lease
+setter returns `PolicyError::ConnectionLimitTooLarge` above that boundary.
+Tests prove the exact maximum remains valid, the oversized policy fails with
+the typed error, and an extreme clamped process configuration starts and shuts
+down a real proxy.
+
+The native factory and dependency audit passed 71 deterministic cases. The
+exact Rust 1.88 image passed the same factory and its serialized hostile lane.
+Its 500-lease Linux smoke held eight descriptors and five threads while live,
+returned to four descriptors and two threads, and finished at 4,000 KiB RSS.
+The validation branches and boundary tests move whole-tree
+structural/cognitive complexity from 369/1,084 to 371/1,090.

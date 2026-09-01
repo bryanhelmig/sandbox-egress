@@ -19,6 +19,9 @@ The suite is organized by claimed invariant rather than by source module.
   regression tests for every discovered defect.
 - Boundary validation: extreme but type-valid durations are rejected by the
   public construction APIs before they can overflow runtime deadline math.
+  Zero header timeouts are rejected as unusable. Extreme global connection and
+  DNS limits are clamped to the runtime semaphore maximum and proven to start;
+  the exact per-lease maximum builds while one larger returns a typed error.
 
 No test may depend on the public internet. DNS and upstream behavior must be
 locally controlled so failures are reproducible.
