@@ -38,6 +38,14 @@ that already-certified final snapshot locally. Send or reply disconnection is
 rechecked against closed state, but a deadline timeout still retains ownership;
 the shutdown race cannot silently turn uncommitted cleanup into success.
 
+Once proxy-wide shutdown begins, the ordinary listener branch is disabled and
+every new attachment returns `ProxyStopping`. A drain barrier may accept a
+queued socket only to refuse it under revocation. A deadline failure returns
+the owning proxy in this irreversible stopping state. The runtime sends success
+through a zero-capacity commit channel and exits only if the waiting caller
+receives it; an unobserved certificate remains retryable. Dropping the recovered
+handle switches to bounded best-effort teardown and makes no success claim.
+
 IPv6 listeners can report an IPv4 peer with the IPv4-mapped IPv6 transport
 spelling. Attachment and accepted peers both canonicalize that spelling to
 IPv4 before registry lookup. The two spellings therefore cannot hold separate

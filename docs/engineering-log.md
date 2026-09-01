@@ -1974,3 +1974,57 @@ Local socket setup dominates the vector copy, while `Arc` would add shared
 ownership and an atomic operation to every connection. The production and
 temporary benchmark changes were therefore removed exactly; this log is the
 only retained result.
+
+## 2026-09-01 — retain the proxy after shutdown failure
+
+### Failure model
+
+`Proxy::shutdown` previously consumed the management handle even when its
+deadline expired. The runtime also exited after processing that shutdown
+request. A surviving lease still retained its identity, but the caller had no
+live proxy with which to retry cleanup and certify the final process state.
+That made the strongest shutdown operation less recoverable than `Lease::close`.
+
+The public operation now returns a typed `ShutdownError` that owns the
+still-stopping `Proxy`. Once shutdown begins, the listener owner permanently
+rejects new attachments and disables ordinary socket admission. Accept-drain
+barriers may still take already queued sockets only to reject them under their
+revoked lease; they cannot start new work. A caller can recover the handle with
+`ShutdownError::into_proxy` and retry with a later deadline.
+
+There is a second race at the success boundary: cleanup may finish just as the
+caller's deadline expires. The public request therefore uses a zero-capacity
+reply channel. The runtime exits on success only after the caller receives the
+certificate. If the receiver has already gone away, the runtime remains in the
+stopping state for a retry. `Drop` remains deliberately weaker: it initiates a
+non-retryable best-effort shutdown and lets the runtime exit even when cleanup
+misses that internal deadline, because no handle exists to own another retry.
+
+### Evidence
+
+The first deterministic case delays cancellation cleanup, proves that a short
+shutdown returns `DeadlineExceeded`, recovers the same proxy, proves a new
+identity is rejected with `ProxyStopping`, and then completes a longer retry.
+The second queues an otherwise successful shutdown whose reply receiver has
+gone away, proves the runtime remains stopping, and certifies it through a
+public retry. The focused proxy-shutdown set passed ten consecutive runs.
+
+The native and exact Rust 1.88 Linux factories passed all 102 deterministic
+cases, doctests, documentation, package verification, and policy checks where
+the policy tool was installed. The serialized runner reproduced the same 102
+cases as UID/GID 65534; its image content size was 40,371,751 bytes.
+
+Whole-tree SCC 4.0.0 complexity moved from 467/1,399 to 480/1,447
+structural/cognitive. Most of the increase is the two lifecycle cases and the
+typed public error; the runtime change is one irreversible state bit, one
+admission guard, and one success-delivery check. The native 500-lease smoke
+returned from 13 descriptors and five threads while live to nine descriptors
+and two threads, finishing at 8,960 KiB RSS in 880 ms. Linux returned from
+eight descriptors and five threads to four descriptors and two threads,
+finishing at 3,960 KiB RSS in 1,026 ms.
+
+The first lifecycle benchmark interval was 1.3815–1.3967 ms; Criterion called
+its +0.01% to +2.58% change within the configured noise threshold. An immediate
+repeat measured 1.3373–1.3457 ms and reversed the apparent movement. This is
+host variance, not evidence of either a regression or an improvement, so no
+performance claim is attached to the change.

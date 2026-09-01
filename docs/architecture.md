@@ -44,6 +44,15 @@ state closed before joining the runtime thread. A surviving lease handle reads
 that immutable closed snapshot locally; runtime loss alone cannot hide an
 already-committed certificate.
 
+The proxy-wide stopping state is irreversible. The listener owner disables its
+ordinary accept branch, rejects every attachment command, and services shutdown
+retries. A drain barrier may still accept queued sockets solely to refuse them
+under revoking lease state. A failed call returns `ShutdownError` with the
+owning `Proxy`. Success uses a synchronous rendezvous: the runtime exits only
+after its caller receives the certificate, so an unobserved reply leaves a live
+stopping handle rather than a disconnected one. `Proxy::drop` uses a distinct
+best-effort request and may abandon certification after its deadline.
+
 Optional diagnostics use a caller-owned bounded synchronous channel. Proxy
 tasks call only `try_send`; they never wait for a logger or spawn a logging
 thread. One process-wide fixed-window limiter records rate- and

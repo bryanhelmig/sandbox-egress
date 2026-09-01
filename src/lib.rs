@@ -14,7 +14,10 @@ mod usage;
 
 pub use config::ProxyConfig;
 pub use diagnostic::{DenialReason, DiagnosticEvent};
-pub use error::{AttachError, CloseError, CloseErrorKind, PolicyError, ProxyError};
+pub use error::{
+    AttachError, CloseError, CloseErrorKind, PolicyError, ProxyError, ShutdownError,
+    ShutdownErrorKind,
+};
 pub use identity::{Endpoint, PeerIdentity};
 pub use policy::{EchPolicy, HostPattern, Policy, PolicyBuilder, TlsAuthority};
 pub use proxy::{Lease, Proxy};

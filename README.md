@@ -111,6 +111,12 @@ cancellation, but never certifies cleanup.
 A successful `Proxy::shutdown` certifies all attached leases before its runtime
 thread joins. A still-held lease can call `close` afterward to consume that
 committed certificate and retrieve its final counters without a live runtime.
+If the proxy-wide deadline expires, `ShutdownError::into_proxy` returns the
+still-stopping proxy for retry. It no longer admits socket work or accepts new
+leases. Listener-drain barriers may accept queued sockets only to refuse them
+under revocation. The runtime exits only after the caller observes a success
+certificate; losing a reply race cannot turn a recoverable handle into a dead
+one. Dropping that handle remains best-effort and does not certify cleanup.
 
 ## Current enforcement
 
@@ -227,7 +233,7 @@ docker run --rm sandbox-egress:dev
 
 The build stage is pinned to Rust 1.88 and runs the normal factory plus a small
 Linux resource smoke. The final image contains only the stripped conformance
-executables and runs all 100 deterministic cases as an unprivileged user. It
+executables and runs all 102 deterministic cases as an unprivileged user. It
 does not ship Cargo, the compiler, source tree, or build cache. Tests remain
 local and do not call public network services.
 

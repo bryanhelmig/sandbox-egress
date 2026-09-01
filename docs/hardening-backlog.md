@@ -13,7 +13,7 @@ services may supplement research but must not become test dependencies.
 - Remote peers that never read, never write, or ignore FIN.
 - Repeated failed close and retry with stable final counters.
 - Lease `Drop` during unwinding and proxy runtime failure.
-- Proxy shutdown racing attach, accept, close, and drop.
+- Proxy shutdown racing `Lease::close`, `Lease::drop`, and `Proxy::drop`.
 - Source-address reuse with accepted, queued, retransmitted, and delayed SYNs.
 - Old-run connections that arrive after a new policy is attached.
 - Host fencing requirements for Firecracker TAP/NAT/conntrack teardown.

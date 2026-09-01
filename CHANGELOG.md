@@ -5,6 +5,9 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Return a still-owning, permanently stopping proxy when proxy-wide shutdown
+  misses its deadline, refuse new attachments, and allow certified retry even
+  when a success reply races caller abandonment.
 - Pin graceful FIN behavior in both directions and distinguish an upstream RST
   from both normal tunnel completion and a policy denial.
 - Prove that 32 simultaneous host-side attachments produce exactly one owner
@@ -14,7 +17,7 @@ Changelog and versions follow Semantic Versioning.
   inheriting a replacement lease under management-channel pressure.
 - Serialize only the stripped conformance executables into the unprivileged
   Docker runner, reducing the verified image content size by 96.4% without
-  dropping any of its 100 deterministic cases.
+  dropping any of its 102 deterministic cases.
 - Let a surviving lease consume the final counters already certified by a
   successful proxy-wide shutdown, including runtime-disconnect races.
 - Divide the remaining absolute handshake budget fairly across sequential

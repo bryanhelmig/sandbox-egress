@@ -27,7 +27,7 @@ use crate::tls::{ClientHelloError, read_client_hello};
 use crate::usage::Counters;
 use crate::{
     AttachError, CloseError, CloseErrorKind, EchPolicy, Endpoint, FinalUsage, PeerIdentity, Policy,
-    ProxyConfig, ProxyError, TlsAuthority, Usage,
+    ProxyConfig, ProxyError, ShutdownError, ShutdownErrorKind, TlsAuthority, Usage,
 };
 
 /// Shared proxy listener and synchronous management handle.
@@ -151,7 +151,8 @@ impl Proxy {
     /// Returns [`AttachError::IdentityInUse`] until the previous lease has
     /// closed successfully or completed best-effort cleanup. It returns
     /// [`AttachError::LeaseIdExhausted`] rather than reusing a diagnostic
-    /// sequence after process-local exhaustion.
+    /// sequence after process-local exhaustion, and
+    /// [`AttachError::ProxyStopping`] after proxy-wide shutdown begins.
     pub fn attach(&self, identity: PeerIdentity, policy: Policy) -> Result<Lease, AttachError> {
         let identity = identity.canonical();
         let id = self
@@ -186,26 +187,51 @@ impl Proxy {
     ///
     /// # Errors
     ///
-    /// Returns an error if the runtime is unavailable or tracked work remains
-    /// at `deadline`.
-    pub fn shutdown(mut self, deadline: Instant) -> Result<(), ProxyError> {
-        let (reply_tx, reply_rx) = mpsc::sync_channel(1);
-        self.commands
+    /// Returns a [`ShutdownError`] containing the still-stopping proxy if the
+    /// runtime is unavailable or tracked work remains at `deadline`. Recover
+    /// it with [`ShutdownError::into_proxy`] and retry when the runtime remains
+    /// available; new attachments stay refused after the first attempt.
+    pub fn shutdown(mut self, deadline: Instant) -> Result<(), ShutdownError> {
+        // A zero-capacity reply is the shutdown commit handshake: the runtime
+        // exits only when this caller actually observes successful cleanup.
+        let (reply_tx, reply_rx) = mpsc::sync_channel(0);
+        if self
+            .commands
             .send(Command::Shutdown {
                 deadline,
                 reply: reply_tx,
+                retryable: true,
             })
-            .map_err(|_| ProxyError::RuntimeStopped)?;
+            .is_err()
+        {
+            return Err(ShutdownError {
+                kind: ShutdownErrorKind::RuntimeStopped,
+                proxy: self,
+            });
+        }
         let remaining = deadline.saturating_duration_since(Instant::now());
         match reply_rx.recv_timeout(remaining) {
             Ok(Ok(())) => {
-                if let Some(thread) = self.thread.take() {
-                    thread.join().map_err(|_| ProxyError::RuntimeStopped)?;
+                if self
+                    .thread
+                    .take()
+                    .is_some_and(|thread| thread.join().is_err())
+                {
+                    return Err(ShutdownError {
+                        kind: ShutdownErrorKind::RuntimeStopped,
+                        proxy: self,
+                    });
                 }
                 Ok(())
             }
-            Ok(Err(())) | Err(mpsc::RecvTimeoutError::Timeout) => Err(ProxyError::ShutdownTimeout),
-            Err(mpsc::RecvTimeoutError::Disconnected) => Err(ProxyError::RuntimeStopped),
+            Ok(Err(())) | Err(mpsc::RecvTimeoutError::Timeout) => Err(ShutdownError {
+                kind: ShutdownErrorKind::DeadlineExceeded,
+                proxy: self,
+            }),
+            Err(mpsc::RecvTimeoutError::Disconnected) => Err(ShutdownError {
+                kind: ShutdownErrorKind::RuntimeStopped,
+                proxy: self,
+            }),
         }
     }
 }
@@ -216,6 +242,7 @@ impl Drop for Proxy {
         let _ = self.commands.send(Command::Shutdown {
             deadline: Instant::now() + Duration::from_secs(1),
             reply,
+            retryable: false,
         });
     }
 }
@@ -356,6 +383,7 @@ enum Command {
     Shutdown {
         deadline: Instant,
         reply: mpsc::SyncSender<Result<(), ()>>,
+        retryable: bool,
     },
     DrainAcceptQueue {
         reply: tokio::sync::oneshot::Sender<()>,
@@ -737,6 +765,7 @@ async fn run_proxy(
         config,
     };
 
+    let mut stopping = false;
     loop {
         tokio::select! {
             biased;
@@ -747,7 +776,9 @@ async fn run_proxy(
                         let replaceable = leases.get(&state.identity).is_none_or(|old| old.is_closed());
                         // Policy installation and this empty-queue observation
                         // are ordered on the one listener-owner task.
-                        if !replaceable {
+                        if stopping {
+                            let _ = reply.send(Err(AttachError::ProxyStopping));
+                        } else if !replaceable {
                             let _ = reply.send(Err(AttachError::IdentityInUse));
                         } else if connections.drain_ready(&listener, &leases).await {
                             leases.insert(state.identity.clone(), state);
@@ -789,7 +820,8 @@ async fn run_proxy(
                     Command::Release { state } => {
                         release_if_current(&mut leases, &state);
                     }
-                    Command::Shutdown { deadline, reply } => {
+                    Command::Shutdown { deadline, reply, retryable } => {
+                        stopping = true;
                         for state in leases.values() {
                             state.begin_close();
                         }
@@ -801,8 +833,10 @@ async fn run_proxy(
                             }
                             state.mark_closed();
                         }
-                        let _ = reply.send(success.then_some(()).ok_or(()));
-                        break;
+                        let delivered = reply.send(success.then_some(()).ok_or(())).is_ok();
+                        if !retryable || success && delivered {
+                            break;
+                        }
                     }
                     Command::DrainAcceptQueue { reply } => {
                         if reply.is_closed() {
@@ -832,7 +866,7 @@ async fn run_proxy(
                     }
                 }
             }
-            accepted = listener.accept() => {
+            accepted = listener.accept(), if !stopping => {
                 if let Ok((stream, peer)) = accepted {
                     connections.dispatch(stream, peer, &leases);
                 }
@@ -1472,6 +1506,34 @@ mod tests {
         active: Arc<std::sync::atomic::AtomicUsize>,
     }
 
+    struct SlowCancelConnector {
+        entered: mpsc::Sender<SocketAddr>,
+        cleanup_delay: Duration,
+    }
+
+    struct SlowCancelFuture {
+        entered: Option<mpsc::Sender<SocketAddr>>,
+        address: SocketAddr,
+        cleanup_delay: Duration,
+    }
+
+    impl Future for SlowCancelFuture {
+        type Output = io::Result<TcpStream>;
+
+        fn poll(mut self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Self::Output> {
+            if let Some(entered) = self.entered.take() {
+                entered.send(self.address).expect("report slow dial entry");
+            }
+            Poll::Pending
+        }
+    }
+
+    impl Drop for SlowCancelFuture {
+        fn drop(&mut self) {
+            thread::sleep(self.cleanup_delay);
+        }
+    }
+
     struct RejectingConnector(Arc<std::sync::atomic::AtomicUsize>);
 
     struct PendingThenLoopbackConnector {
@@ -1490,6 +1552,19 @@ mod tests {
                 let _active = ActiveDial(Arc::clone(&self.active));
                 self.entered.send(address).expect("report dial entry");
                 std::future::pending::<io::Result<TcpStream>>().await
+            })
+        }
+    }
+
+    impl TestConnector for SlowCancelConnector {
+        fn connect(
+            &self,
+            address: SocketAddr,
+        ) -> Pin<Box<dyn Future<Output = io::Result<TcpStream>> + Send + '_>> {
+            Box::pin(SlowCancelFuture {
+                entered: Some(self.entered.clone()),
+                address,
+                cleanup_delay: self.cleanup_delay,
             })
         }
     }
@@ -1894,6 +1969,82 @@ mod tests {
         proxy
             .shutdown(Instant::now() + Duration::from_secs(1))
             .expect("proxy shutdown");
+    }
+
+    #[test]
+    fn failed_proxy_shutdown_retains_a_stopping_proxy_for_retry() {
+        let port = 19_445;
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let connector = Arc::new(SlowCancelConnector {
+            entered: entered_tx,
+            cleanup_delay: Duration::from_millis(150),
+        });
+        let proxy = Proxy::start_with_test_connector(ProxyConfig::default(), connector)
+            .expect("start proxy");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                ip_policy(port, Duration::from_secs(2)),
+            )
+            .expect("attach lease");
+        let mut client =
+            std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+        std::io::Write::write_all(
+            &mut client,
+            format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").as_bytes(),
+        )
+        .expect("write CONNECT");
+        entered_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("dial entered");
+
+        let error = proxy
+            .shutdown(Instant::now() + Duration::from_millis(20))
+            .expect_err("slow cancellation must exceed the first deadline");
+        assert_eq!(error.kind(), crate::ShutdownErrorKind::DeadlineExceeded);
+        let proxy = error.into_proxy();
+        assert!(matches!(
+            proxy.attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 2))),
+                Policy::builder().build().expect("valid policy"),
+            ),
+            Err(AttachError::ProxyStopping)
+        ));
+
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("retry proxy shutdown");
+        let usage = lease
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("observe proxy-wide certificate")
+            .usage();
+        assert_eq!(usage.active_connections, 0);
+    }
+
+    #[test]
+    fn unobserved_proxy_shutdown_success_remains_retryable() {
+        let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+        let (reply, receiver) = mpsc::sync_channel(0);
+        drop(receiver);
+        proxy
+            .commands
+            .send(Command::Shutdown {
+                deadline: Instant::now() + Duration::from_secs(1),
+                reply,
+                retryable: true,
+            })
+            .expect("request abandoned shutdown");
+
+        assert!(matches!(
+            proxy.attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                Policy::builder().build().expect("valid policy"),
+            ),
+            Err(AttachError::ProxyStopping)
+        ));
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("retry unobserved shutdown");
     }
 
     #[test]
