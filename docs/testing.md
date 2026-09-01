@@ -50,6 +50,12 @@ Port policy cases require an empty builder to allow no port and an HTTP-only
 builder to allow 80 without inheriting 443. A real listener repeats the latter
 case against CONNECT and requires the stable `port-denied` response.
 
+Hostname precedence is pinned with an allowed wildcard, an overlapping exact
+grant, and an exact denial. The denial must win while unrelated shallow and
+deep subdomains remain allowed. Through the real listener, the denied hostname
+returns `host-denied`, produces no resolver or connector call, and closes with
+one accepted, one denied, and zero active connections.
+
 Destination precedence is pinned both as a pure immutable-policy case and
 through the listener. A denied public `/24` overlaps an explicit `0.0.0.0/0`
 grant. An allowed hostname resolving inside that `/24` must return

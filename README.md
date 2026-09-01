@@ -59,6 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let policy = Policy::builder()
         .allow_host("api.example.com")?
         .allow_host("*.static.example.com")?
+        .deny_host("admin.static.example.com")?
         .allow_port(443)
         // Optional: block a destination CIDR even when its hostname is allowed.
         .deny_network("93.184.216.0/24".parse()?)
@@ -95,10 +96,10 @@ runtime per sandbox run.
 
 `Policy::builder()` is deny-by-default across every rule dimension. Adding a
 hostname does not add a port, and adding port 80 does not silently retain port
-443. Explicit network denials override both grants and the ordinary public-IP
-behavior. The example permits 443 explicitly; the thin executable makes the
-same HTTPS-only choice on behalf of its intentionally smaller command-line
-surface.
+443. Explicit hostname denials override exact and wildcard grants; network
+denials override both grants and the ordinary public-IP behavior. The example
+permits 443 explicitly; the thin executable makes the same HTTPS-only choice
+on behalf of its intentionally smaller command-line surface.
 
 ## Why a lease?
 
@@ -137,8 +138,8 @@ The current vertical slice provides:
 - HTTP/1 CONNECT request-target authority and destination-port allow rules,
   with strict HTTP/1.1 Host-field validation but no header-selected policy;
 - canonical ASCII hostnames (including explicit ACE/punycode spellings) and
-  wildcard suffixes matching one or more subdomain labels; raw Unicode is not
-  mapped implicitly;
+  wildcard suffixes matching one or more subdomain labels, with explicit
+  deny-overrides-grant carve-outs; raw Unicode is not mapped implicitly;
 - source-IP identity derived from the accepted socket;
 - one DNS resolution followed by checks on every returned address;
 - a resolver cache disabled by default because the dependency bounds entries,

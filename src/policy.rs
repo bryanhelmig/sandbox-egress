@@ -77,6 +77,7 @@ impl HostPattern {
 #[derive(Clone, Debug)]
 pub struct Policy {
     pub(crate) hosts: Vec<HostPattern>,
+    pub(crate) denied_hosts: Vec<HostPattern>,
     pub(crate) ports: BTreeSet<u16>,
     pub(crate) allowed_networks: Vec<IpNet>,
     pub(crate) denied_networks: Vec<IpNet>,
@@ -96,7 +97,11 @@ impl Policy {
     }
 
     pub(crate) fn allows_hostname(&self, hostname: &str) -> bool {
-        self.hosts.iter().any(|pattern| pattern.matches(hostname))
+        !self
+            .denied_hosts
+            .iter()
+            .any(|pattern| pattern.matches(hostname))
+            && self.hosts.iter().any(|pattern| pattern.matches(hostname))
     }
 
     pub(crate) fn allows_port(&self, port: u16) -> bool {
@@ -152,6 +157,7 @@ fn address_matches_network(network: &IpNet, address: IpAddr, nat64_prefixes: &[I
 #[must_use]
 pub struct PolicyBuilder {
     hosts: Vec<HostPattern>,
+    denied_hosts: Vec<HostPattern>,
     ports: BTreeSet<u16>,
     allowed_networks: Vec<IpNet>,
     denied_networks: Vec<IpNet>,
@@ -173,6 +179,17 @@ impl PolicyBuilder {
     /// Returns an error when the pattern is not a canonical ASCII DNS pattern.
     pub fn allow_host(mut self, pattern: impl AsRef<str>) -> Result<Self, PolicyError> {
         self.hosts.push(HostPattern::parse(pattern)?);
+        Ok(self)
+    }
+
+    /// Deny an exact hostname or `*.example.com` pattern even if another rule
+    /// grants it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the pattern is not a canonical ASCII DNS pattern.
+    pub fn deny_host(mut self, pattern: impl AsRef<str>) -> Result<Self, PolicyError> {
+        self.denied_hosts.push(HostPattern::parse(pattern)?);
         Ok(self)
     }
 
@@ -298,6 +315,7 @@ impl PolicyBuilder {
         }
         Ok(Policy {
             hosts: self.hosts,
+            denied_hosts: self.denied_hosts,
             ports: self.ports,
             allowed_networks: self.allowed_networks,
             denied_networks: self.denied_networks,
@@ -316,6 +334,7 @@ impl Default for PolicyBuilder {
     fn default() -> Self {
         Self {
             hosts: Vec::new(),
+            denied_hosts: Vec::new(),
             ports: BTreeSet::new(),
             allowed_networks: Vec::new(),
             denied_networks: Vec::new(),
@@ -463,6 +482,24 @@ mod tests {
         assert!(pattern.matches("deep.api.example.com"));
         assert!(!pattern.matches("example.com"));
         assert!(!pattern.matches("notexample.com"));
+    }
+
+    #[test]
+    fn hostname_denial_overrides_exact_and_wildcard_grants() {
+        let policy = Policy::builder()
+            .allow_host("*.example.com")
+            .expect("valid wildcard grant")
+            .allow_host("admin.example.com")
+            .expect("valid exact grant")
+            .deny_host("admin.example.com")
+            .expect("valid exact denial")
+            .build()
+            .expect("valid policy");
+
+        assert!(policy.allows_hostname("api.example.com"));
+        assert!(policy.allows_hostname("deep.api.example.com"));
+        assert!(!policy.allows_hostname("admin.example.com"));
+        assert!(!policy.allows_hostname("example.com"));
     }
 
     #[test]

@@ -81,10 +81,11 @@ equivalent IPv4 identity before registry lookup. Admission is reserved before
 a task is spawned. `httparse` parses a bounded header block. HTTP/1.1 requires
 one valid Host field consistent with the CONNECT request-target, but only the
 request-target supplies authority to policy, DNS, and dialing. The policy then
-checks that authority and port. Hickory performs one async lookup under a
-deadline. Its process-wide positive and negative response cache is disabled by
-default and has host-narrowable count and TTL ceilings when enabled. Every
-result, including a cache hit, is filtered under the current lease policy,
+checks hostname denials, grants, and port before DNS. Hickory performs one
+async lookup under a deadline. Its process-wide positive and negative response
+cache is disabled by default and has host-narrowable count and TTL ceilings
+when enabled. Every result, including a cache hit, is filtered under the
+current lease policy,
 including RFC 6052 decoding under host-configured network-specific NAT64
 prefixes. Explicit destination denials take priority over grants and default
 public-address handling, and Tokio dials a selected checked IP directly.

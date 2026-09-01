@@ -378,3 +378,21 @@ directions. The loopback and scheduler noise does not support a stable
 regression or improvement claim. The result justifies retaining the security
 rule while keeping this path in the benchmark suite; it does not claim that
 the larger immutable policy is free.
+
+## Empty hostname-denial path check
+
+Recorded 2026-09-01 on the same Apple M1 with Rust 1.97.1. A detached
+`3c2456c` worktree and the candidate alternated the allowed-hostname benchmark:
+
+```text
+command: cargo bench --bench connections -- connect_allowed_hostname
+paired runs: 3
+candidate intervals: 145.73 .. 183.13 us
+baseline intervals:  145.37 .. 173.68 us
+```
+
+The second pair was tightly overlapping. Both the first baseline and third
+candidate had several severe outliers, widening opposite sides of the overall
+ranges. Criterion reported no statistically detected candidate change in all
+three runs. No stable regression or improvement is claimed; the benchmark
+remains the signal for future changes to hostname matching.

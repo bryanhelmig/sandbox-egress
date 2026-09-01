@@ -177,6 +177,12 @@ HTTPS default, and adding a hostname cannot create a port grant. The thin
 executable chooses port 443 itself; that wrapper convenience is not a library
 policy default.
 
+Hostname denials are immutable patterns with the same canonical exact and
+left-most-wildcard grammar as grants. A matching denial takes priority over
+every exact or wildcard grant and is evaluated before DNS capacity or lookup.
+A denial without a matching grant cannot open access; it only carves a closed
+subset out of the allowlist.
+
 Dialing receives only approved `SocketAddr` values and shares the absolute
 handshake deadline. Lease cancellation drops the in-progress connect future;
 certified close waits for the owning tracked connection task to disappear.

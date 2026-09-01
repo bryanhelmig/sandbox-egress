@@ -3652,3 +3652,43 @@ lanes; native dependency policy checks also passed. Linux's TLS lane peaked at
 to 6,180 KiB, four descriptors, and two threads. The rootless 158/158 image is
 `sha256:5cf7e1f8b27a91525e06a3aca1eb2cc647947fbca93262aa0d17836677b3b36f`
 (40,737,201 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — add authoritative hostname carve-outs
+
+Smokescreen's global deny rules highlighted the hostname counterpart to the
+previous network-denial cycle. A wildcard grant is convenient for a sandbox
+run, but it needs a small, explicit way to exclude a sensitive subdomain
+without enumerating every permitted sibling. The first test deliberately
+failed to compile because `PolicyBuilder::deny_host` did not exist.
+
+The immutable policy now accepts denied hostname patterns using exactly the
+same canonical ASCII exact and left-most-wildcard grammar as grants. A denial
+wins over every exact or wildcard grant. It cannot create access by itself.
+The pure policy proof combines a wildcard grant, an overlapping exact grant,
+and an exact denial; the carve-out loses access while shallow and deep sibling
+subdomains remain allowed and the wildcard apex remains closed.
+
+A listener-level proof requests the denied name through a real CONNECT socket.
+It receives the stable `host-denied` response before either the capturing
+resolver or rejecting connector is called. Certified close returns exactly one
+accepted, one denied, and zero active connections. Both focused proofs passed
+25 consecutive repetitions.
+
+Three alternating A/B benchmark pairs compared the empty-denial allowed-host
+path against a detached `3c2456c` worktree. Candidate intervals spanned
+145.73–183.13 microseconds and baseline intervals spanned 145.37–173.68. The
+second pair overlapped tightly, opposite-side outliers widened the overall
+ranges, and Criterion detected no candidate change in any pair. No stable
+regression or improvement is claimed.
+
+Whole-tree SCC 4.0.0 complexity moves from 676/2,028 to 678/2,035
+structural/cognitive: +2/+7 for the rule, its proofs, and documentation. The
+production representation adds one empty vector to each immutable policy; it
+adds no dependency, runtime task, or connection-path allocation. The native
+and exact Rust 1.88 Linux factories passed 160 deterministic cases, five
+doctests, documentation, and package verification. Linux's six resource lanes
+passed; the TLS lane peaked at 15,184 KiB RSS, 265 descriptors, and six
+threads, then returned after shutdown to 6,604 KiB, four descriptors, and two
+threads. The rootless 160/160 image is
+`sha256:99c20d16acd0cf9f70e09a720c7c9d4874d374655e2c3c08b8ebfaa29cb4e5b7`
+(40,740,380 bytes) and runs as UID/GID 65534.
