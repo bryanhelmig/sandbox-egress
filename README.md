@@ -320,6 +320,7 @@ scripts:
 ./scripts/measure-load.sh       concurrent CONNECT capacity and tail latency
 ./scripts/measure-load-sweep.sh repeated concurrency scaling sweep
 ./scripts/measure-throughput.sh concurrent upload/download tunnel throughput
+./scripts/measure-throughput-sweep.sh fixed-work data-plane scaling sweep
 ./scripts/check-iana-drift.sh   opt-in authoritative registry drift signal
 cargo run --bin sandbox-egress -- example.com
 ```

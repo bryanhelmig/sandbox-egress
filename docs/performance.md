@@ -259,6 +259,25 @@ to 2,352 and 2,508 MiB/sec. Four workers measured 3,071 and 3,104 MiB/sec. The
 existing two-worker runtime was retained because it won the data-plane test and
 its result reproduced after the comparison.
 
+## Fixed-work tunnel concurrency sweep
+
+Recorded 2026-09-01 on the same Apple M1 at revision `30372a4`. Each point
+moves exactly 1 GiB in one direction, divided evenly over the concurrent
+tunnels, and is repeated three times:
+
+```text
+command: ./scripts/measure-throughput-sweep.sh 1024 3
+concurrency:             1       2       4       8      16      32
+median upload MiB/sec: 2548    3725    3550    3540    3233    2241
+median download MiB/s: 2739    3877    3734    3712    2828    1200
+```
+
+Two tunnels exploit the owned runtime's two workers and materially outperform
+one. Four and eight remain on the same broad plateau; more tunnels add
+scheduling contention, and 32 is substantially slower and noisier. This is a
+local loopback capacity curve, not a production concurrency recommendation.
+No production tuning is retained.
+
 ## Opt-in tunnel idle-timeout comparison
 
 Recorded 2026-09-01 on the same Apple M1 with Rust 1.97.1, comparing the

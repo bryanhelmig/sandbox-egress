@@ -4958,3 +4958,17 @@ lints, dependency policy, package verification, benchmark smoke, and release
 builds. The rootless 183/183 image is
 `sha256:5fb495f20016082b25062a8fdcb811bc8fed4c3ff9e751562fb24c4b0e2f5cb9`
 (40,923,086 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — locate the fixed-work tunnel scaling knee
+
+The next performance rotation held aggregate traffic at exactly 1 GiB per
+direction while sweeping 1, 2, 4, 8, 16, and 32 established tunnels. Three-run
+median upload rates were 2,548, 3,725, 3,550, 3,540, 3,233, and 2,241 MiB/sec;
+download medians were 2,739, 3,877, 3,734, 3,712, 2,828, and 1,200 MiB/sec.
+
+Two tunnels materially outperform one and align with the owned runtime's two
+workers. Four through eight remain on the broad plateau, while 16 declines and
+32 adds severe contention and variance. No production tuning is retained. A
+small `measure-throughput-sweep.sh` wrapper now reproduces the fixed-work,
+six-point, three-repeat experiment rather than changing behavior from a single
+favorable measurement.
