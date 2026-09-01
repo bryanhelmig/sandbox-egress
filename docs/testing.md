@@ -245,10 +245,16 @@ and pre-DNS hostname denials. It waits for active ownership to return to zero
 and samples descriptor and thread recovery after every batch and final
 shutdown. Final accepted, completed, denied, upload, and download counters must
 exactly distinguish all four paths; the reset is neither a completion nor a
-policy denial. On Linux the collectors read `/proc`; on macOS they use `ps` and
-`lsof`; other targets compile and report unsupported counters as absent. Run
-`./scripts/measure-resources.sh [runs-per-batch] [batches] [idle-connections]`;
-the control lane can also be adjusted with
+policy denial. A fifth lane holds a configurable number of TLS-inspected
+tunnels at 60,020 bytes of a legal, incomplete, multi-record `ClientHello`.
+Aggregate upload accounting proves every parser buffer is live before the peak
+sample. Successful lease close must then cancel all of them, make every guest
+and upstream socket terminal, freeze exact zero-denial final counters, and
+recover descriptors and threads. On Linux the collectors read `/proc`; on
+macOS they use `ps` and `lsof`; other targets compile and report unsupported
+counters as absent. Run `./scripts/measure-resources.sh [runs-per-batch]
+[batches] [idle-connections] [TLS-connections]`; the control lane can also be
+adjusted with
 `SANDBOX_EGRESS_CONTROL_CONCURRENCY` and
 `SANDBOX_EGRESS_CONTROL_BATCHES`.
 

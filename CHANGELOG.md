@@ -5,6 +5,9 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Measure many simultaneous near-limit partial `ClientHello` buffers, then
+  require certified-close cancellation, exact accounting, terminal sockets,
+  and descriptor/thread recovery.
 - Drain already-buffered TLS records before another socket read so a valid
   fragmented `ClientHello` cannot become a false EOF; cover empty initial input
   and bytewise transport delivery, and remove one redundant handshake copy.

@@ -40,6 +40,38 @@ was alive. RSS after the first batch was 8800–8848 KiB and remained within
 that narrow range through the fourth batch. This is an initial same-host
 plateau observation, not yet a long-duration bound.
 
+## Concurrent partial-ClientHello resource baseline
+
+Recorded 2026-09-01 on the same Apple M1 with Rust 1.97.1. Each connection
+holds 60,020 bytes of legal TLS records describing an incomplete 65,535-byte
+handshake. Exact aggregate upload accounting establishes that all parser
+states are live before sampling:
+
+```text
+command: SANDBOX_EGRESS_TLS_CONNECTIONS=N cargo test --release \
+  --test resource_soak concurrent_partial_client_hellos_release_process_resources \
+  -- --ignored --nocapture --exact
+connections:       1       32       64      128      256
+peak RSS KiB:   9536    14304    19056    28512    47472
+peak FDs:         18      142      270      526     1038
+threads:           6        6        6        6        6
+```
+
+The one-to-256 comparison is about 149 KiB of additional peak RSS per live
+connection for a 60 KiB partial hello. This includes the retained wire image,
+Rustls incremental parser state, task/socket state, and allocator effects; it
+is not a claim that one allocation has that size. The linear result reinforces
+why global and per-lease connection limits and the configurable ClientHello
+byte ceiling are resource controls.
+
+The 64-connection case passed ten consecutive release-process runs. Peak RSS
+was 19,008–19,088 KiB, with exactly 270 descriptors and six threads. Every
+certified close returned to 13 descriptors and five threads with the proxy
+alive, and shutdown returned to nine and two. RSS remained near its high-water
+mark because the process allocator retained released pages, so RSS is reported
+rather than used as the cleanup oracle. Exact ownership/counters, terminal
+sockets, descriptors, and threads are enforced.
+
 ## Initial local connection-setup baseline
 
 Recorded 2026-08-31 on the same Apple M1:

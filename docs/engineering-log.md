@@ -3228,6 +3228,64 @@ four and two at 5,132 KiB in 450 ms. The rootless 150/150 conformance image is
 `sha256:9fdd4d14741dce47c20c0f047f40432a66ea43a342ca9c3f498e34a56d0f59c4`
 (40,701,820 bytes).
 
+## 2026-09-01 — measure concurrent near-limit TLS parser ownership
+
+The TLS suite pinned the maximum byte boundary and cancellation of one partial
+hello, but it did not show process behavior when many connections hold parser
+state simultaneously. A new opt-in lane establishes 64 inspected loopback
+tunnels by default. Each sends 60,020 bytes of legal TLS records describing an
+incomplete 65,535-byte ClientHello, then remains open. The test does not sample
+until aggregate lease upload accounting equals every input byte and the active
+gauge equals the connection count. Those are deterministic barriers that every
+parser buffer is live, unlike a setup sleep or accepted-socket count.
+
+Certified lease close must then return exact final accounting: all connections
+accepted and inactive, none completed or denied, all 3,841,280 uploaded bytes,
+and zero downloaded bytes. Every guest and upstream socket must be terminal.
+Descriptors and threads must recover with the proxy alive and after shutdown;
+RSS is recorded rather than thresholded because the allocator can retain freed
+pages. The runner takes the TLS connection count as its fourth argument.
+
+A native 1, 32, 64, 128, and 256-connection sweep measured peak RSS of 9,536,
+14,304, 19,056, 28,512, and 47,472 KiB. The one-to-256 slope is about 149 KiB
+per connection for 60 KiB of wire input, including the retained wire image,
+Rustls state, task/socket state, and allocator effects. Peak descriptors were
+exactly 18, 142, 270, 526, and 1,038 while threads remained six. Ten repeated
+64-connection release processes held peak RSS to 19,008–19,088 KiB and always
+returned from 270 descriptors/six threads to 13/five after close and nine/two
+after shutdown. No speculative parser change was retained: preserving the
+exact approved wire image and using a maintained incremental parser account
+for distinct bounded state, while existing connection and byte ceilings bound
+their product.
+
+The first Rust 1.88 Linux factory run exposed a test-bound issue adjacent to
+the prior constrained-forwarding proof. Its real 250 ms handshake deadline
+closed the guest correctly, but the one-second channel wait could expire while
+the deliberately saturated upstream queue drained. The target now has its own
+five-second read bound and the parent uses the same post-deadline observation
+bound; the security deadline is unchanged. The corrected proof passed 25
+native repetitions and the repeated Linux factory.
+
+The full default-size native resource run also exposed an existing measurement
+limit after tens of thousands of connections to the same loopback tuple: the
+terminal lane eventually received `502 connect-failed` as local ephemeral
+ports accumulated. This is recorded as a harness reproducibility issue, not a
+proxy-capacity result; the bounded Linux resource smoke passed. A following
+cycle will separate the long identity-churn count from the smaller terminal
+socket count so the default factory does not measure host `TIME_WAIT` capacity
+by accident.
+
+Whole-tree SCC 4.0.0 complexity moves from 642/1,934 to 648/1,946
+structural/cognitive, entirely in test and measurement code. Production code
+and the 155 deterministic cases are unchanged. The native and exact Rust 1.88
+Linux factories passed lint, documentation, package verification, five
+resource lanes, and five doctests; native dependency policy checks also
+passed. Linux TLS state peaked at 14,900 KiB RSS, 265 descriptors, and six
+threads, recovered after close to 10,004 KiB/eight/five, and returned after
+shutdown to 6,108 KiB/four/two. The rootless 155/155 image is
+`sha256:2844e92a2ba01365f126b10301e4cf823c2f4963e31987c96526767024a20bad`
+(40,717,070 bytes).
+
 ## 2026-09-01 — make DNS memory defaults reflect decoded response size
 
 The returned-address ceiling bounds Sandbox Egress's own `Vec<IpAddr>`, but it

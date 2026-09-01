@@ -319,6 +319,156 @@ fn start_idle_upstream(
 
 #[test]
 #[ignore = "resource soak is opt-in; run scripts/measure-resources.sh"]
+fn concurrent_partial_client_hellos_release_process_resources() {
+    let connections = env_number("SANDBOX_EGRESS_TLS_CONNECTIONS", 64);
+    assert!(connections > 0 && connections < 0x00ff_ffff);
+
+    let process_start = Resources::sample();
+    let (port, accepted_rx, upstream) = start_idle_upstream(connections);
+    let (proxy, lease) = start_tls_buffer_lease(connections, port);
+    thread::sleep(Duration::from_millis(25));
+    let tls_start = Resources::sample();
+    let started = Instant::now();
+    eprintln!(
+        "tls_soak event=start connections={connections} process_rss_kib={:?} process_fds={:?} process_threads={:?} proxy_rss_kib={:?} proxy_fds={:?} proxy_threads={:?}",
+        process_start.rss_kib,
+        process_start.descriptors,
+        process_start.threads,
+        tls_start.rss_kib,
+        tls_start.descriptors,
+        tls_start.threads,
+    );
+    let request = format!("CONNECT localhost:{port} HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    let partial_hello = partial_large_client_hello();
+    let expected_upload = u64::try_from(partial_hello.len())
+        .expect("bounded partial hello")
+        .checked_mul(u64::try_from(connections).expect("bounded connection count"))
+        .expect("bounded aggregate upload");
+    let mut clients = Vec::with_capacity(connections);
+    for _ in 0..connections {
+        let mut client = open_soak_tunnel(lease.endpoint().socket_addr(), request.as_bytes());
+        client
+            .write_all(&partial_hello)
+            .expect("write partial ClientHello");
+        clients.push(client);
+    }
+    accepted_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("all TLS-buffer tunnels reached upstream");
+    let observed_deadline = Instant::now() + Duration::from_secs(5);
+    while lease.usage().uploaded_bytes != expected_upload {
+        assert!(
+            Instant::now() < observed_deadline,
+            "partial ClientHello accounting did not reach the expected barrier"
+        );
+        thread::yield_now();
+    }
+    assert_eq!(lease.usage().active_connections, connections as u64);
+    let peak = Resources::sample();
+    eprintln!(
+        "tls_soak event=peak connections={connections} hello_bytes={} aggregate_bytes={expected_upload} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
+        partial_hello.len(),
+        started.elapsed().as_millis(),
+        peak.rss_kib,
+        peak.descriptors,
+        peak.threads,
+    );
+
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(2))
+        .expect("close TLS-buffer lease")
+        .usage();
+    for mut client in clients {
+        client
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("bound TLS-buffer client read");
+        assert_terminal_socket(client.read(&mut [0_u8; 1]));
+    }
+    upstream.join().expect("TLS-buffer upstream thread");
+    assert_eq!(final_usage.accepted_connections, connections as u64);
+    assert_eq!(final_usage.active_connections, 0);
+    assert_eq!(final_usage.completed_connections, 0);
+    assert_eq!(final_usage.denied_connections, 0);
+    assert_eq!(final_usage.uploaded_bytes, expected_upload);
+    assert_eq!(final_usage.downloaded_bytes, 0);
+    let recovered = Resources::sample();
+    eprintln!(
+        "tls_soak event=recovered connections={connections} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
+        started.elapsed().as_millis(),
+        recovered.rss_kib,
+        recovered.descriptors,
+        recovered.threads,
+    );
+    assert_stable_non_memory_resources(tls_start, recovered);
+
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(2))
+        .expect("proxy shutdown");
+    thread::sleep(Duration::from_millis(25));
+    let finished = Resources::sample();
+    eprintln!(
+        "tls_soak event=finish connections={connections} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
+        started.elapsed().as_millis(),
+        finished.rss_kib,
+        finished.descriptors,
+        finished.threads,
+    );
+    assert_stable_non_memory_resources(process_start, finished);
+}
+
+fn start_tls_buffer_lease(connections: usize, port: u16) -> (Proxy, sandbox_egress::Lease) {
+    let proxy = Proxy::start(
+        ProxyConfig::default()
+            .with_max_connections(connections)
+            .with_identity_reuse_quiet_period(Duration::ZERO),
+    )
+    .expect("start TLS-buffer proxy");
+    let policy = Policy::builder()
+        .allow_host("localhost")
+        .expect("valid TLS-buffer hostname")
+        .allow_network("127.0.0.0/8".parse::<IpNet>().expect("IPv4 loopback CIDR"))
+        .allow_network("::1/128".parse::<IpNet>().expect("IPv6 loopback CIDR"))
+        .allow_port(port)
+        .max_connections(connections)
+        .expect("positive TLS-buffer connection limit")
+        .require_tls_sni()
+        .handshake_timeout(Duration::from_secs(30))
+        .build()
+        .expect("valid TLS-buffer policy");
+    let lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            policy,
+        )
+        .expect("attach TLS-buffer lease");
+    (proxy, lease)
+}
+
+fn partial_large_client_hello() -> Vec<u8> {
+    const BUFFERED_HANDSHAKE_BYTES: usize = 60_000;
+    const TLS_RECORD_PAYLOAD_BYTES: usize = 16_384;
+
+    // Declare the largest accepted handshake body, but deliberately supply
+    // less. Rustls must retain all legal records while waiting for completion.
+    let mut handshake = Vec::with_capacity(BUFFERED_HANDSHAKE_BYTES);
+    handshake.extend_from_slice(&[1, 0, 0xff, 0xfb]);
+    handshake.resize(BUFFERED_HANDSHAKE_BYTES, 0);
+    let records = handshake.len().div_ceil(TLS_RECORD_PAYLOAD_BYTES);
+    let mut wire = Vec::with_capacity(handshake.len() + records * 5);
+    for payload in handshake.chunks(TLS_RECORD_PAYLOAD_BYTES) {
+        wire.extend_from_slice(&[22, 3, 1]);
+        wire.extend_from_slice(
+            &u16::try_from(payload.len())
+                .expect("bounded TLS record payload")
+                .to_be_bytes(),
+        );
+        wire.extend_from_slice(payload);
+    }
+    wire
+}
+
+#[test]
+#[ignore = "resource soak is opt-in; run scripts/measure-resources.sh"]
 fn terminal_connection_churn_releases_process_resources() {
     let runs_per_batch = env_number("SANDBOX_EGRESS_SOAK_RUNS", 2_000);
     let batches = env_number("SANDBOX_EGRESS_SOAK_BATCHES", 4);

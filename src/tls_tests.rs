@@ -124,6 +124,9 @@ fn start_nonreading_target() -> (
             .set_recv_buffer_size(1_024)
             .expect("constrain target receive buffer");
         let _ = release_rx.recv();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("bound constrained target read");
         let mut observed = Vec::new();
         std::io::Read::read_to_end(&mut stream, &mut observed).expect("read forwarded prefix");
         observed_tx
@@ -544,7 +547,7 @@ fn absolute_handshake_deadline_cancels_blocked_client_hello_forwarding() {
     assert_tunnel_closed(&mut client);
     release_target.send(()).expect("release constrained target");
     let observed = observed_rx
-        .recv_timeout(Duration::from_secs(1))
+        .recv_timeout(Duration::from_secs(5))
         .expect("observe forwarded prefix");
     let prefilled = prefilled_bytes.load(Ordering::Acquire);
     assert!(prefilled > 0, "test connector did not fill its send queue");
