@@ -991,6 +991,21 @@ reuse, and exhaustion evidence. The Linux 500-lease smoke retained five live
 threads and eight descriptors, returned to two threads and four descriptors,
 and finished at 4,060 KiB RSS.
 
+## 2026-08-31 — make the local dependency audit discoverable
+
+The dependency policy was already enforced in a dedicated CI job with pinned
+`cargo-deny` 0.20.2, while the MSRV container intentionally omitted that large
+tool build. Locally, however, Cargo could execute an installed subcommand from
+its own binary directory even when `command -v cargo-deny` could not see it on
+`PATH`. The ordinary factory therefore printed a skip despite a usable audit
+tool.
+
+`check.sh` now asks `cargo deny --version` directly before deciding whether to
+skip. The full factory then executed the audit: advisories, bans, licenses, and
+sources all passed. The only output remains the configured warning for
+transitive `syn` 2.x and 3.x versions; no dependency pin was forced merely to
+merge proc-macro build graphs owned by Hickory and development dependencies.
+
 Whole-tree structural/cognitive complexity moved from 350/1,020 to 356/1,036.
 With diagnostics disabled, Criterion detected no change: allowed loopback was
 102.17–117.52 microseconds (`p=0.23`) and hostname denial was 68.00–73.52
