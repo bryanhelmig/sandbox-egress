@@ -65,6 +65,13 @@ that full-set validation, duplicate approved socket addresses are collapsed in
 first-seen order. Repeated records therefore consume one bounded answer slot
 each but cannot amplify sequential connection attempts.
 
+Approved addresses retain resolver order and are dialed one at a time. Before
+each attempt, the remaining absolute handshake time is divided evenly across
+the addresses not yet tried. A pending early address therefore cannot consume
+the fallback's entire deadline, while one admitted connection still owns at
+most one live upstream dial. Immediate failures advance without an artificial
+delay. Lease cancellation drops the current attempt and prevents the next.
+
 Policy construction begins with no allowed hostname, destination network, or
 port. Every permitted port is explicit: adding one port cannot retain a hidden
 HTTPS default, and adding a hostname cannot create a port grant. The thin

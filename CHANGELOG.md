@@ -5,6 +5,9 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Divide the remaining absolute handshake budget fairly across sequential
+  approved-address dial attempts so a pending first address cannot starve a
+  reachable fallback or multiply live sockets.
 - Require one valid HTTP/1.1 Host field that agrees with the CONNECT
   request-target, while keeping the request-target as the only authority used
   for policy, DNS, and dialing.

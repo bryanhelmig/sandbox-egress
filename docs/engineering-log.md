@@ -1679,3 +1679,50 @@ and exact Rust 1.88 factories passed all 92 deterministic cases and verified
 the assembled crate; the serialized Linux image ran the same set. Its
 500-lease smoke held eight descriptors and five threads while live, returned to
 four descriptors and two threads, and finished at 4,060 KiB RSS.
+
+## 2026-08-31 — give every approved address a dial chance
+
+### Finding
+
+Approved DNS results were fully checked, bounded, deduplicated, and dialed in
+resolver order, but every attempt received the same absolute handshake
+deadline. If the first connector future stayed pending, it consumed the whole
+deadline and a reachable second address was never attempted. The fail-first
+case held address one pending under a 400 ms deadline and mapped address two to
+a local listener; the old loop returned no connection after observing only
+address one.
+
+[RFC 8305 section 5](https://www.rfc-editor.org/rfc/rfc8305.html#section-5)
+addresses this family of failure with staggered parallel connection attempts.
+That design was not retained here: it would allow one admitted guest connection
+to own several live upstream sockets and would add another cancellation and
+global-budget subsystem. The narrower requirement is to prevent one approved
+answer from starving the rest while preserving a one-live-dial invariant.
+
+### Result
+
+Before each sequential attempt, the dialer divides the remaining absolute
+handshake time by the number of addresses not yet tried. A pending address can
+consume only that fair share; an immediate connector error advances without an
+artificial delay; the final address receives all time still available. The
+current connector future remains inside the lease-owned connection task, so
+close still drops it synchronously and cannot start the next attempt. No task,
+socket, configuration option, or dependency was added.
+
+The deterministic pending-first/reachable-second case now connects through the
+second address in resolver order and passed ten consecutive runs. Existing
+single-address close and absolute-deadline cases still pass, proving a lone
+address keeps the complete remaining deadline and revocation still cancels its
+pending dial.
+
+The full connection benchmark detected no regression: allowed loopback was
+103.19–122.72 microseconds (`p=0.81`), allowed hostname 131.22–140.11
+(`p=0.07`), and hostname denial 65.93–79.19 (`p=0.06`). Visible-SNI and the
+1 MiB header scan measured faster, but are treated as unrelated sample noise.
+
+The fair-share loop and controlled connector proof move whole-tree
+structural/cognitive complexity from 428/1,248 to 433/1,265. The native and
+exact Rust 1.88 factories passed all 93 deterministic cases and verified the
+assembled crate; the serialized Linux image ran the same set. Its 500-lease
+smoke held eight descriptors and five threads while live, returned to four
+descriptors and two threads, and finished at 3,996 KiB RSS.

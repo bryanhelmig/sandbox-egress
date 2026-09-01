@@ -119,6 +119,8 @@ The current vertical slice provides:
 - one DNS resolution followed by checks on every returned address;
 - bounded DNS answer cardinality, with oversized sets rejected before dialing;
 - direct dialing of a checked `SocketAddr`, with no second lookup;
+- sequential address failover with a fair share of the remaining absolute
+  handshake budget per attempt, keeping one live dial per connection;
 - an independently bounded process-wide DNS concurrency budget;
 - default rejection of loopback, private, link-local, multicast,
   documentation, cloud-metadata, and unsafe IPv6 transition destinations

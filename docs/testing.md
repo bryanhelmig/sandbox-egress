@@ -146,6 +146,10 @@ A duplicate-answer case supplies the same approved address in all 64 default
 slots and requires exactly one dial attempt. The mixed allowed/metadata case
 uses the same recording connector and requires zero attempts, proving the
 entire set is validated before first-seen-order deduplication reaches dialing.
+A deterministic failover case holds the first approved connector future
+pending under a 400 ms absolute deadline and maps the second address to a local
+listener. It must connect through the second address in resolver order; the old
+single-deadline loop times out after observing only the first.
 
 Network-specific NAT64 cases pin every RFC 6052 embedding layout against the
 standard's published address examples. A controlled resolver also returns a

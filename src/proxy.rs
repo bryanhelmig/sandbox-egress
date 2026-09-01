@@ -915,11 +915,21 @@ async fn dial_approved_addresses(
     connector: &ConnectorBackend,
     handshake_deadline: TokioInstant,
 ) -> Option<TcpStream> {
-    for address in addresses {
-        match timeout_at(handshake_deadline, connector.connect(address)).await {
-            Ok(Ok(stream)) => return Some(stream),
-            Ok(Err(_)) => {}
-            Err(_) => break,
+    let mut addresses = addresses.into_iter();
+    while let Some(address) = addresses.next() {
+        let now = TokioInstant::now();
+        let remaining = handshake_deadline.saturating_duration_since(now);
+        let attempts_left = u32::try_from(addresses.len().saturating_add(1)).unwrap_or(u32::MAX);
+        let attempt_budget = remaining / attempts_left;
+        if attempt_budget.is_zero() {
+            break;
+        }
+        let attempt_deadline = now
+            .checked_add(attempt_budget)
+            .unwrap_or(handshake_deadline)
+            .min(handshake_deadline);
+        if let Ok(Ok(stream)) = timeout_at(attempt_deadline, connector.connect(address)).await {
+            return Some(stream);
         }
     }
     None
@@ -1313,6 +1323,12 @@ mod tests {
 
     struct RejectingConnector(Arc<std::sync::atomic::AtomicUsize>);
 
+    struct PendingThenLoopbackConnector {
+        pending: SocketAddr,
+        loopback: SocketAddr,
+        attempts: Arc<Mutex<Vec<SocketAddr>>>,
+    }
+
     impl TestConnector for PendingConnector {
         fn connect(
             &self,
@@ -1334,6 +1350,23 @@ mod tests {
         ) -> Pin<Box<dyn Future<Output = io::Result<TcpStream>> + Send + '_>> {
             self.0.fetch_add(1, Ordering::AcqRel);
             Box::pin(async { Err(io::Error::other("test connector rejected dial")) })
+        }
+    }
+
+    impl TestConnector for PendingThenLoopbackConnector {
+        fn connect(
+            &self,
+            address: SocketAddr,
+        ) -> Pin<Box<dyn Future<Output = io::Result<TcpStream>> + Send + '_>> {
+            self.attempts
+                .lock()
+                .expect("attempt list poisoned")
+                .push(address);
+            if address == self.pending {
+                Box::pin(std::future::pending())
+            } else {
+                Box::pin(TcpStream::connect(self.loopback))
+            }
         }
     }
 
@@ -1373,6 +1406,37 @@ mod tests {
             .handshake_timeout(handshake_timeout)
             .build()
             .expect("valid policy")
+    }
+
+    #[test]
+    fn pending_first_address_cannot_starve_a_reachable_second_address() {
+        let target = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .expect("bind fallback target");
+        let target_address = target.local_addr().expect("fallback target address");
+        let first = SocketAddr::new("192.0.2.1".parse().expect("first test IP"), 443);
+        let second = SocketAddr::new("198.51.100.1".parse().expect("second test IP"), 443);
+        let attempts = Arc::new(Mutex::new(Vec::new()));
+        let connector = ConnectorBackend::Test(Arc::new(PendingThenLoopbackConnector {
+            pending: first,
+            loopback: target_address,
+            attempts: Arc::clone(&attempts),
+        }));
+        let runtime = RuntimeBuilder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .expect("test runtime");
+
+        let connected = runtime.block_on(dial_approved_addresses(
+            vec![first, second],
+            &connector,
+            TokioInstant::now() + Duration::from_millis(400),
+        ));
+        assert!(connected.is_some(), "reachable fallback was not attempted");
+        assert_eq!(
+            *attempts.lock().expect("attempt list poisoned"),
+            vec![first, second]
+        );
     }
 
     #[test]
