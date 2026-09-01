@@ -285,23 +285,26 @@ p50/p95/p99 setup latency, peak RSS, threads, and file descriptors.
 The opt-in resource target first runs identity churn with the proxy still alive
 and samples each batch. A second lane synchronizes 64 host threads, holds all
 of their distinct attached leases, then releases their close calls together in
-four repeated batches. A third lane establishes a configurable batch of silent
-tunnels under one idle-expiring lease. It samples their simultaneous peak,
+four repeated batches. A third lane holds a configurable number of partial
+CONNECT headers before their deadline, proves every admission is active, then
+requires certified close to make all guest sockets terminal and recover
+descriptors and threads. A fourth lane establishes a configurable batch of
+silent tunnels under one idle-expiring lease. It samples their simultaneous peak,
 requires every guest and upstream socket to become terminal, and checks exact
-idle-denial counters plus recovered descriptors and threads. A fourth lane
+idle-denial counters plus recovered descriptors and threads. A fifth lane
 keeps one real lease and upstream alive, then alternates completed echo tunnels,
 upload-ceiling denials, channel-timed upstream resets after CONNECT success,
 and pre-DNS hostname denials. It waits for active ownership to return to zero
 and samples descriptor and thread recovery after every batch and final
 shutdown. Final accepted, completed, denied, upload, and download counters must
 exactly distinguish all four paths; the reset is neither a completion nor a
-policy denial. A fifth lane holds a configurable number of TLS-inspected
+policy denial. A sixth lane holds a configurable number of TLS-inspected
 tunnels at 60,020 bytes of a legal, incomplete, multi-record `ClientHello`.
 Aggregate upload accounting proves every parser buffer is live before the peak
 sample. Successful lease close must then cancel all of them, make every guest
 and upstream socket terminal, freeze exact zero-denial final counters, and
-recover descriptors and threads. A sixth lane repeatedly drives both guest and
-upstream nonblocking writers until each independently observes a full send
+recover descriptors and threads. A seventh lane repeatedly drives both guest
+and upstream nonblocking writers until each independently observes a full send
 queue while neither application reads. Every certified close must terminate
 both writers, freeze positive bidirectional accounting with no completion or
 denial, and permit the same source identity to attach again. It samples
@@ -311,7 +314,8 @@ On Linux the collectors read `/proc`; on macOS they use `ps` and `lsof`; other
 targets compile and report unsupported counters as absent. Run
 `./scripts/measure-resources.sh [lease-runs-per-batch]
 [lease-batches] [idle-connections] [TLS-connections]
-[terminal-runs-per-batch] [terminal-batches]`. Management churn remains
+[terminal-runs-per-batch] [terminal-batches] [partial-header-connections]`.
+Management churn remains
 adjustable with
 `SANDBOX_EGRESS_CONTROL_CONCURRENCY` and
 `SANDBOX_EGRESS_CONTROL_BATCHES`; the repeated pressure lane uses

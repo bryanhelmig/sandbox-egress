@@ -42,8 +42,12 @@ contention case proves exactly one attachment wins and every other caller sees
 `IdentityInUse`; adding a second registry synchronization scheme would not
 strengthen that invariant. Like the reviewed implementations, global
 saturation is fail-fast rather than a fairness queue. A two-lease proof pins
-correct refusal attribution and admission on retry after certified release;
-reserved shares remain a separate, optional scheduling design.
+correct refusal attribution and admission on retry after certified release.
+The same permit spans partial headers, DNS, dialing, and the live tunnel rather
+than treating request parsing and tunnel occupancy as unrelated budgets. A
+resource lane holds many partial headers concurrently and proves certified
+release of every socket and permit. Reserved shares remain a separate,
+optional scheduling design.
 
 ## Listener failure comparison
 

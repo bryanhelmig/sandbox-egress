@@ -4692,3 +4692,38 @@ five threads, and finished at 6,192 KiB, four descriptors, and two threads.
 The rootless 180/180 image is
 `sha256:41133bfefe81f2821cf16af889aebd453de02d38283d15081f2d70c7f8f6c63e`
 (40,904,531 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — measure revocation of partial header pressure
+
+The next comparison rotation revisited admission scope. Smokescreen exposes
+separate request-processing and live-tunnel concurrency limits, while current
+nono increments its active count before dispatch. Sandbox Egress deliberately
+uses one global and one lease permit from admission through task destruction:
+headers, DNS, dialing, and tunnelling consume the same bounded ownership. The
+contract already held, but the resource factory did not isolate partial HTTP
+headers as a peak-and-recovery lane.
+
+A seventh opt-in resource case now opens 128 connections under one lease,
+writes incomplete CONNECT headers, and waits until every admission is live.
+Certified close must then make every guest socket terminal without waiting for
+the 30-second header deadline, return 128 accepted with zero active, completed,
+denied, upload, or download counts, and recover descriptor and thread counts
+both before and after proxy shutdown. The focused case passed ten consecutive
+runs. One representative macOS run peaked at 10,864 KiB RSS, 269 descriptors,
+and five threads; it recovered to 11,088 KiB, thirteen descriptors, and five
+threads after close, then 11,072 KiB, nine descriptors, and two threads after
+shutdown.
+
+Production source, API, allocation, and behavior are unchanged. Whole-tree SCC
+4.0.0 complexity moves from 751/2,236 to 756/2,246 structural/cognitive,
+entirely in the opt-in resource case; the deterministic count remains 180.
+
+The native and exact Rust 1.88 Linux factories passed all 180 deterministic
+cases, six doctests, documentation, package verification, benchmark smoke, and
+all seven Linux resource lanes. The new Linux header lane peaked at 7,332 KiB
+RSS, 264 descriptors, and five threads, recovered to 7,268 KiB, eight
+descriptors, and five threads after close, and finished at 5,860 KiB, four
+descriptors, and two threads. Production artifacts did not change, so the
+rootless 180/180 image remains
+`sha256:41133bfefe81f2821cf16af889aebd453de02d38283d15081f2d70c7f8f6c63e`
+(40,904,531 bytes), running as UID/GID 65534.

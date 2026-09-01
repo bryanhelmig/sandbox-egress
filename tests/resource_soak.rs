@@ -202,6 +202,101 @@ fn concurrent_management_churn_releases_process_resources() {
 
 #[test]
 #[ignore = "resource soak is opt-in; run scripts/measure-resources.sh"]
+fn concurrent_partial_headers_release_process_resources() {
+    let connections = env_number("SANDBOX_EGRESS_HEADER_CONNECTIONS", 128);
+    assert!(connections > 0 && connections < 0x00ff_ffff);
+
+    let process_start = Resources::sample();
+    let proxy = Proxy::start(
+        ProxyConfig::default()
+            .with_max_connections(connections)
+            .with_header_timeout(Duration::from_secs(30))
+            .with_identity_reuse_quiet_period(Duration::ZERO),
+    )
+    .expect("start partial-header proxy");
+    let lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            Policy::builder()
+                .max_connections(connections)
+                .expect("positive partial-header connection limit")
+                .build()
+                .expect("valid partial-header policy"),
+        )
+        .expect("attach partial-header lease");
+    thread::sleep(Duration::from_millis(25));
+    let proxy_start = Resources::sample();
+    let started = Instant::now();
+
+    let mut clients = Vec::with_capacity(connections);
+    for _ in 0..connections {
+        let mut client =
+            TcpStream::connect(lease.endpoint().socket_addr()).expect("connect partial header");
+        client
+            .write_all(b"CONNECT slow")
+            .expect("write partial header");
+        clients.push(client);
+    }
+    let observed_deadline = Instant::now() + Duration::from_secs(5);
+    while lease.usage().active_connections != connections as u64 {
+        assert!(
+            Instant::now() < observed_deadline,
+            "partial headers did not reach the active barrier"
+        );
+        thread::yield_now();
+    }
+    let peak = Resources::sample();
+    eprintln!(
+        "header_soak event=peak connections={connections} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
+        started.elapsed().as_millis(),
+        peak.rss_kib,
+        peak.descriptors,
+        peak.threads,
+    );
+
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(2))
+        .expect("close partial-header lease")
+        .usage();
+    for mut client in clients {
+        client
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("bound partial-header client read");
+        assert_terminal_socket(client.read(&mut [0_u8; 1]));
+    }
+    assert_eq!(final_usage.accepted_connections, connections as u64);
+    assert_eq!(final_usage.active_connections, 0);
+    assert_eq!(final_usage.completed_connections, 0);
+    assert_eq!(final_usage.denied_connections, 0);
+    assert_eq!(final_usage.uploaded_bytes, 0);
+    assert_eq!(final_usage.downloaded_bytes, 0);
+    let recovered = Resources::sample();
+    eprintln!(
+        "header_soak event=recovered connections={connections} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
+        started.elapsed().as_millis(),
+        recovered.rss_kib,
+        recovered.descriptors,
+        recovered.threads,
+    );
+    assert_stable_non_memory_resources(proxy_start, recovered);
+
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(2))
+        .expect("proxy shutdown");
+    thread::sleep(Duration::from_millis(25));
+    let finished = Resources::sample();
+    eprintln!(
+        "header_soak event=finish connections={connections} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
+        started.elapsed().as_millis(),
+        finished.rss_kib,
+        finished.descriptors,
+        finished.threads,
+    );
+    assert_stable_non_memory_resources(process_start, finished);
+}
+
+#[test]
+#[ignore = "resource soak is opt-in; run scripts/measure-resources.sh"]
 fn concurrent_idle_expiry_releases_process_resources() {
     let connections = env_number("SANDBOX_EGRESS_IDLE_CONNECTIONS", 128);
     assert!(connections > 0 && connections < 0x00ff_ffff);
