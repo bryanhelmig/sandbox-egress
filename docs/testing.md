@@ -119,6 +119,11 @@ the retained lease with a consumable closed snapshot. A separate case removes
 the success receiver before an empty shutdown; the runtime must remain alive in
 stopping state until a later caller actually receives the certificate.
 
+Legacy numeric host spellings (`127.1`, leading-zero dotted form, hexadecimal
+integer, and single decimal integer) are exercised end to end. Each is allowed
+only as a hostname, resolved to loopback by a controlled resolver, rejected by
+the forbidden-address floor, and required to produce zero connector calls.
+
 Four barrier-synchronized cases race explicit proxy shutdown and best-effort
 proxy drop against both certified lease close and lease drop while a dial is
 pending. Explicit shutdown must succeed in both cases; where lease close is
@@ -132,7 +137,7 @@ resource lane in the builder. A checked collector reads Cargo's JSON artifact
 records, requires exactly one executable for each conformance target, strips
 copies, and carries only those binaries into a Debian runner. The CLI's
 compile-time executable dependency is copied at its exact embedded path. The
-final image runs as UID/GID 65534 and must reproduce all 106 deterministic
+final image runs as UID/GID 65534 and must reproduce all 107 deterministic
 cases without Cargo, source, or a build cache.
 
 Source-identity cases prove an IPv4 address and its mapped IPv6 transport

@@ -1874,6 +1874,57 @@ mod tests {
     }
 
     #[test]
+    fn legacy_numeric_host_spellings_cannot_bypass_the_resolved_address_floor() {
+        let dial_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        for hostname in ["127.1", "0177.0.0.1", "0x7f000001", "2130706433"] {
+            assert!(hostname.parse::<IpAddr>().is_err(), "{hostname}");
+            let resolver = Arc::new(FixedAnswerResolver(vec![IpAddr::V4(
+                std::net::Ipv4Addr::LOCALHOST,
+            )]));
+            let connector = Arc::new(RejectingConnector(Arc::clone(&dial_attempts)));
+            let proxy =
+                Proxy::start_with_test_backends(ProxyConfig::default(), resolver, connector)
+                    .expect("start proxy");
+            let lease = proxy
+                .attach(
+                    PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                    Policy::builder()
+                        .allow_host(hostname)
+                        .expect("valid legacy-looking hostname")
+                        .allow_port(443)
+                        .build()
+                        .expect("valid policy"),
+                )
+                .expect("attach lease");
+            let mut client = std::net::TcpStream::connect(lease.endpoint().socket_addr())
+                .expect("connect proxy");
+            std::io::Write::write_all(
+                &mut client,
+                format!("CONNECT {hostname}:443 HTTP/1.1\r\nHost: {hostname}\r\n\r\n").as_bytes(),
+            )
+            .expect("write CONNECT");
+            let mut response = String::new();
+            std::io::Read::read_to_string(&mut client, &mut response).expect("read address denial");
+            assert!(
+                response.starts_with("HTTP/1.1 403"),
+                "{hostname}: {response}"
+            );
+            assert!(
+                response.contains("resolved-address-denied"),
+                "{hostname}: {response}"
+            );
+            assert_eq!(dial_attempts.load(Ordering::Acquire), 0, "{hostname}");
+
+            lease
+                .close(Instant::now() + Duration::from_secs(1))
+                .expect("close lease");
+            proxy
+                .shutdown(Instant::now() + Duration::from_secs(1))
+                .expect("proxy shutdown");
+        }
+    }
+
+    #[test]
     fn configured_nat64_prefix_rejects_an_embedded_metadata_destination() {
         let resolver = Arc::new(FixedAnswerResolver(vec![
             "2600:1f18:abcd:1234::a9fe:a9fe"

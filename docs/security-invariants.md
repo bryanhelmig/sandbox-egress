@@ -69,10 +69,12 @@ after the final snapshot is still refused but cannot mutate that snapshot.
 
 Hostname policy is checked before DNS. Every resolved address is checked after
 DNS. Only those checked `SocketAddr` values are passed to `TcpStream::connect`;
-the dial path never receives the hostname. A process-wide semaphore bounds
-lookups executing concurrently; waiting for a permit consumes the same DNS and
-absolute handshake deadlines. A cancelled or late resolver future cannot reach
-dialing because it lives inside the tracked connection future.
+the dial path never receives the hostname. System lookups append a terminal dot
+and therefore cannot apply a local search suffix to the policy authority. A
+process-wide semaphore bounds lookups executing concurrently; waiting for a
+permit consumes the same DNS and absolute handshake deadlines. A cancelled or
+late resolver future cannot reach dialing because it lives inside the tracked
+connection future.
 
 DNS address cardinality is process-configured and has a hard upper bound. The
 system resolver collects at most one entry beyond that ceiling, solely to

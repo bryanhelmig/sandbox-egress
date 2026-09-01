@@ -2060,3 +2060,43 @@ live to nine descriptors and two threads, finishing at 8,976 KiB RSS in
 500-lease lane returned from eight descriptors and five threads to four and
 two, finishing at 3,968 KiB RSS in 1,080 ms. The serialized runner reproduced
 106/106 as UID/GID 65534 and measured 40,388,758 bytes.
+
+## 2026-09-01 — keep legacy numeric hosts behind the address floor
+
+[RFC 3986](https://www.rfc-editor.org/rfc/rfc3986.html#section-3.2.2)
+distinguishes IPv4 literals from registered names using a first-match rule.
+Rust's documented [`Ipv4Addr` textual
+representation](https://doc.rust-lang.org/std/net/struct.Ipv4Addr.html#textual-representation)
+accepts four decimal octets and explicitly rejects legacy octal and hexadecimal
+forms. In contrast, the [WHATWG URL host
+parser](https://url.spec.whatwg.org/#concept-ipv4-parser) retains legacy
+one-part, short dotted, octal, and hexadecimal IPv4 number handling. A proxy
+must not let disagreement between those parsers become disagreement between
+policy and dialing.
+
+Sandbox Egress parses only standard Rust IP literals directly. Every other
+accepted ASCII host is canonicalized and policy-matched as a name. The system
+resolver receives an absolute name (the implementation appends the terminal
+dot), and only returned `IpAddr` values cross the forbidden-address floor. The
+dialer receives the resulting checked `SocketAddr`, never the original host
+string.
+
+A new end-to-end case grants each of `127.1`, `0177.0.0.1`, `0x7f000001`, and
+`2130706433` as a hostname and allows port 443, but grants no private network.
+A controlled resolver returns `127.0.0.1`. Every form must receive
+`resolved-address-denied`, and a counting connector must remain untouched. The
+case passed ten consecutive focused runs.
+
+The first version of the case failed with `dial-failed`: it reused a loopback
+happy-path policy helper that explicitly grants `127.0.0.0/8`. That behavior
+was correct and exposed an invalid test premise. The case now constructs the
+minimal deny-floor policy locally rather than weakening production behavior.
+
+No production source changed and no data-path benchmark was run. Whole-tree
+SCC 4.0.0 complexity moved from 490/1,479 to 491/1,482
+structural/cognitive. The native and exact Rust 1.88 Linux factories passed all
+107 deterministic cases, doctests, documentation, and package verification;
+native dependency policy checks also passed. Linux's 500-lease lane returned
+from eight descriptors and five threads to four and two, finishing at 3,960
+KiB RSS in 1,017 ms. The rootless runner reproduced 107/107 as UID/GID 65534
+and measured 40,391,595 bytes.
