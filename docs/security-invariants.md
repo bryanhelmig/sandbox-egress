@@ -67,6 +67,12 @@ the read that crosses a ceiling are accounted but not forwarded. A ceiling
 violation is a policy denial, distinct from an ordinary tunnel I/O failure, and
 increments the lease denial counter exactly once.
 
+Cumulative connection and byte counters use saturating atomic updates. They
+remain monotonic at the integer boundary instead of wrapping, and byte
+accounting cannot panic while forming the returned total. The active-connection
+gauge is separate: it is bounded by admission permits and decrements when owned
+work ends.
+
 The forbidden-address floor applies IPv4 rules to both mapped and deprecated
 compatible IPv6 forms. The well-known NAT64 `/96` is decoded and the embedded
 IPv4 destination is checked. Local-use NAT64, Teredo, 6to4, and non-global

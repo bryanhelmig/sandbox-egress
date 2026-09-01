@@ -913,3 +913,33 @@ the existing allowed benchmark uses an IP literal and does not exercise DNS.
 The exact Rust 1.88 Linux image passed the same factory and hostile lane. Its
 500-lease smoke held eight descriptors and five threads while live, returned
 to four descriptors and two threads, and finished at 3,996 KiB RSS.
+
+## 2026-08-31 — preserve counter monotonicity at integer limits
+
+### Finding
+
+Usage snapshots promised monotonic counters, but cumulative atomics used
+wrapping `fetch_add`. At `u64::MAX`, accepted, completed, and denied counts
+wrapped to zero. Upload and download accounting additionally performed a
+normal addition on the previous atomic value, which panicked in a debug build
+when a read crossed the integer boundary.
+
+### Result
+
+Cumulative totals now use one private saturating atomic update. Boundary tests
+first reproduced both wraparound and the debug panic, then proved accepted,
+completed, denied, upload, and download counts stop at `u64::MAX`. The active
+gauge retains acquire/release increment and decrement: admission semaphores
+bound it, and unlike cumulative usage it must fall as work ends.
+
+The change adds no structural or cognitive complexity points: the whole tree
+remains 350/1,020. Three 1 GiB, eight-tunnel measurements produced 3,052–3,391
+MiB/sec upload and 3,465–3,498 MiB/sec download, overlapping the retained
+baseline. Criterion detected no connection-setup change: allowed loopback was
+108.91–112.79 microseconds (`p=0.64`) and hostname denial was 70.23–74.85
+microseconds (`p=0.45`).
+
+The complete native factory and 59-case deterministic conformance lane passed.
+The exact Rust 1.88 Linux image passed the same gates. Its 500-lease smoke held
+eight descriptors and five threads while live, returned to four descriptors
+and two threads, and finished at 3,984 KiB RSS.

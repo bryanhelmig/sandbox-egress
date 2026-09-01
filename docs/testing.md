@@ -39,6 +39,11 @@ zero-byte budget, prove the peer receives none, preserve attempted-byte
 accounting, and require exactly one policy denial. This is separate from socket
 reset tests so transport failure cannot masquerade as policy enforcement.
 
+Counter boundary tests seed cumulative atomics immediately below `u64::MAX`,
+then require accepted, completed, denied, upload, and download totals to
+saturate without a debug-build panic. The active gauge must still return to
+zero.
+
 Performance gates begin as recorded baselines, not brittle absolute numbers.
 Benchmarks cover attach/close, policy matching, admission contention, and
 accounting overhead. Macrobenchmarks later report connections/sec, throughput,

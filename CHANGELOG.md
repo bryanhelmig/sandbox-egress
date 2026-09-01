@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Saturate cumulative usage counters at `u64::MAX` so final accounting cannot
+  wrap or panic at the integer boundary.
 - Bound accepted DNS answer cardinality and reject oversized sets before any
   address can reach the dialer.
 - Extend the absolute handshake deadline through forwarding an approved

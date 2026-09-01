@@ -1,6 +1,9 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// A point-in-time usage snapshot. Counters are monotonic.
+/// A point-in-time usage snapshot.
+///
+/// Cumulative counters are monotonic and saturate at [`u64::MAX`]. The active
+/// connection gauge rises and falls with admitted work.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Usage {
     /// Connections admitted to this lease.
@@ -55,26 +58,70 @@ impl Counters {
     }
 
     pub(crate) fn admit(&self) {
-        self.accepted.fetch_add(1, Ordering::Relaxed);
+        saturating_add(&self.accepted, 1);
         self.active.fetch_add(1, Ordering::AcqRel);
     }
 
     pub(crate) fn finish(&self, completed: bool) {
         if completed {
-            self.completed.fetch_add(1, Ordering::Relaxed);
+            saturating_add(&self.completed, 1);
         }
         self.active.fetch_sub(1, Ordering::AcqRel);
     }
 
     pub(crate) fn deny(&self) {
-        self.denied.fetch_add(1, Ordering::Relaxed);
+        saturating_add(&self.denied, 1);
     }
 
     pub(crate) fn record_upload(&self, bytes: u64) -> u64 {
-        self.uploaded.fetch_add(bytes, Ordering::Relaxed) + bytes
+        saturating_add(&self.uploaded, bytes)
     }
 
     pub(crate) fn record_download(&self, bytes: u64) -> u64 {
-        self.downloaded.fetch_add(bytes, Ordering::Relaxed) + bytes
+        saturating_add(&self.downloaded, bytes)
+    }
+}
+
+fn saturating_add(counter: &AtomicU64, amount: u64) -> u64 {
+    let previous = counter
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+            Some(current.saturating_add(amount))
+        })
+        .expect("saturating update never rejects a value");
+    previous.saturating_add(amount)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cumulative_counters_saturate_instead_of_wrapping() {
+        let counters = Counters::default();
+        counters.accepted.store(u64::MAX, Ordering::Relaxed);
+        counters.denied.store(u64::MAX, Ordering::Relaxed);
+        counters.completed.store(u64::MAX, Ordering::Relaxed);
+
+        counters.admit();
+        counters.deny();
+        counters.finish(true);
+
+        let usage = counters.snapshot();
+        assert_eq!(usage.accepted_connections, u64::MAX);
+        assert_eq!(usage.denied_connections, u64::MAX);
+        assert_eq!(usage.completed_connections, u64::MAX);
+        assert_eq!(usage.active_connections, 0);
+    }
+
+    #[test]
+    fn byte_counters_saturate_and_return_the_stored_total() {
+        let counters = Counters::default();
+        counters.uploaded.store(u64::MAX - 2, Ordering::Relaxed);
+        counters.downloaded.store(u64::MAX - 1, Ordering::Relaxed);
+
+        assert_eq!(counters.record_upload(4), u64::MAX);
+        assert_eq!(counters.record_download(2), u64::MAX);
+        assert_eq!(counters.snapshot().uploaded_bytes, u64::MAX);
+        assert_eq!(counters.snapshot().downloaded_bytes, u64::MAX);
     }
 }
