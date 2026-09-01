@@ -53,6 +53,12 @@ with a deadline shorter than the configured quiet period and requires the same
 snapshot immediately. The case runs repeatedly because the original failure
 was an ordering race, not a parser value bug.
 
+A separate drain-barrier case injects a normal admission 100 milliseconds into
+a 200 millisecond revocation interval. Cleanup must not complete at the
+original deadline; it returns only after a new full interval and includes the
+rejected socket in final usage. This proves observed backlog activity extends
+both explicit close and the shared dropped-lease cleanup barrier.
+
 Post-establishment upload and download ceiling cases send bytes across a
 zero-byte budget, prove the peer receives none, preserve attempted-byte
 accounting, and require exactly one policy denial. This is separate from socket

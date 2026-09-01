@@ -12,8 +12,11 @@ namespace/NAT path before calling `Lease::close`.
 
 TCP contains no run-generation field. Therefore a shared listener cannot, by
 itself, distinguish a deliberately delayed SYN from an old run after the same
-source address is reassigned. The implementation drains while the identity is
-revoking, but the host-side fencing order is load-bearing:
+source address is reassigned. The implementation keeps the identity revoking
+until one complete configured interval passes without an accepted old socket;
+each observed arrival restarts that interval. It cannot authenticate a packet
+that arrives after the interval, so the host-side fencing order is
+load-bearing:
 
 1. prevent the old guest from creating traffic;
 2. close the lease successfully;
@@ -116,9 +119,10 @@ host can override this deliberately with an explicit CIDR grant.
 
 `Lease::close` consumes the lease. On deadline or coordination failure the
 error returns ownership through `CloseError::into_lease`. A successful result
-is emitted only after the task tracker is closed and empty, the queued-socket
-drain interval has elapsed, and the state becomes internally quiesced under the
-lifecycle lock. Its counters are then immutable: tracked work is gone and
+is emitted only after the task tracker is closed and empty, one complete
+queued-socket drain interval passes without another observed arrival, and the
+state becomes internally quiesced under the lifecycle lock. Its counters are
+then immutable: tracked work is gone and
 later unadmitted sockets do not count. Quiescing alone does not make the
 identity reusable; if success delivery is lost, the lease retains ownership
 until a retry is observed successfully. That retry returns the already-frozen

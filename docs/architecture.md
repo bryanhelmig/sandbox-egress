@@ -28,8 +28,10 @@ a `TaskTracker` turns task destruction into the close barrier. Counters are
 atomics so `Lease::usage` does not cross the runtime boundary.
 
 The internal lifecycle is `Open -> Revoking -> Quiesced -> Closed`. Quiescing
-commits final counters under the lifecycle lock after tracked work and the
-queued-socket drain interval finish. It does not release identity ownership;
+commits final counters under the lifecycle lock after tracked work ends and one
+complete queued-socket drain interval passes without an observed arrival. Each
+revoking-phase arrival restarts that interval. Quiescing does not release
+identity ownership;
 only the synchronous caller's observation of close success advances to
 `Closed` and sends the registry release. A retry can certify an already
 quiesced snapshot immediately; it does not rerun the quiet-period barrier.

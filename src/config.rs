@@ -88,7 +88,8 @@ impl ProxyConfig {
     }
 
     /// Set the post-cancellation interval during which the old identity remains
-    /// revoking so the accept loop can drain already-queued sockets.
+    /// revoking so the accept loop can drain already-queued sockets. Every
+    /// socket observed during revocation restarts the full interval.
     ///
     /// [`Proxy::start`](crate::Proxy::start) rejects durations that cannot be
     /// represented as a runtime deadline.

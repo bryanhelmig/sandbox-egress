@@ -1348,3 +1348,43 @@ The native and exact Rust 1.88 factories passed all 74 deterministic cases and
 verified the assembled crate; the serialized Linux lane passed the same set.
 Its 500-lease smoke returned from eight descriptors and five threads while live
 to four descriptors and two threads, finishing at 3,992 KiB RSS.
+
+## 2026-08-31 — require an actually quiet identity interval
+
+### Finding
+
+Close waited for tracked work and then slept through one fixed identity-reuse
+interval. A socket accepted for the revoking identity during that sleep was
+closed and counted, but did not restart the timer. A sufficiently deep old-run
+backlog could therefore keep draining right up to close success, leaving less
+than the configured interval between the last observed old socket and source
+address reuse. Dropped-lease cleanup used the same fixed sleep.
+
+### Result
+
+Each lease now records a mutex-ordered, saturating revocation generation. Both
+ordinary admission and the global-capacity path advance it when they reject a
+socket in `Revoking`. Cleanup samples the generation around each interval and
+restarts the full wait after any change. At `u64::MAX` it never certifies
+quiescence, so exhaustion fails closed instead of wrapping. Explicit close and
+best-effort reap share the same small helper.
+
+A deterministic phase case injects an ordinary admission 100 milliseconds
+into a 200 millisecond quiet period. It proves the original completion point is
+missed, waits another full interval, includes the denial in final usage, and
+passed five concurrent repetitions at 0.41 seconds each. The existing close,
+retry, counter-freeze, DNS, dial, TLS, and blocked-tunnel cases remain green.
+
+This does not claim to identify arbitrary late packets: TCP carries no run
+generation. The host must still fence the old namespace/NAT/conntrack path
+before close, and must not reassign the source address until close succeeds.
+The resettable interval strengthens observable backlog drainage inside that
+contract. Criterion found no empty-lease regression at 1.3543–1.3684
+milliseconds (`p=0.88`).
+
+The lifecycle code and proof move whole-tree structural/cognitive complexity
+from 383/1,122 to 392/1,147. The native and exact Rust 1.88 factories passed all
+75 deterministic cases and verified the assembled crate; the serialized Linux
+lane passed the same set. Its 500-lease smoke returned from eight descriptors
+and five threads while live to four descriptors and two threads, finishing at
+4,056 KiB RSS.

@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Restart the identity-reuse quiet period whenever another socket is rejected
+  for a revoking lease, including best-effort dropped-lease cleanup.
 - Start each connection's absolute handshake and header deadlines when the
   listener accepts its socket, including time spent awaiting the spawned task.
 - Scan growing CONNECT headers incrementally instead of repeatedly rescanning

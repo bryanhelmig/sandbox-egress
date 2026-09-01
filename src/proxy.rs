@@ -361,6 +361,7 @@ struct LeaseState {
     tracker: TaskTracker,
     permits: Arc<Semaphore>,
     counters: Arc<Counters>,
+    revocation_generation: Mutex<u64>,
     diagnostics: DiagnosticReporter,
 }
 
@@ -381,6 +382,7 @@ impl LeaseState {
             tracker: TaskTracker::new(),
             permits: Arc::new(Semaphore::new(max_connections)),
             counters: Arc::new(Counters::default()),
+            revocation_generation: Mutex::new(0),
             diagnostics,
         }
     }
@@ -398,10 +400,7 @@ impl LeaseState {
         if *phase != Phase::Open {
             drop(permit);
             drop(stream);
-            if *phase == Phase::Revoking {
-                self.counters.deny();
-                self.report_denial("lease-revoking");
-            }
+            self.record_unadmitted_locked(*phase, "lease-revoking");
             return None;
         }
         let tracking = self.tracker.token();
@@ -432,12 +431,23 @@ impl LeaseState {
         *phase = Phase::Closed;
     }
 
-    fn quiesce_and_snapshot(&self) -> FinalUsage {
+    fn quiesce_if_generation(&self, expected: u64) -> Option<FinalUsage> {
         let mut phase = self.phase.lock().expect("lease phase poisoned");
-        if *phase == Phase::Revoking {
-            *phase = Phase::Quiesced;
+        if *phase == Phase::Quiesced {
+            return Some(self.counters.final_snapshot());
         }
-        self.counters.final_snapshot()
+        if *phase != Phase::Revoking {
+            return None;
+        }
+        let generation = self
+            .revocation_generation
+            .lock()
+            .expect("revocation generation poisoned");
+        if *generation != expected || expected == u64::MAX {
+            return None;
+        }
+        *phase = Phase::Quiesced;
+        Some(self.counters.final_snapshot())
     }
 
     fn quiesced_snapshot(&self) -> Option<FinalUsage> {
@@ -448,10 +458,36 @@ impl LeaseState {
     fn reject_unadmitted(&self, stream: TcpStream, reason: &'static str) {
         let phase = self.phase.lock().expect("lease phase poisoned");
         drop(stream);
-        if matches!(*phase, Phase::Open | Phase::Revoking) {
+        self.record_unadmitted_locked(*phase, reason);
+    }
+
+    fn record_unadmitted_locked(&self, phase: Phase, reason: &'static str) {
+        // The caller's phase lock orders both accounting and generation
+        // changes before the final quiescence check.
+        if matches!(phase, Phase::Open | Phase::Revoking) {
             self.counters.deny();
             self.report_denial(reason);
+            if phase == Phase::Revoking {
+                self.note_revoking_arrival_locked();
+            }
         }
+    }
+
+    fn note_revoking_arrival_locked(&self) {
+        let mut generation = self
+            .revocation_generation
+            .lock()
+            .expect("revocation generation poisoned");
+        if let Some(next) = generation.checked_add(1) {
+            *generation = next;
+        }
+    }
+
+    fn revocation_generation(&self) -> u64 {
+        *self
+            .revocation_generation
+            .lock()
+            .expect("revocation generation poisoned")
     }
 
     fn record_denial(&self, reason: &'static str) {
@@ -609,7 +645,11 @@ async fn run_proxy(
                         let command_sender = command_sender.clone();
                         tokio::spawn(async move {
                             state.tracker.wait().await;
-                            sleep(config.identity_reuse_quiet_period).await;
+                            quiesce_after_identity_quiet(
+                                &state,
+                                config.identity_reuse_quiet_period,
+                            )
+                            .await;
                             state.mark_closed();
                             let _ = command_sender.send(Command::Release { state });
                         });
@@ -693,18 +733,27 @@ fn spawn_close_wait(
 ) {
     tokio::spawn(async move {
         let close = async {
-            if let Some(usage) = state.quiesced_snapshot() {
-                return usage;
-            }
             state.tracker.wait().await;
-            sleep(quiet_period).await;
-            state.quiesce_and_snapshot()
+            quiesce_after_identity_quiet(&state, quiet_period).await
         };
         let result = timeout_at(TokioInstant::from_std(deadline), close)
             .await
             .map_err(|_| CloseErrorKind::DeadlineExceeded);
         let _ = reply.send(result);
     });
+}
+
+async fn quiesce_after_identity_quiet(state: &LeaseState, quiet_period: Duration) -> FinalUsage {
+    loop {
+        if let Some(usage) = state.quiesced_snapshot() {
+            return usage;
+        }
+        let before = state.revocation_generation();
+        sleep(quiet_period).await;
+        if let Some(usage) = state.quiesce_if_generation(before) {
+            return usage;
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1772,6 +1821,63 @@ mod tests {
         assert_eq!(*state.phase.lock().expect("lease phase"), Phase::Quiesced);
         state.mark_closed();
         assert!(state.is_closed());
+    }
+
+    #[test]
+    fn revoking_arrival_restarts_the_identity_quiet_period() {
+        let state = Arc::new(LeaseState::new(
+            1,
+            PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+            Policy::builder().build().expect("valid policy"),
+            DiagnosticReporter::default(),
+        ));
+        state.begin_close();
+
+        let runtime = RuntimeBuilder::new_multi_thread()
+            .worker_threads(1)
+            .enable_io()
+            .enable_time()
+            .build()
+            .expect("test runtime");
+        let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+        {
+            let _runtime_guard = runtime.enter();
+            spawn_close_wait(
+                Arc::clone(&state),
+                Duration::from_millis(200),
+                Instant::now() + Duration::from_secs(1),
+                reply_tx,
+            );
+        }
+
+        thread::sleep(Duration::from_millis(100));
+        let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .expect("bind revoking-arrival test");
+        let mut client = std::net::TcpStream::connect(listener.local_addr().expect("test address"))
+            .expect("connect revoking-arrival test");
+        let (server, _) = listener.accept().expect("accept revoking-arrival test");
+        server.set_nonblocking(true).expect("nonblocking server");
+        let server = {
+            let _runtime_guard = runtime.enter();
+            TcpStream::from_std(server).expect("Tokio revoking client stream")
+        };
+        assert!(
+            state.admit(server).is_none(),
+            "a revoking lease must reject the queued socket"
+        );
+
+        assert!(matches!(
+            reply_rx.recv_timeout(Duration::from_millis(150)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+        let usage = reply_rx
+            .recv_timeout(Duration::from_millis(200))
+            .expect("quiet-period reply")
+            .expect("cleanup after a complete quiet period");
+        assert_eq!(usage.usage().denied_connections, 1);
+        assert_eq!(*state.phase.lock().expect("lease phase"), Phase::Quiesced);
+        let mut byte = [0];
+        assert!(matches!(std::io::Read::read(&mut client, &mut byte), Ok(0)));
     }
 
     #[test]
