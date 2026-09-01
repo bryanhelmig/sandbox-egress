@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Start each connection's absolute handshake and header deadlines when the
+  listener accepts its socket, including time spent awaiting the spawned task.
 - Scan growing CONNECT headers incrementally instead of repeatedly rescanning
   the accumulated buffer.
 - Add paired end-to-end benchmarks for hostname CONNECT with and without

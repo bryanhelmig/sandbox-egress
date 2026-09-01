@@ -118,7 +118,8 @@ The current vertical slice provides:
   documentation, cloud-metadata, and unsafe IPv6 transition destinations
   unless a CIDR is explicitly granted;
 - global and per-lease connection admission reserved before work is spawned;
-- bounded request headers, backpressure, absolute handshake and DNS deadlines;
+- bounded request headers, backpressure, and absolute accept-to-handshake and
+  DNS deadlines;
 - opt-in, bounded TLS `ClientHello` parsing that requires visible SNI to equal
   the CONNECT hostname;
 - explicit ECH handling: strict inspection rejects ECH by default, while an

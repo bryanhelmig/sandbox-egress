@@ -112,6 +112,11 @@ recording the exact checked `SocketAddr`. Tests release it only through lease
 cancellation or the absolute handshake deadline and observe its drop directly,
 avoiding platform-dependent assumptions about unroutable addresses.
 
+A direct connection-task case supplies an already-expired listener-accept
+timestamp without sending any header bytes. It must immediately return the
+bounded `header-timeout` denial, proving scheduler delay cannot reset either
+absolute deadline when the spawned task begins.
+
 The TLS conformance module uses Rustls to accept incrementally fragmented
 ClientHello records, plus a focused extension walk only after syntactic
 acceptance to detect ECH. Real proxy tests prove that a matching coalesced

@@ -636,6 +636,7 @@ async fn run_proxy(
             }
             accepted = listener.accept() => {
                 let Ok((stream, peer)) = accepted else { continue };
+                let accepted_at = TokioInstant::now();
                 let identity = PeerIdentity::SourceIp(peer.ip());
                 let Some(state) = leases.get(&identity).cloned() else {
                     drop(stream);
@@ -660,7 +661,7 @@ async fn run_proxy(
                     let result = tokio::select! {
                         biased;
                         () = cancel.cancelled() => None,
-                        result = serve_connect(stream, &state, &resolver, &dns_permits, &connector, &config) => Some(result),
+                        result = serve_connect(stream, &state, &resolver, &dns_permits, &connector, &config, accepted_at) => Some(result),
                     };
                     if matches!(result, Some(Ok(ConnectionDisposition::Completed))) {
                         admission.mark_completed();
@@ -719,10 +720,10 @@ async fn serve_connect(
     dns_permits: &Arc<Semaphore>,
     connector: &ConnectorBackend,
     config: &ProxyConfig,
+    accepted_at: TokioInstant,
 ) -> io::Result<ConnectionDisposition> {
-    let started = TokioInstant::now();
     let Some((handshake_deadline, header_deadline)) = connection_deadlines(
-        started,
+        accepted_at,
         state.policy.handshake_timeout,
         config.header_timeout,
     ) else {
@@ -1643,6 +1644,61 @@ mod tests {
 
             assert_eq!(result, Err("initial-upload-timeout"));
             assert_eq!(state.counters.snapshot().uploaded_bytes, 21);
+        });
+    }
+
+    #[test]
+    fn handshake_deadline_includes_time_before_connection_task_starts() {
+        let runtime = RuntimeBuilder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .expect("test runtime");
+        runtime.block_on(async {
+            let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+                .await
+                .expect("bind test listener");
+            let endpoint = listener.local_addr().expect("test listener address");
+            let connect = TcpStream::connect(endpoint);
+            let accept = listener.accept();
+            let (client, accepted) = tokio::join!(connect, accept);
+            let mut client = client.expect("connect test client");
+            let (server, _) = accepted.expect("accept test client");
+            let state = Arc::new(LeaseState::new(
+                1,
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                Policy::builder()
+                    .dns_timeout(Duration::from_millis(10))
+                    .handshake_timeout(Duration::from_millis(10))
+                    .build()
+                    .expect("valid deadline policy"),
+                DiagnosticReporter::default(),
+            ));
+            let resolver = ResolverBackend::Test(Arc::new(FixedAnswerResolver(Vec::new())));
+            let dns_permits = Arc::new(Semaphore::new(1));
+            let config = ProxyConfig::default();
+
+            let disposition = serve_connect(
+                server,
+                &state,
+                &resolver,
+                &dns_permits,
+                &ConnectorBackend::System,
+                &config,
+                TokioInstant::now() - Duration::from_millis(20),
+            )
+            .await
+            .expect("write deadline denial");
+            let mut response = String::new();
+            client
+                .read_to_string(&mut response)
+                .await
+                .expect("read deadline denial");
+
+            assert_eq!(disposition, ConnectionDisposition::Denied);
+            assert!(response.starts_with("HTTP/1.1 408"), "{response}");
+            assert!(response.contains("header-timeout"), "{response}");
+            assert_eq!(state.counters.snapshot().denied_connections, 1);
         });
     }
 

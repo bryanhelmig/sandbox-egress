@@ -62,9 +62,11 @@ handshake deadline. Lease cancellation drops the in-progress connect future;
 certified close waits for the owning tracked connection task to disappear.
 
 CONNECT header acquisition has a process-wide byte ceiling and an absolute
-deadline capped by the lease handshake deadline. Oversize input, early EOF,
-timeout, and other socket read failure remain fail-closed and have distinct
-bounded reason codes. The mature parser also uses a fixed 64-header slot array;
+deadline capped by the lease handshake deadline. Both deadlines begin when the
+listener accepts the socket, so time awaiting the spawned connection task does
+not extend either budget. Oversize input, early EOF, timeout, and other socket
+read failure remain fail-closed and have distinct bounded reason codes. The
+mature parser also uses a fixed 64-header slot array;
 header 65 is rejected as `too-many-headers` rather than allocating more space
 or being mislabeled as malformed syntax. Header terminator search scans only
 new bytes plus the three-byte boundary overlap, so raising the trusted byte

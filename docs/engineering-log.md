@@ -1308,3 +1308,43 @@ cases and verified the assembled crate; the serialized hostile-input lane
 passed the same set. The 500-lease Linux smoke returned from eight descriptors
 and five threads while live to four descriptors and two threads, finishing at
 4,072 KiB RSS.
+
+## 2026-08-31 — anchor handshake time at socket acceptance
+
+### Finding
+
+Each connection used one absolute deadline across header acquisition, DNS,
+dialing, optional ClientHello inspection, and initial forwarding. Its origin,
+however, was captured inside the spawned connection task. Scheduler delay
+between listener admission and the task's first poll therefore granted the
+guest extra time that was absent from the documented handshake budget.
+
+The adjacent parser audit found no comparable change worth retaining. The
+CONNECT acquisition layer requires `CRLF CRLF`, so the HTTP parser's tolerant
+LF-only mode cannot reach policy evaluation. Leading empty lines and bytes
+after the first header terminator do not change the parsed authority; the
+latter are tunnel payload to the already-approved address. TLS acquisition
+already feeds Rustls only newly received bytes, then performs one bounded ECH
+extension scan after syntactic acceptance. Custom syntax rejection or another
+parser optimization would add machinery without tightening the policy promise.
+
+### Result
+
+The listener now captures a monotonic timestamp immediately after `accept` and
+passes it through admission to the spawned connection task. Header and
+handshake deadlines derive from that timestamp. A direct deterministic case
+starts the task with a deliberately expired accept timestamp and no guest
+bytes; it receives `408 header-timeout`, records one denial, and never reaches
+DNS or dialing. The neighboring deadline suite passed all eight cases.
+
+The native connection benchmark detected no performance change: allowed
+loopback completed in 102.36–114.57 microseconds, hostname CONNECT in
+146.82–181.04 microseconds, visible-SNI CONNECT in 147.01–153.50 microseconds,
+hostname denial in 67.388–72.514 microseconds, and the 1 MiB header rejection
+in 652.48–669.90 microseconds. Production and whole-tree complexity remain
+unchanged at 135/415 and 383/1,122 structural/cognitive respectively.
+
+The native and exact Rust 1.88 factories passed all 74 deterministic cases and
+verified the assembled crate; the serialized Linux lane passed the same set.
+Its 500-lease smoke returned from eight descriptors and five threads while live
+to four descriptors and two threads, finishing at 3,992 KiB RSS.
