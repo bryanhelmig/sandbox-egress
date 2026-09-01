@@ -434,6 +434,12 @@ exchanges bytes through the tunnel, the upstream never receives the hostname,
 no second DNS lookup occurs, and certified close reports one accepted and
 completed connection with exact byte counters.
 
+A phase barrier holds the first address attempt until a coordinator has first
+cancelled the lease token. Releasing that attempt as a failure must return no
+connection and leave the second address entirely untouched. Removing the
+per-attempt cancellation observation makes the case deterministically record
+both addresses.
+
 The connection Criterion suite also measures one complete upstream-proxy
 negotiation beside direct allowed CONNECT. The local peer consumes and verifies
 the exact numeric CONNECT request before replying, so the measurement includes

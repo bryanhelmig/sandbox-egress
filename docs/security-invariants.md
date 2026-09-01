@@ -173,6 +173,9 @@ the addresses not yet tried. A pending early address therefore cannot consume
 the fallback's entire deadline, while one admitted connection still owns at
 most one live upstream dial. Immediate failures advance without an artificial
 delay. Lease cancellation drops the current attempt and prevents the next.
+The fallback loop observes the lease token before every address attempt, so a
+refusal that becomes ready after revocation cannot advance to another dial in
+the same future poll.
 
 A process-wide semaphore separately bounds connections executing the outbound
 dial phase. It is acquired only after the complete resolved-address set passes

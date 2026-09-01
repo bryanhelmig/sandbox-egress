@@ -1018,6 +1018,7 @@ async fn serve_connect(
         addresses,
         connector,
         &phase_permits.dial,
+        &state.cancel,
         handshake_deadline,
     )
     .await
@@ -1199,10 +1200,14 @@ fn connection_deadlines(
 async fn dial_approved_addresses(
     addresses: Vec<SocketAddr>,
     connector: &ConnectorBackend,
+    cancel: &CancellationToken,
     handshake_deadline: TokioInstant,
 ) -> Option<ConnectedStream> {
     let mut addresses = addresses.into_iter();
     while let Some(address) = addresses.next() {
+        if cancel.is_cancelled() {
+            break;
+        }
         let now = TokioInstant::now();
         let remaining = handshake_deadline.saturating_duration_since(now);
         let attempts_left = u32::try_from(addresses.len().saturating_add(1)).unwrap_or(u32::MAX);
@@ -1227,13 +1232,14 @@ async fn dial_with_budget(
     addresses: Vec<SocketAddr>,
     connector: &ConnectorBackend,
     permits: &Semaphore,
+    cancel: &CancellationToken,
     handshake_deadline: TokioInstant,
 ) -> Result<Option<ConnectedStream>, Denial> {
     let permit = complete_before_deadline(handshake_deadline, permits.acquire())
         .await
         .ok_or(Denial::DIAL_CAPACITY)?
         .map_err(|_| Denial::DIAL_CAPACITY)?;
-    let upstream = dial_approved_addresses(addresses, connector, handshake_deadline).await;
+    let upstream = dial_approved_addresses(addresses, connector, cancel, handshake_deadline).await;
     drop(permit);
     Ok(upstream)
 }
@@ -1974,6 +1980,13 @@ mod tests {
         attempts: Arc<Mutex<Vec<SocketAddr>>>,
     }
 
+    struct RefuseAfterReleaseConnector {
+        first: SocketAddr,
+        entered: mpsc::Sender<()>,
+        release: Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
+        attempts: Arc<Mutex<Vec<SocketAddr>>>,
+    }
+
     impl TestConnector for PendingConnector {
         fn connect(
             &self,
@@ -2025,6 +2038,32 @@ mod tests {
             } else {
                 Box::pin(TcpStream::connect(self.loopback))
             }
+        }
+    }
+
+    impl TestConnector for RefuseAfterReleaseConnector {
+        fn connect(
+            &self,
+            address: SocketAddr,
+        ) -> Pin<Box<dyn Future<Output = io::Result<TcpStream>> + Send + '_>> {
+            self.attempts
+                .lock()
+                .expect("attempt list poisoned")
+                .push(address);
+            if address != self.first {
+                return Box::pin(async { Err(io::Error::other("unexpected fallback dial")) });
+            }
+            let release = self
+                .release
+                .lock()
+                .expect("release receiver poisoned")
+                .take()
+                .expect("first attempt is unique");
+            self.entered.send(()).expect("report first attempt");
+            Box::pin(async move {
+                release.await.map_err(io::Error::other)?;
+                Err(io::Error::other("controlled first refusal"))
+            })
         }
     }
 
@@ -2144,12 +2183,55 @@ mod tests {
         let connected = runtime.block_on(dial_approved_addresses(
             vec![first, second],
             &connector,
+            &CancellationToken::new(),
             TokioInstant::now() + Duration::from_millis(400),
         ));
         assert!(connected.is_some(), "reachable fallback was not attempted");
         assert_eq!(
             *attempts.lock().expect("attempt list poisoned"),
             vec![first, second]
+        );
+    }
+
+    #[test]
+    fn revocation_before_refusal_prevents_a_fallback_dial() {
+        let first = SocketAddr::new("192.0.2.1".parse().expect("first test IP"), 443);
+        let second = SocketAddr::new("192.0.2.2".parse().expect("second test IP"), 443);
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let attempts = Arc::new(Mutex::new(Vec::new()));
+        let connector = ConnectorBackend::Test(Arc::new(RefuseAfterReleaseConnector {
+            first,
+            entered: entered_tx,
+            release: Mutex::new(Some(release_rx)),
+            attempts: Arc::clone(&attempts),
+        }));
+        let cancellation = CancellationToken::new();
+        let cancel_from_thread = cancellation.clone();
+        let coordinator = thread::spawn(move || {
+            entered_rx
+                .recv_timeout(Duration::from_secs(1))
+                .expect("observe first attempt");
+            cancel_from_thread.cancel();
+            release_tx.send(()).expect("release first refusal");
+        });
+        let runtime = RuntimeBuilder::new_current_thread()
+            .enable_io()
+            .enable_time()
+            .build()
+            .expect("test runtime");
+
+        let connected = runtime.block_on(dial_approved_addresses(
+            vec![first, second],
+            &connector,
+            &cancellation,
+            TokioInstant::now() + Duration::from_secs(1),
+        ));
+        coordinator.join().expect("join revocation coordinator");
+        assert!(connected.is_none());
+        assert_eq!(
+            *attempts.lock().expect("attempt list poisoned"),
+            vec![first]
         );
     }
 
