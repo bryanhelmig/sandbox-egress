@@ -421,6 +421,12 @@ listener as its own upstream, and certify lease revocation while the peer
 withholds its response. The last case requires both guest and upstream sockets
 to become terminal without releasing the peer first.
 
+The connection Criterion suite also measures one complete upstream-proxy
+negotiation beside direct allowed CONNECT. The local peer consumes and verifies
+the exact numeric CONNECT request before replying, so the measurement includes
+the second TCP setup, request reconstruction, bounded response parse, and guest
+success response without involving public DNS or traffic.
+
 Dial admission has its own process-wide phase budget. With five approved
 connections and two permits, the connector must observe exactly two live
 attempts; certified close cancels those attempts and all three queued waits.

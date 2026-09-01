@@ -4138,3 +4138,29 @@ eight descriptors, and five threads, and finished at 6,104 KiB, four
 descriptors, and two threads. The rootless 173/173 image is
 `sha256:5bdd4c12676d03f833666a25f080eeda6c28a5a8fefaf09f6325f70ac9cac00e`
 (40,862,091 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — upstream negotiation benchmark
+
+This performance follow-up adds a reproducible Criterion target for one full
+guest CONNECT routed through a local upstream HTTP proxy. The controlled peer
+requires the exact numeric request before returning success, so the benchmark
+includes the second TCP setup, reconstructed request, bounded response parse,
+and guest success response. It uses no public DNS or network and changes no
+production source or dependency.
+
+Three runs measured `connect_via_upstream_proxy` at 126.38–131.53,
+131.06–145.81, and 129.58–133.82 microseconds. Three adjacent direct allowed
+CONNECT controls measured 105.44–128.53, 112.20–125.25, and 109.35–137.79
+microseconds. The centers consistently show the expected cost of another
+loopback handshake and response parse, but two of three interval pairs overlap;
+no precise overhead percentage or optimization claim is justified. This is a
+baseline for later transport work, not a release gate.
+
+Whole-tree SCC 4.0.0 complexity moves from 725/2,159 to 729/2,171
+structural/cognitive, entirely in benchmark code. The benchmark target passed
+strict all-target linting and three optimized measurement runs. The native and
+exact Rust 1.88 factories passed the unchanged 173 deterministic cases, six
+doctests, documentation, package verification, benchmark smoke, and all six
+Linux resource lanes. Production behavior and the deterministic conformance
+count remain unchanged, so the assembled rootless image remains
+`sha256:5bdd4c12676d03f833666a25f080eeda6c28a5a8fefaf09f6325f70ac9cac00e`.
