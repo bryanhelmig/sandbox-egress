@@ -182,12 +182,28 @@ pub(crate) mod fixtures {
         client_hello_with_padding(hostname, ech, 0)
     }
 
+    pub(crate) fn client_hello_with_grease(hostname: &str) -> Vec<u8> {
+        build_client_hello(Some(hostname), false, 0, true)
+    }
+
     pub(crate) fn client_hello_with_padding(
         hostname: Option<&str>,
         ech: bool,
         padding: usize,
     ) -> Vec<u8> {
+        build_client_hello(hostname, ech, padding, false)
+    }
+
+    fn build_client_hello(
+        hostname: Option<&str>,
+        ech: bool,
+        padding: usize,
+        grease: bool,
+    ) -> Vec<u8> {
         let mut extensions = Vec::new();
+        if grease {
+            extensions.extend_from_slice(&extension(0x0a0a, &[]));
+        }
         if let Some(hostname) = hostname {
             let mut server_name = vec![0];
             push_u16(&mut server_name, hostname.len());
@@ -212,7 +228,11 @@ pub(crate) mod fixtures {
         let mut body = vec![3, 3];
         body.extend_from_slice(&[7; 32]);
         body.push(0);
-        body.extend_from_slice(&[0, 2, 0x13, 0x01]);
+        if grease {
+            body.extend_from_slice(&[0, 4, 0x0a, 0x0a, 0x13, 0x01]);
+        } else {
+            body.extend_from_slice(&[0, 2, 0x13, 0x01]);
+        }
         body.extend_from_slice(&[1, 0]);
         push_u16(&mut body, extensions.len());
         body.extend_from_slice(&extensions);
@@ -253,7 +273,8 @@ pub(crate) mod fixtures {
 #[cfg(test)]
 mod tests {
     use super::fixtures::{
-        client_hello, client_hello_with_padding, fragment_record, fragment_records,
+        client_hello, client_hello_with_grease, client_hello_with_padding, fragment_record,
+        fragment_records,
     };
     use super::*;
 
@@ -274,6 +295,15 @@ mod tests {
         let inspected = inspect(&hello).expect("valid fragmented ClientHello");
         assert_eq!(inspected.wire_bytes, hello);
         assert_eq!(inspected.server_name.as_deref(), Some("example.com"));
+        assert!(!inspected.ech_present);
+    }
+
+    #[test]
+    fn accepts_grease_without_confusing_it_with_ech() {
+        let hello = client_hello_with_grease("grease.example");
+        let inspected = inspect(&hello).expect("valid ClientHello with GREASE values");
+        assert_eq!(inspected.wire_bytes, hello);
+        assert_eq!(inspected.server_name.as_deref(), Some("grease.example"));
         assert!(!inspected.ech_present);
     }
 

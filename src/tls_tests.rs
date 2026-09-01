@@ -9,7 +9,9 @@ use std::time::{Duration, Instant};
 use tokio::net::TcpStream;
 
 use crate::proxy::{TestConnector, TestResolver};
-use crate::tls::fixtures::{client_hello, client_hello_with_padding, fragment_records};
+use crate::tls::fixtures::{
+    client_hello, client_hello_with_grease, client_hello_with_padding, fragment_records,
+};
 use crate::{EchPolicy, Lease, PeerIdentity, Policy, Proxy, ProxyConfig, TlsAuthority};
 
 struct StaticResolver(IpAddr);
@@ -156,7 +158,7 @@ fn assert_tunnel_closed(client: &mut std::net::TcpStream) {
 
 #[test]
 fn matching_tls_sni_forwards_the_exact_client_hello() {
-    let hello = client_hello(Some("allowed.test"), false);
+    let hello = client_hello_with_grease("allowed.test");
     let (port, captured_rx, target) = start_tls_capture(hello.len());
     let (proxy, lease) = start_tls_proxy("allowed.test", port, EchPolicy::Reject);
     let mut client =

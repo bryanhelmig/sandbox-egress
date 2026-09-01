@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Add fixed GREASE cipher-suite and extension conformance through Rustls, ECH
+  detection, visible-SNI enforcement, exact forwarding, and accounting.
 - Specify and test that `*.example.com` matches subdomains at any depth while
   excluding the suffix apex, consistent with the Smokescreen convention.
 - Collapse IPv4-mapped IPv6 source identities into their IPv4 spelling at

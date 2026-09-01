@@ -24,7 +24,8 @@
 - [x] Strict ECH rejection and explicit outer-SNI compatibility mode.
 - [x] Revocation and absolute-deadline conformance during partial ClientHello.
 - [x] Deterministic malformed CONNECT and ClientHello cases.
-- [ ] Broader GREASE and real-client ClientHello corpus.
+- [x] Fixed GREASE cipher-suite and extension conformance.
+- [ ] Broader real-client ClientHello corpus.
 - [ ] Application-authority research and tests without overstating what is
   enforceable without TLS termination.
 

@@ -1518,3 +1518,31 @@ exact Rust 1.88 factories passed all 82 deterministic cases and verified the
 assembled crate; the serialized Linux lane passed the same set. Its 500-lease
 smoke returned from eight descriptors and five threads while live to four
 descriptors and two threads, finishing at 4,072 KiB RSS.
+
+## 2026-08-31 — carry GREASE through the inspected TLS path
+
+### Question
+
+The maintained Rustls parser handled unknown values by design, but the local
+fixtures contained only the minimum known cipher suite and extensions plus the
+separately tested ECH value. The suite did not prove that a reserved GREASE
+value remains compatible or that the focused post-parse ECH scan distinguishes
+it from the registered ECH extension.
+
+### Result
+
+A fixed valid ClientHello now carries `0x0a0a` as both an offered cipher suite
+and a zero-length extension before SNI. Rustls accepts the message, visible SNI
+is recovered, and ECH remains false. The attractive-path proxy case now uses
+that same message and proves it reaches the controlled upstream byte-for-byte
+with normal accounting. No production parser or policy behavior changed.
+
+The reusable test fixture and focused case move whole-tree
+structural/cognitive complexity from 398/1,163 to 401/1,172, all in test-only
+TLS code. The broader real-client corpus remains open rather than treating one
+GREASE shape as universal compatibility evidence.
+
+The native and exact Rust 1.88 factories passed all 83 deterministic cases and
+verified the assembled crate; the serialized Linux lane passed the same set.
+Its 500-lease smoke returned from eight descriptors and five threads while live
+to four descriptors and two threads, finishing at 4,072 KiB RSS.

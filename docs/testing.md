@@ -154,6 +154,12 @@ partial ClientHello open and prove that both lease close and the absolute
 handshake deadline end the client, upstream socket, parser work, and active
 connection count.
 
+A fixed valid ClientHello includes a GREASE cipher-suite value and a GREASE
+extension before SNI. Rustls must accept it, the focused extension walk must
+not mistake it for ECH, and the full inspected path must forward every byte
+unchanged. This is an ordinary deterministic compatibility case, not a claim
+that one fixture represents every deployed TLS client.
+
 A constrained-forwarding case uses a valid roughly 64 KiB ClientHello split
 across bounded TLS records and reduces both upstream socket buffers. The peer
 accepts but does not read. The absolute deadline must cancel the incomplete
