@@ -297,6 +297,151 @@ fn concurrent_partial_headers_release_process_resources() {
 
 #[test]
 #[ignore = "resource soak is opt-in; run scripts/measure-resources.sh"]
+fn concurrent_partial_upstream_responses_release_process_resources() {
+    let connections = env_number("SANDBOX_EGRESS_UPSTREAM_CONNECTIONS", 128);
+    assert!(connections > 0 && connections < 0x00ff_ffff);
+
+    let process_start = Resources::sample();
+    let (upstream_address, ready_rx, upstream) = start_partial_response_upstream(connections);
+    let proxy = Proxy::start(
+        ProxyConfig::default()
+            .with_upstream_proxy(upstream_address)
+            .with_max_connections(connections)
+            .with_max_concurrent_dials(connections)
+            .with_identity_reuse_quiet_period(Duration::ZERO),
+    )
+    .expect("start upstream-response proxy");
+    let lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            Policy::builder()
+                .allow_network("127.0.0.0/8".parse::<IpNet>().expect("loopback CIDR"))
+                .allow_port(443)
+                .max_connections(connections)
+                .expect("positive upstream-response connection limit")
+                .handshake_timeout(Duration::from_secs(30))
+                .build()
+                .expect("valid upstream-response policy"),
+        )
+        .expect("attach upstream-response lease");
+    thread::sleep(Duration::from_millis(25));
+    let proxy_start = Resources::sample();
+    let started = Instant::now();
+
+    let mut clients = Vec::with_capacity(connections);
+    for _ in 0..connections {
+        let mut client = TcpStream::connect(lease.endpoint().socket_addr())
+            .expect("connect upstream-response guest");
+        client
+            .write_all(b"CONNECT 127.0.0.1:443 HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+            .expect("write upstream-response CONNECT");
+        clients.push(client);
+    }
+    ready_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("all partial upstream responses became live");
+    assert_eq!(lease.usage().active_connections, connections as u64);
+    let peak = Resources::sample();
+    eprintln!(
+        "upstream_soak event=peak connections={connections} partial_response_bytes=900 elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
+        started.elapsed().as_millis(),
+        peak.rss_kib,
+        peak.descriptors,
+        peak.threads,
+    );
+
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(2))
+        .expect("close upstream-response lease")
+        .usage();
+    for mut client in clients {
+        client
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("bound upstream-response guest read");
+        assert_terminal_socket(client.read(&mut [0_u8; 1]));
+    }
+    upstream.join().expect("upstream-response server thread");
+    assert_eq!(final_usage.accepted_connections, connections as u64);
+    assert_eq!(final_usage.active_connections, 0);
+    assert_eq!(final_usage.completed_connections, 0);
+    assert_eq!(final_usage.denied_connections, 0);
+    assert_eq!(final_usage.uploaded_bytes, 0);
+    assert_eq!(final_usage.downloaded_bytes, 0);
+    let recovered = Resources::sample();
+    eprintln!(
+        "upstream_soak event=recovered connections={connections} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
+        started.elapsed().as_millis(),
+        recovered.rss_kib,
+        recovered.descriptors,
+        recovered.threads,
+    );
+    assert_stable_non_memory_resources(proxy_start, recovered);
+
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(2))
+        .expect("proxy shutdown");
+    thread::sleep(Duration::from_millis(25));
+    let finished = Resources::sample();
+    eprintln!(
+        "upstream_soak event=finish connections={connections} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
+        started.elapsed().as_millis(),
+        finished.rss_kib,
+        finished.descriptors,
+        finished.threads,
+    );
+    assert_stable_non_memory_resources(process_start, finished);
+}
+
+fn start_partial_response_upstream(
+    connections: usize,
+) -> (
+    std::net::SocketAddr,
+    std::sync::mpsc::Receiver<()>,
+    thread::JoinHandle<()>,
+) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind upstream proxy");
+    let address = listener.local_addr().expect("upstream proxy address");
+    let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
+    let upstream = thread::spawn(move || {
+        let mut streams = Vec::with_capacity(connections);
+        let mut partial_response = b"HTTP/1.1 200 Connection Established\r\nX-Hold: ".to_vec();
+        partial_response.resize(900, b'a');
+        for _ in 0..connections {
+            let (mut stream, _) = listener.accept().expect("accept upstream CONNECT");
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .expect("bound upstream CONNECT read");
+            let request = read_blocking_header(&mut stream);
+            assert!(request.starts_with(b"CONNECT 127.0.0.1:443 HTTP/1.1\r\n"));
+            stream
+                .write_all(&partial_response)
+                .expect("write partial upstream response");
+            streams.push(stream);
+        }
+        ready_tx
+            .send(())
+            .expect("report partial upstream responses");
+        for mut stream in streams {
+            assert_terminal_socket(stream.read(&mut [0_u8; 1]));
+        }
+    });
+    (address, ready_rx, upstream)
+}
+
+fn read_blocking_header(stream: &mut TcpStream) -> Vec<u8> {
+    let mut header = Vec::with_capacity(128);
+    let mut chunk = [0_u8; 128];
+    while !header.windows(4).any(|window| window == b"\r\n\r\n") {
+        assert!(header.len() < 4_096, "upstream CONNECT header too large");
+        let read = stream.read(&mut chunk).expect("read upstream CONNECT");
+        assert_ne!(read, 0, "upstream CONNECT ended early");
+        header.extend_from_slice(&chunk[..read]);
+    }
+    header
+}
+
+#[test]
+#[ignore = "resource soak is opt-in; run scripts/measure-resources.sh"]
 fn concurrent_idle_expiry_releases_process_resources() {
     let connections = env_number("SANDBOX_EGRESS_IDLE_CONNECTIONS", 128);
     assert!(connections > 0 && connections < 0x00ff_ffff);

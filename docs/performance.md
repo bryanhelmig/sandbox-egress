@@ -98,6 +98,31 @@ both writers. RSS is reported as an allocator high-water observation, while
 the exact lease state plus descriptor and thread return are enforced. This is
 a repeated cleanup baseline, not sustained-throughput evidence.
 
+## Concurrent partial upstream-response baseline
+
+Recorded 2026-09-01 on the same Apple M1 with Rust 1.97.1. Each of 128 guest
+connections sends an approved numeric CONNECT request through the configured
+upstream proxy. The upstream accepts every request and returns 900 bytes of a
+legal but unterminated response header, holding every parser and both TCP
+sockets live until lease revocation.
+
+```text
+command: SANDBOX_EGRESS_UPSTREAM_CONNECTIONS=128 cargo test --release \
+  --test resource_soak concurrent_partial_upstream_responses_release_process_resources \
+  -- --ignored --nocapture --exact
+fresh-process runs: 10
+peak:               11,216 .. 11,296 KiB RSS, 526 FDs, 6 threads
+after close:        11,456 .. 11,536 KiB RSS,  13 FDs, 5 threads
+after shutdown:     11,280 .. 11,392 KiB RSS,   9 FDs, 2 threads
+elapsed:            0.26 .. 0.28 s
+```
+
+Every run reports 128 accepted connections and zero active, completed, denied,
+uploaded, or downloaded counts after certified close. Both sides observe
+terminal sockets. As in the other lanes, RSS is recorded as allocator
+high-water evidence while exact ownership and descriptor/thread recovery are
+the cleanup oracles.
+
 ## Initial local connection-setup baseline
 
 Recorded 2026-08-31 on the same Apple M1:

@@ -310,19 +310,27 @@ and upstream nonblocking writers until each independently observes a full send
 queue while neither application reads. Every certified close must terminate
 both writers, freeze positive bidirectional accounting with no completion or
 denial, and permit the same source identity to attach again. It samples
-descriptor and thread recovery after each batch and final shutdown.
+descriptor and thread recovery after each batch and final shutdown. An eighth
+lane holds a configurable batch after the approved numeric CONNECT request has
+reached an operator-controlled upstream proxy, but while that proxy has
+returned only 900 bytes of an unterminated response header. Certified close
+must cancel every response parser, make every guest and upstream socket
+terminal, freeze exact zero-completion and zero-denial counters, and recover
+descriptors and threads.
 
 On Linux the collectors read `/proc`; on macOS they use `ps` and `lsof`; other
 targets compile and report unsupported counters as absent. Run
 `./scripts/measure-resources.sh [lease-runs-per-batch]
 [lease-batches] [idle-connections] [TLS-connections]
-[terminal-runs-per-batch] [terminal-batches] [partial-header-connections]`.
+[terminal-runs-per-batch] [terminal-batches] [partial-header-connections]
+[partial-upstream-response-connections]`.
 Management churn remains
 adjustable with
 `SANDBOX_EGRESS_CONTROL_CONCURRENCY` and
 `SANDBOX_EGRESS_CONTROL_BATCHES`; the repeated pressure lane uses
 `SANDBOX_EGRESS_BACKPRESSURE_RUNS` and
-`SANDBOX_EGRESS_BACKPRESSURE_BATCHES`.
+`SANDBOX_EGRESS_BACKPRESSURE_BATCHES`; the upstream-response lane uses
+`SANDBOX_EGRESS_UPSTREAM_CONNECTIONS`.
 
 The committed tunnel conformance lane currently checks graceful half-close in
 both directions, upstream reset classification, zero and exact download

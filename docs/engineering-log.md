@@ -4791,3 +4791,37 @@ descriptors, and five threads. The 64 partial-ClientHello lane peaked at
 eight descriptors, and five threads. The rootless 180/180 image is
 `sha256:39500504c0ae7f3bd6fd96b709e1e89a5b76e15e3f6c1d43eb01003607805678`
 (40,904,092 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — pressure upstream-response revocation
+
+The comparison rotation revisited the upstream-proxy behavior shared by
+Smokescreen, Lens, nono, and OpenShell. Existing deterministic coverage proved
+one stalled upstream response could be revoked, while the resource suite only
+pressured direct CONNECT phases. That left concurrent ownership, parser state,
+and descriptor recovery in the optional route unmeasured.
+
+An eighth opt-in resource lane now creates 128 real guest sockets and 128 real
+upstream-proxy sockets. Every upstream peer reads the locally generated numeric
+CONNECT request, returns 900 bytes of a valid but unterminated response header,
+and waits. A barrier proves every connection is live before sampling.
+Certified lease close must make every socket on both sides terminal and return
+exact counters: 128 accepted, zero active, completed, denied, uploaded, and
+downloaded.
+
+Ten fresh-process macOS runs passed. Peak resource use was 11,216–11,296 KiB
+RSS, exactly 526 descriptors, and six threads. Certified close returned to 13
+descriptors and five threads; shutdown returned to nine and two. RSS remained
+at 11,280–11,392 KiB after shutdown and is recorded as allocator high-water
+behavior rather than used as the cleanup oracle. The change is test and
+documentation only; whole-tree SCC 4.0.0 structural/cognitive complexity moves
+from 756/2,246 to 764/2,264.
+
+The complete native and pinned Rust 1.88 factories pass: 180 deterministic
+tests, eight opt-in resource lanes, six documentation examples, all feature
+sets, formatting, lints, dependency policy, package verification, benchmark
+smoke, and release builds. The new Linux lane peaked at 7,684 KiB, 521
+descriptors, and six threads; certified close recovered to 6,348 KiB, eight
+descriptors, and five threads, and shutdown returned to four descriptors and
+two threads. The rootless 180/180 image is
+`sha256:e42a64d0567d618a444c577c2365c4a022b08019b8cf71623e400fa6c46902c0`
+(40,904,086 bytes) and runs as UID/GID 65534.

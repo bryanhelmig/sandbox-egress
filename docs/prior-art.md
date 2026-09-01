@@ -161,6 +161,13 @@ sees only those two numeric authorities in order, and a refusal followed by a
 successful tunnel remains one accepted and completed guest connection. This
 does not adopt OpenShell's hostname-target escape hatch.
 
+The comparison also exposes a lifecycle phase absent from direct-only resource
+tests: an operator proxy can accept TCP and then hold an incomplete CONNECT
+response indefinitely. Sandbox Egress therefore keeps a concurrent resource
+lane with 128 such negotiations. Lease close must cancel all response parsing,
+terminate both guest and upstream sockets, and return exact final ownership and
+counters without waiting for either peer.
+
 ## Host-cage capability boundary
 
 The current Lens cage review corrected a subtle deployment assumption around
