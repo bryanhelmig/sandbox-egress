@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 use ipnet::IpNet;
 use sandbox_egress::{PeerIdentity, Policy, Proxy, ProxyConfig};
+use socket2::SockRef;
 
 const CONNECT_RESPONSE: &[u8; 39] = b"HTTP/1.1 200 Connection Established\r\n\r\n";
 
@@ -147,6 +148,134 @@ fn open_tunnel(endpoint: SocketAddr, port: u16) -> TcpStream {
         .expect("read CONNECT response");
     assert_eq!(&response, CONNECT_RESPONSE);
     client
+}
+
+#[test]
+fn guest_upload_fin_keeps_the_download_direction_open() {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind upstream");
+    let port = listener.local_addr().expect("upstream address").port();
+    let upstream = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept proxy");
+        let mut upload = Vec::new();
+        stream.read_to_end(&mut upload).expect("read upload EOF");
+        assert_eq!(upload, b"request");
+        stream
+            .write_all(b"delayed-response")
+            .expect("write response");
+        stream
+            .shutdown(Shutdown::Write)
+            .expect("finish response direction");
+    });
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let lease = attach_for_ports(&proxy, &[port], None);
+    let mut client = open_tunnel(lease.endpoint().socket_addr(), port);
+
+    client.write_all(b"request").expect("write request");
+    client
+        .shutdown(Shutdown::Write)
+        .expect("finish upload direction");
+    let mut response = Vec::new();
+    client
+        .read_to_end(&mut response)
+        .expect("read response after upload FIN");
+    assert_eq!(response, b"delayed-response");
+
+    upstream.join().expect("upstream thread");
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close half-closed tunnel")
+        .usage();
+    assert_eq!(final_usage.completed_connections, 1);
+    assert_eq!(final_usage.uploaded_bytes, 7);
+    assert_eq!(final_usage.downloaded_bytes, 16);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
+fn upstream_download_fin_keeps_the_upload_direction_open() {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind upstream");
+    let port = listener.local_addr().expect("upstream address").port();
+    let upstream = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept proxy");
+        stream.write_all(b"response").expect("write response");
+        stream
+            .shutdown(Shutdown::Write)
+            .expect("finish response direction");
+        let mut upload = Vec::new();
+        stream
+            .read_to_end(&mut upload)
+            .expect("read upload after response FIN");
+        assert_eq!(upload, b"late-upload");
+    });
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let lease = attach_for_ports(&proxy, &[port], None);
+    let mut client = open_tunnel(lease.endpoint().socket_addr(), port);
+
+    let mut response = Vec::new();
+    client
+        .read_to_end(&mut response)
+        .expect("read response direction EOF");
+    assert_eq!(response, b"response");
+    client
+        .write_all(b"late-upload")
+        .expect("write after download FIN");
+    client
+        .shutdown(Shutdown::Write)
+        .expect("finish upload direction");
+
+    upstream.join().expect("upstream thread");
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close half-closed tunnel")
+        .usage();
+    assert_eq!(final_usage.completed_connections, 1);
+    assert_eq!(final_usage.uploaded_bytes, 11);
+    assert_eq!(final_usage.downloaded_bytes, 8);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
+fn upstream_reset_is_terminal_but_not_completed_or_denied() {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind upstream");
+    let port = listener.local_addr().expect("upstream address").port();
+    let upstream = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept proxy");
+        let mut upload = [0_u8; 5];
+        stream
+            .read_exact(&mut upload)
+            .expect("read upload before reset");
+        assert_eq!(&upload, b"saved");
+        SockRef::from(&stream)
+            .set_linger(Some(Duration::ZERO))
+            .expect("arm upstream reset");
+    });
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let lease = attach_for_ports(&proxy, &[port], None);
+    let mut client = open_tunnel(lease.endpoint().socket_addr(), port);
+
+    client.write_all(b"saved").expect("write before reset");
+    client
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .expect("client read timeout");
+    upstream.join().expect("upstream thread");
+    assert_terminal_read(client.read(&mut [0_u8; 1]));
+
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close reset tunnel")
+        .usage();
+    assert_eq!(final_usage.active_connections, 0);
+    assert_eq!(final_usage.completed_connections, 0);
+    assert_eq!(final_usage.denied_connections, 0);
+    assert_eq!(final_usage.uploaded_bytes, 5);
+    assert_eq!(final_usage.downloaded_bytes, 0);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
 }
 
 #[test]

@@ -1903,3 +1903,44 @@ and dependency policy checks passed natively. The runner reproduced the same
 97 cases as UID/GID 65534; image content size was 40,348,913 bytes. The small
 size change from the preceding image is treated as build-layout noise, not a
 performance result.
+
+## 2026-09-01 — distinguish half-close from reset
+
+### Question
+
+Certified revocation already proved that cancelling a tunnel destroys both
+socket directions without waiting for either peer. That does not establish the
+ordinary data-plane behavior before revocation: a graceful EOF in one direction
+must not truncate valid traffic still moving in the other direction, while a
+reset must not be reported as normal completion or a policy decision.
+
+Tokio 1.53.1's locked `copy_bidirectional` source keeps one state machine per
+direction. EOF advances only the corresponding writer through shutdown; the
+reverse copy continues. Any I/O error instead returns immediately. Three real
+loopback cases now pin how Sandbox Egress uses those semantics:
+
+- after the guest sends seven bytes and finishes upload, the upstream returns a
+  delayed 16-byte response;
+- after the upstream sends eight bytes and finishes download, the guest sends
+  an 11-byte late upload;
+- an upstream proves receipt of five bytes and then closes with zero linger,
+  producing a terminal reset rather than a graceful completion.
+
+Both FIN orders finish as one completed tunnel with exact bidirectional byte
+counters. The reset finishes with zero active, zero completed, zero denied,
+five uploaded, and zero downloaded. Each focused case passed ten consecutive
+runs. No production source or data-path configuration changed.
+
+### Evidence
+
+The native and exact Rust 1.88 Linux factories passed all 100 deterministic
+cases, doctests, documentation, and package verification; native dependency
+policy checks also passed. Whole-tree SCC 4.0.0 complexity moved from 464/1,393
+to 467/1,399 structural/cognitive, entirely in `tests/tunneling.rs`.
+
+The native 500-lease smoke returned from 13 descriptors and five threads to
+nine descriptors and two threads, finishing at 8,944 KiB RSS. The Linux smoke
+returned from eight descriptors and five threads to four descriptors and two
+threads, finishing at 4,020 KiB RSS. The serialized runner reproduced all 100
+cases as UID/GID 65534 and measured 40,359,099 bytes; the roughly 10 KiB increase
+is test payload, not a proxy performance result.

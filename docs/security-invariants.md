@@ -134,6 +134,12 @@ the read that crosses a ceiling are accounted but not forwarded. A ceiling
 violation is a policy denial, distinct from an ordinary tunnel I/O failure, and
 increments the lease denial counter exactly once.
 
+An ordinary EOF is directional. The proxy propagates it as a write-half
+shutdown and continues the reverse copy until that direction also ends. Only
+two graceful direction endings count as a completed tunnel. A connection reset
+ends the owned task and preserves bytes already read, but does not become a
+completion or a policy denial.
+
 Cumulative connection and byte counters use saturating atomic updates. They
 remain monotonic at the integer boundary instead of wrapping, and byte
 accounting cannot panic while forming the returned total. The active-connection

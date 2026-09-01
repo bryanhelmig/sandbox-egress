@@ -117,7 +117,7 @@ resource lane in the builder. A checked collector reads Cargo's JSON artifact
 records, requires exactly one executable for each conformance target, strips
 copies, and carries only those binaries into a Debian runner. The CLI's
 compile-time executable dependency is copied at its exact embedded path. The
-final image runs as UID/GID 65534 and must reproduce all 97 deterministic
+final image runs as UID/GID 65534 and must reproduce all 100 deterministic
 cases without Cargo, source, or a build cache.
 
 Source-identity cases prove an IPv4 address and its mapped IPv6 transport
@@ -129,6 +129,13 @@ Post-establishment upload and download ceiling cases send bytes across a
 zero-byte budget, prove the peer receives none, preserve attempted-byte
 accounting, and require exactly one policy denial. This is separate from socket
 reset tests so transport failure cannot masquerade as policy enforcement.
+
+Two ordinary FIN cases prove tunnel directions remain independent. After a
+guest finishes upload, an upstream may still send a delayed response; after an
+upstream finishes download, the guest may still send a late upload. Both paths
+must preserve exact byte counters and count one normally completed tunnel. A
+separate upstream RST case proves delivered upload bytes remain accounted while
+the tunnel is neither completed nor classified as a policy denial.
 
 Counter boundary tests seed cumulative atomics immediately below `u64::MAX`,
 then require accepted, completed, denied, upload, and download totals to
@@ -157,7 +164,8 @@ alive and samples each batch. On Linux it reads `/proc`; on macOS it uses `ps`
 and `lsof`; other targets compile and report unsupported counters as absent.
 Run `./scripts/measure-resources.sh [runs-per-batch] [batches]`.
 
-The committed tunnel conformance lane currently checks zero and exact download
+The committed tunnel conformance lane currently checks graceful half-close in
+both directions, upstream reset classification, zero and exact download
 ceilings, independent per-tunnel budgets, idle tunnel shutdown, an uploader
 whose upstream never reads, and a downloader whose guest never reads. Terminal
 socket assertions reject timeouts: a peer that merely remains blocked is not

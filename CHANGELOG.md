@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Pin graceful FIN behavior in both directions and distinguish an upstream RST
+  from both normal tunnel completion and a policy denial.
 - Prove that 32 simultaneous host-side attachments produce exactly one owner
   for a source identity and keep every losing policy detached.
 - Drain the listener's ready accept queue before close certification and before
@@ -12,7 +14,7 @@ Changelog and versions follow Semantic Versioning.
   inheriting a replacement lease under management-channel pressure.
 - Serialize only the stripped conformance executables into the unprivileged
   Docker runner, reducing the verified image content size by 96.4% without
-  dropping any of its 97 deterministic cases.
+  dropping any of its 100 deterministic cases.
 - Let a surviving lease consume the final counters already certified by a
   successful proxy-wide shutdown, including runtime-disconnect races.
 - Divide the remaining absolute handshake budget fairly across sequential
