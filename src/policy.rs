@@ -34,13 +34,13 @@ pub enum EchPolicy {
 pub enum HostPattern {
     /// Match one canonical hostname exactly.
     Exact(String),
-    /// Match subdomains, but not the suffix apex itself.
+    /// Match one or more subdomain labels, but not the suffix apex itself.
     Subdomains(String),
 }
 
 impl HostPattern {
     /// Parse an ASCII hostname or a single left-most wildcard such as
-    /// `*.example.com`.
+    /// `*.example.com`. The wildcard matches one or more complete labels.
     ///
     /// # Errors
     ///
@@ -135,7 +135,8 @@ pub struct PolicyBuilder {
 }
 
 impl PolicyBuilder {
-    /// Add an exact hostname or `*.example.com` subdomain pattern.
+    /// Add an exact hostname or `*.example.com` pattern matching subdomains at
+    /// any depth, but not `example.com` itself.
     ///
     /// # Errors
     ///
@@ -361,9 +362,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn wildcard_excludes_the_apex() {
+    fn wildcard_matches_every_subdomain_depth_but_excludes_the_apex() {
         let pattern = HostPattern::parse("*.Example.COM.").expect("valid pattern");
         assert!(pattern.matches("api.example.com"));
+        assert!(pattern.matches("deep.api.example.com"));
         assert!(!pattern.matches("example.com"));
         assert!(!pattern.matches("notexample.com"));
     }

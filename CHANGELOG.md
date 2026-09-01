@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Specify and test that `*.example.com` matches subdomains at any depth while
+  excluding the suffix apex, consistent with the Smokescreen convention.
 - Collapse IPv4-mapped IPv6 source identities into their IPv4 spelling at
   attachment and acceptance so one effective address cannot own two policies.
 - Exercise the thin executable wrapper in both native and container factories,

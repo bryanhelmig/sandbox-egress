@@ -28,6 +28,11 @@ The suite is organized by claimed invariant rather than by source module.
 No test may depend on the public internet. DNS and upstream behavior must be
 locally controlled so failures are reproducible.
 
+Hostname policy cases pin wildcard depth explicitly: `*.example.com` matches
+both `api.example.com` and `deep.api.example.com`, but neither `example.com`
+nor `notexample.com`. The wildcard therefore means any nonempty sequence of
+complete left-hand labels, not TLS certificate wildcard semantics.
+
 Header conformance distinguishes a byte-ceiling violation (`431
 header-too-large`), early EOF (`400 header-eof`), and the absolute slow-header
 deadline (`408 header-timeout`). Each case must close with one denial and no

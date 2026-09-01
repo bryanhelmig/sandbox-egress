@@ -108,7 +108,7 @@ cancellation, but never certifies cleanup.
 The current vertical slice provides:
 
 - HTTP/1 CONNECT authority and destination-port allow rules;
-- exact hostnames and left-most wildcard subdomains;
+- exact hostnames and wildcard suffixes matching one or more subdomain labels;
 - source-IP identity derived from the accepted socket;
 - one DNS resolution followed by checks on every returned address;
 - bounded DNS answer cardinality, with oversized sets rejected before dialing;

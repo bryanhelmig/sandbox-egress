@@ -1493,3 +1493,28 @@ Docker's internal disk while linking the release resource target. The stopped
 build container and only the explicitly inventoried, dangling Sandbox Egress
 build images were removed; unrelated tagged images and volumes were retained.
 The clean rebuild then passed the complete factory and image command.
+
+## 2026-08-31 — make wildcard depth an explicit promise
+
+### Question
+
+`HostPattern::Subdomains` matched every depth below its suffix, but the README
+called the syntax a left-most wildcard. That wording could be read as the
+single-label rule commonly associated with TLS certificates. Narrowing it
+without research would silently revoke working policy and diverge from the
+project's primary inspiration.
+
+### Result
+
+The pinned Smokescreen source and its ordinary tests explicitly treat
+`*.example.com` as any non-apex subdomain, including
+`more.contrived.example.com`. Sandbox Egress already used the same dot-boundary
+suffix rule, so no production change was justified. Public API and README text
+now say one or more complete left-hand labels, and the existing unit case pins
+both one-label and nested matches plus apex and false-suffix rejection.
+
+The clarification leaves whole-tree complexity at 398/1,163. The native and
+exact Rust 1.88 factories passed all 82 deterministic cases and verified the
+assembled crate; the serialized Linux lane passed the same set. Its 500-lease
+smoke returned from eight descriptors and five threads while live to four
+descriptors and two threads, finishing at 4,072 KiB RSS.
