@@ -15,7 +15,7 @@
 - Revocation conformance for headers, DNS, dial, and tunnel.
 - Active socket/task gauges and final-zero assertions.
 - File-descriptor/thread/RSS soak harness on Linux and macOS.
-- Structured denial events with bounded fields and rate limiting.
+- [x] Structured denial events with bounded fields and rate limiting.
 
 ## M2 — precise TLS authority
 

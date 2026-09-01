@@ -21,6 +21,7 @@ use tokio_util::task::TaskTracker;
 use tokio_util::task::task_tracker::TaskTrackerToken;
 
 use crate::connect::{ConnectRequest, parse_connect};
+use crate::diagnostic::{DenialReason, DiagnosticReporter};
 use crate::policy::canonical_hostname;
 use crate::tls::{ClientHelloError, read_client_hello};
 use crate::usage::Counters;
@@ -35,6 +36,7 @@ pub struct Proxy {
     commands: tokio_mpsc::UnboundedSender<Command>,
     thread: Option<thread::JoinHandle<()>>,
     next_lease_id: AtomicU64,
+    diagnostics: DiagnosticReporter,
 }
 
 impl std::fmt::Debug for Proxy {
@@ -65,6 +67,7 @@ impl Proxy {
         config
             .validate()
             .map_err(|reason| ProxyError::Initialization(reason.to_owned()))?;
+        let diagnostics = DiagnosticReporter::new(config.diagnostics.as_ref());
         let (commands, receiver) = tokio_mpsc::unbounded_channel();
         let runtime_commands = commands.clone();
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
@@ -103,6 +106,7 @@ impl Proxy {
             commands,
             thread: Some(thread),
             next_lease_id: AtomicU64::new(1),
+            diagnostics,
         })
     }
 
@@ -148,7 +152,12 @@ impl Proxy {
     /// closed successfully or completed best-effort cleanup.
     pub fn attach(&self, identity: PeerIdentity, policy: Policy) -> Result<Lease, AttachError> {
         let id = self.next_lease_id.fetch_add(1, Ordering::Relaxed);
-        let state = Arc::new(LeaseState::new(id, identity, policy));
+        let state = Arc::new(LeaseState::new(
+            id,
+            identity,
+            policy,
+            self.diagnostics.clone(),
+        ));
         let (reply_tx, reply_rx) = mpsc::sync_channel(1);
         self.commands
             .send(Command::Attach {
@@ -337,10 +346,16 @@ struct LeaseState {
     tracker: TaskTracker,
     permits: Arc<Semaphore>,
     counters: Arc<Counters>,
+    diagnostics: DiagnosticReporter,
 }
 
 impl LeaseState {
-    fn new(id: u64, identity: PeerIdentity, policy: Policy) -> Self {
+    fn new(
+        id: u64,
+        identity: PeerIdentity,
+        policy: Policy,
+        diagnostics: DiagnosticReporter,
+    ) -> Self {
         let max_connections = policy.max_connections;
         Self {
             id,
@@ -351,6 +366,7 @@ impl LeaseState {
             tracker: TaskTracker::new(),
             permits: Arc::new(Semaphore::new(max_connections)),
             counters: Arc::new(Counters::default()),
+            diagnostics,
         }
     }
 
@@ -360,12 +376,12 @@ impl LeaseState {
 
     fn admit(self: &Arc<Self>) -> Option<Admission> {
         let Ok(permit) = self.permits.clone().try_acquire_owned() else {
-            self.counters.deny();
+            self.record_denial("lease-capacity");
             return None;
         };
         let phase = self.phase.lock().expect("lease phase poisoned");
         if *phase != Phase::Open {
-            self.counters.deny();
+            self.record_denial("lease-revoking");
             return None;
         }
         let tracking = self.tracker.token();
@@ -391,6 +407,12 @@ impl LeaseState {
     fn mark_closed(&self) {
         let mut phase = self.phase.lock().expect("lease phase poisoned");
         *phase = Phase::Closed;
+    }
+
+    fn record_denial(&self, reason: &'static str) {
+        self.counters.deny();
+        self.diagnostics
+            .report(self.identity.clone(), DenialReason::new(reason));
     }
 }
 
@@ -571,7 +593,7 @@ async fn run_proxy(
                     continue;
                 };
                 let Ok(global_permit) = global_permits.clone().try_acquire_owned() else {
-                    state.counters.deny();
+                    state.record_denial("global-capacity");
                     drop(stream);
                     continue;
                 };
@@ -766,7 +788,7 @@ async fn tunnel_bidirectionally(
     match tokio::io::copy_bidirectional(&mut client, &mut upstream).await {
         Ok(_) => Ok(ConnectionDisposition::Completed),
         Err(error) if is_transfer_limit_error(&error) => {
-            state.counters.deny();
+            state.record_denial("transfer-limit");
             Ok(ConnectionDisposition::Denied)
         }
         Err(error) => Err(error),
@@ -867,9 +889,9 @@ async fn inspect_tls_tunnel(
 async fn reject_tunnel(
     client: &mut TcpStream,
     state: &LeaseState,
-    _reason: &'static str,
+    reason: &'static str,
 ) -> io::Result<ConnectionDisposition> {
-    state.counters.deny();
+    state.record_denial(reason);
     let _ = client.shutdown().await;
     Ok(ConnectionDisposition::Denied)
 }
@@ -1014,7 +1036,7 @@ async fn deny(
     status: u16,
     reason: &'static str,
 ) -> io::Result<ConnectionDisposition> {
-    state.counters.deny();
+    state.record_denial(reason);
     let body = format!("sandbox-egress denied: {reason}\n");
     let response = format!(
         "HTTP/1.1 {status} Denied\r\ncontent-type: text/plain\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
@@ -1515,6 +1537,7 @@ mod tests {
                 1,
                 PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
                 Policy::builder().build().expect("valid policy"),
+                DiagnosticReporter::default(),
             );
 
             let result = forward_uninspected_upload(
@@ -1536,6 +1559,7 @@ mod tests {
             1,
             PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
             Policy::builder().build().expect("valid policy"),
+            DiagnosticReporter::default(),
         ));
         state.begin_close();
 
@@ -1624,11 +1648,13 @@ mod tests {
             1,
             identity.clone(),
             Policy::builder().build().expect("old policy"),
+            DiagnosticReporter::default(),
         ));
         let replacement = Arc::new(LeaseState::new(
             2,
             identity.clone(),
             Policy::builder().build().expect("replacement policy"),
+            DiagnosticReporter::default(),
         ));
         let mut leases = HashMap::from([(identity.clone(), Arc::clone(&replacement))]);
 

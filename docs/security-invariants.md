@@ -111,3 +111,18 @@ ClientHello inspection happens after the CONNECT destination has resolved and
 the checked socket has connected, because a conventional proxy client waits
 for the 200 response before sending TLS. A denied ClientHello sends zero tunnel
 bytes upstream, but the upstream TCP connection has already occurred.
+
+## Diagnostics
+
+Diagnostics are disabled by default. When configured, every lease-owned policy
+or capacity denial increments accounting before attempting delivery. Events
+contain only the host-authenticated peer identity, a crate-owned static reason
+code, and a process-wide suppression count; guest-provided authority text is
+never copied into an event.
+
+Delivery uses `SyncSender::try_send`, so a full or disconnected caller-owned
+channel cannot block proxy work. A process-wide one-second window bounds
+attempted delivery, and the configured rate has a hard ceiling. Rate- and
+channel-suppressed events accumulate with saturation and are reported on the
+next event the channel accepts. Diagnostic loss never weakens enforcement or
+denial accounting.

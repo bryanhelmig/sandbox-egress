@@ -44,6 +44,12 @@ then require accepted, completed, denied, upload, and download totals to
 saturate without a debug-build panic. The active gauge must still return to
 zero.
 
+Diagnostic limiter tests use an injected monotonic instant rather than sleeps.
+They prove a fixed-window excess and a full channel are both nonblocking and
+appear in the next delivered event's saturating suppression count. A public
+real-socket case proves a hostname denial carries only source identity and the
+fixed `host-denied` reason, not the guest-controlled hostname.
+
 Performance gates begin as recorded baselines, not brittle absolute numbers.
 Benchmarks cover attach/close, policy matching, admission contention, and
 accounting overhead. Macrobenchmarks later report connections/sec, throughput,

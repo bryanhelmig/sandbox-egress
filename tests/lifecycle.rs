@@ -268,6 +268,40 @@ fn hostname_policy_denies_before_dns() {
 }
 
 #[test]
+fn denial_diagnostic_contains_only_bounded_identity_and_reason() {
+    let (diagnostic_tx, diagnostic_rx) = mpsc::sync_channel(4);
+    let proxy = Proxy::start(ProxyConfig::default().with_diagnostic_channel(diagnostic_tx, 10))
+        .expect("start proxy");
+    let identity = PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    let lease = proxy
+        .attach(
+            identity.clone(),
+            Policy::builder().build().expect("valid policy"),
+        )
+        .expect("attach lease");
+    let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+    client
+        .write_all(b"CONNECT attacker-controlled.invalid:443 HTTP/1.1\r\n\r\n")
+        .expect("write CONNECT");
+    let mut response = String::new();
+    client.read_to_string(&mut response).expect("read denial");
+
+    let event = diagnostic_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("denial diagnostic");
+    assert_eq!(event.identity, identity);
+    assert_eq!(event.reason.as_str(), "host-denied");
+    assert_eq!(event.suppressed_before, 0);
+
+    lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close lease");
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
 fn bracketed_ipv6_literal_is_checked_and_dialed_directly() {
     let (port, echo) = start_echo_on(IpAddr::V6(Ipv6Addr::LOCALHOST));
     let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");

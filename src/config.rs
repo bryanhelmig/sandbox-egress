@@ -1,5 +1,9 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::mpsc::SyncSender;
 use std::time::{Duration, Instant};
+
+use crate::DiagnosticEvent;
+use crate::diagnostic::DiagnosticConfig;
 
 /// Process-wide proxy configuration.
 #[derive(Clone, Debug)]
@@ -13,6 +17,7 @@ pub struct ProxyConfig {
     pub(crate) max_client_hello_bytes: usize,
     pub(crate) header_timeout: Duration,
     pub(crate) identity_reuse_quiet_period: Duration,
+    pub(crate) diagnostics: Option<DiagnosticConfig>,
 }
 
 impl ProxyConfig {
@@ -86,6 +91,24 @@ impl ProxyConfig {
         self.identity_reuse_quiet_period = period;
         self
     }
+
+    /// Emit bounded denial events through a caller-owned bounded channel.
+    ///
+    /// Delivery uses nonblocking [`SyncSender::try_send`]. Events are limited
+    /// process-wide to `max_events_per_second`, clamped to `1..=10_000`.
+    /// Rate- or channel-suppressed events are counted on the next event that
+    /// can be delivered. A disconnected receiver silently disables delivery.
+    pub fn with_diagnostic_channel(
+        mut self,
+        sender: SyncSender<DiagnosticEvent>,
+        max_events_per_second: u32,
+    ) -> Self {
+        self.diagnostics = Some(DiagnosticConfig {
+            sender,
+            max_events_per_second: max_events_per_second.clamp(1, 10_000),
+        });
+        self
+    }
 }
 
 impl Default for ProxyConfig {
@@ -99,6 +122,7 @@ impl Default for ProxyConfig {
             max_client_hello_bytes: 64 * 1_024,
             header_timeout: Duration::from_secs(10),
             identity_reuse_quiet_period: Duration::from_millis(25),
+            diagnostics: None,
         }
     }
 }
@@ -140,6 +164,27 @@ mod tests {
                 .with_max_resolved_addresses(usize::MAX)
                 .max_resolved_addresses,
             1_024
+        );
+    }
+
+    #[test]
+    fn diagnostic_rate_stays_bounded() {
+        let (sender, _receiver) = std::sync::mpsc::sync_channel(1);
+        let config = ProxyConfig::default().with_diagnostic_channel(sender.clone(), 0);
+        assert_eq!(
+            config
+                .diagnostics
+                .expect("diagnostics configured")
+                .max_events_per_second,
+            1
+        );
+        let config = ProxyConfig::default().with_diagnostic_channel(sender, u32::MAX);
+        assert_eq!(
+            config
+                .diagnostics
+                .expect("diagnostics configured")
+                .max_events_per_second,
+            10_000
         );
     }
 }

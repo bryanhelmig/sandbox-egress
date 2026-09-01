@@ -943,3 +943,41 @@ The complete native factory and 59-case deterministic conformance lane passed.
 The exact Rust 1.88 Linux image passed the same gates. Its 500-lease smoke held
 eight descriptors and five threads while live, returned to four descriptors
 and two threads, and finished at 3,984 KiB RSS.
+
+## 2026-08-31 — bounded structured denial diagnostics
+
+### Finding
+
+Lease usage counted denials but gave a supervisor no machine-readable reason.
+Copying a daemon-style logger into the library would add backend policy, and a
+callback invoked on a Tokio worker could block or panic the shared data plane.
+Logging every attacker-triggered denial would also make observability itself a
+resource-exhaustion path.
+
+Stripe Smokescreen's pinned source reinforced the value of a canonical decision
+reason, but Sandbox Egress needs a library boundary rather than a chosen logging
+stack. The retained API therefore accepts a caller-owned bounded
+`SyncSender<DiagnosticEvent>`. Proxy tasks use only `try_send`; the crate starts
+no logging thread and performs no blocking callback.
+
+### Result
+
+An opt-in process-wide one-second window limits delivery to a caller-selected
+rate clamped within `1..=10_000`. A full channel and excess rate both suppress
+without blocking. Suppression accumulates with saturation and is attached to
+the next event the channel accepts. Events contain source identity, a
+crate-owned static reason code, and the suppression count—never the requested
+hostname or another guest-controlled string.
+
+All lease-owned policy and capacity denials now cross one `record_denial`
+boundary that increments usage before attempting diagnostics. Deterministic
+clock tests cover rate suppression; a one-slot channel proves backpressure;
+and a public real-socket case verifies the bounded event shape. The complete
+native and exact Rust 1.88 factories passed 63 deterministic cases.
+
+Whole-tree structural/cognitive complexity moved from 350/1,020 to 356/1,036.
+With diagnostics disabled, Criterion detected no change: allowed loopback was
+102.17–117.52 microseconds (`p=0.23`) and hostname denial was 68.00–73.52
+microseconds (`p=0.75`). The Linux 500-lease smoke retained five live threads
+and eight descriptors, returned to two threads and four descriptors, and
+finished at 4,064 KiB RSS.

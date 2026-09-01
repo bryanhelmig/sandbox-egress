@@ -125,6 +125,8 @@ The current vertical slice provides:
   `AllowOuterSni` mode is available for integrations that knowingly accept an
   unverifiable encrypted inner name;
 - upload/download accounting and optional transfer ceilings;
+- opt-in structured denial events with process-wide rate limiting and
+  nonblocking bounded-channel delivery;
 - explicit lease and proxy shutdown deadlines.
 
 The default policy promise remains CONNECT authority plus resolved destination
@@ -141,8 +143,8 @@ checks only the visible outer SNI. It cannot know the encrypted inner name.
 Neither mode terminates TLS or checks the application authority inside the
 encrypted tunnel, so Sandbox Egress does not claim to eliminate every form of
 domain fronting. Plain HTTP forwarding, transparent interception,
-configurable resolver backends, and rate-limited structured diagnostics are
-also not yet implemented. These gaps are tracked rather than hidden.
+and configurable resolver backends are also not yet implemented. These gaps
+are tracked rather than hidden.
 
 ## Safe integration order
 

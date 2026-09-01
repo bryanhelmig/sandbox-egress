@@ -30,6 +30,11 @@ atomics so `Lease::usage` does not cross the runtime boundary.
 `Lease` is intentionally not `Clone`. `close(self, deadline)` either produces
 `FinalUsage` or a `CloseError` containing the still-owning lease.
 
+Optional diagnostics use a caller-owned bounded synchronous channel. Proxy
+tasks call only `try_send`; they never wait for a logger or spawn a logging
+thread. One process-wide fixed-window limiter records rate- and
+channel-suppressed events on the next delivered event.
+
 ## Data path
 
 The listener uses the socket peer address as host-supplied identity. Admission
