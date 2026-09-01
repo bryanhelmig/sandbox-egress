@@ -86,7 +86,10 @@ any change to that boundary.
 Paired capacity cases hold one admitted slow header open, then prove the next
 socket is terminal under either the global or per-lease ceiling. The rejected
 connection must add one denial without adding an accepted, active, or spawned
-connection task.
+connection task. A dual-stack two-lease case saturates the one-slot global
+budget through the IPv4 lease, requires the IPv6 refusal to affect only the
+IPv6 lease, certifies release through IPv4 close, and then requires an IPv6
+retry to be admitted.
 
 A phase-synchronized identity contention case releases 32 host threads into
 `Proxy::attach` together. Exactly one immutable policy must acquire the source
@@ -173,7 +176,7 @@ exactly one executable for each conformance target, strips copies, and carries
 only those binaries into a Debian runner. The CLI's compile-time executable
 dependency is copied at its exact embedded path. The factory deletes its
 compilation tree only after collection, before committing the source-dependent
-layer. The final image runs as UID/GID 65534 and must reproduce all 127
+layer. The final image runs as UID/GID 65534 and must reproduce all 128
 deterministic cases without Cargo, source, or a build cache.
 
 Source-identity cases prove an IPv4 address and its mapped IPv6 transport

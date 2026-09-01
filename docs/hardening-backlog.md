@@ -56,7 +56,8 @@ services may supplement research but must not become test dependencies.
 ## Capacity and denial of service
 
 - Global and per-lease reservations before task creation.
-- Fairness between leases under global saturation.
+- Optional reserved-share or fair admission semantics between leases; the
+  current contract is fail-fast attribution and recovery on retry.
 - Listener backlog saturation and general accept-loop fairness beyond the
   certified close/attach drain barriers.
 - DNS and dial concurrency distinct from tunnel concurrency.

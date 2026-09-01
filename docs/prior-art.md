@@ -39,7 +39,10 @@ lease, and make certified lease close wait for that owned task set. One
 listener-owner command loop serializes identity installation. A 32-caller
 contention case proves exactly one attachment wins and every other caller sees
 `IdentityInUse`; adding a second registry synchronization scheme would not
-strengthen that invariant.
+strengthen that invariant. Like the reviewed implementations, global
+saturation is fail-fast rather than a fairness queue. A two-lease proof pins
+correct refusal attribution and admission on retry after certified release;
+reserved shares remain a separate, optional scheduling design.
 
 ## Host-cage capability boundary
 

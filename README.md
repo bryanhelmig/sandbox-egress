@@ -149,7 +149,8 @@ The current vertical slice provides:
 - RFC 6052 decoding for the well-known NAT64 prefix and any operator-registered
   network-specific NAT64 prefixes, so translated private and metadata IPv4
   destinations receive the same checks;
-- global and per-lease connection admission reserved before work is spawned;
+- fail-fast global and per-lease connection admission reserved before work is
+  spawned, with refusals attributed to the contending lease;
 - bounded request headers, backpressure, and absolute accept-to-handshake and
   DNS deadlines;
 - opt-in, bounded TLS `ClientHello` parsing that requires visible SNI to equal
@@ -251,7 +252,7 @@ The build stage is pinned to Rust 1.88, warms locked dependencies, then runs the
 normal factory and a small Linux resource smoke with Cargo offline. After the
 checked executables are collected, its compilation tree is discarded before
 the layer is committed. The final image contains only the stripped conformance
-executables and runs all 127 deterministic cases as an unprivileged user. It
+executables and runs all 128 deterministic cases as an unprivileged user. It
 does not ship Cargo, the compiler, source tree, or build cache. Tests remain
 local and do not call public network services.
 

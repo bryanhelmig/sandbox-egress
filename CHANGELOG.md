@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Pin fail-fast global-capacity behavior across two source identities: the
+  refusal is attributed to the contender, which recovers on retry after close.
 - Prove a permanently full diagnostic channel cannot block 64 concurrent
   policy denials or certified close, while preserving exact final counters.
 - Add local UDP DNS conformance proving zero cache capacity requeries and the

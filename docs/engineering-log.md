@@ -2563,3 +2563,37 @@ descriptors and five threads to four and two, finishing at 3,960 KiB RSS in
 1,073 ms. The rootless runner reproduced 127/127 as UID/GID 65534; image
 `sha256:363646ffdc786d3b2057edad46211b0f9a3fac68f0a1d767d2a91106bba71de6`
 measured 40,486,738 bytes.
+
+## 2026-09-01 — define multi-lease global saturation as fail-fast
+
+The admission audit compared the shared listener with Lens and Nono. All three
+bound connection work before spawning it. Sandbox Egress uses
+`try_acquire_owned`, so global saturation creates no queued task or permit
+waiter for `Lease::close` to discover and cancel. A fair waiting queue would
+therefore add a new lease-owned lifecycle phase; Tokio semaphore fairness alone
+would not make the complete proxy fair.
+
+The retained contract is smaller: global admission is fail-fast, every refusal
+is charged to the source identity's current lease, and a new socket can be
+admitted after capacity is released. A dual-stack public test attaches separate
+IPv4 and IPv6 leases to one listener and one global permit. IPv4 holds the
+permit in the header phase; an IPv6 attempt must become terminal with zero
+accepts and one denial on only the IPv6 lease. Certified IPv4 close releases
+the permit, and the IPv6 retry must then become active before its own close
+returns exactly one accept, one denial, and zero active connections. The case
+passed ten focused native repetitions and both factories.
+
+No production behavior changed, and no reserved-share option was added without
+a demonstrated integration requirement. The hardening backlog now names that
+as optional scheduling semantics rather than implying the current fail-fast
+contract is accidentally fair. Whole-tree SCC 4.0.0 complexity moved from
+527/1,584 to 533/1,596 structural/cognitive, all in conformance code; no data
+path benchmark was claimed.
+
+The native and exact Rust 1.88 Linux factories passed all 128 deterministic
+cases, doctests, documentation, and package verification; native dependency
+policy checks also passed. Linux's 500-lease lane returned from eight
+descriptors and five threads to four and two, finishing at 3,988 KiB RSS in
+1,061 ms. The rootless runner reproduced 128/128 as UID/GID 65534; image
+`sha256:1b29c3f1c3fc757112dc4e4591ee011ee5fbfe5d9aaefa96095d359f9db80b5d`
+measured 40,491,607 bytes.

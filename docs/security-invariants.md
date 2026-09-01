@@ -66,7 +66,10 @@ state to revoking, and closes the tracker. Thus either admission belongs to the
 old lease and close waits for it, or admission sees revoking and is refused.
 Global and per-lease capacity refusals happen before task creation, do not
 increase accepted or active counts, and each increment the owning lease's
-denial counter.
+denial counter. Global admission is fail-fast: it does not promise ordering or
+reserved shares between leases. A contending lease can retry after capacity is
+released; a two-identity proof requires the retry to be admitted without any
+cross-lease accounting.
 
 Unadmitted sockets are closed and their optional denial accounting completes
 under the same lifecycle lock used to commit final counters. A socket observed

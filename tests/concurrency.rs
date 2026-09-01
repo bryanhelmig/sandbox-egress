@@ -1,7 +1,7 @@
 //! Concurrency-focused revocation tests.
 
 use std::io::{Read, Write};
-use std::net::{IpAddr, Ipv4Addr, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream};
 use std::sync::{Arc, Barrier, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -76,6 +76,76 @@ fn global_capacity_is_reserved_and_accounted_before_spawn() {
     assert_eq!(usage.accepted_connections, 1);
     assert_eq!(usage.denied_connections, 1);
     assert_eq!(usage.active_connections, 0);
+}
+
+#[test]
+fn global_capacity_rejection_is_attributed_and_retry_recovers() {
+    let proxy = Proxy::start(
+        ProxyConfig::default()
+            .with_bind_address(SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0))
+            .with_max_connections(1),
+    )
+    .expect("start dual-stack proxy");
+    let ipv4_lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            Policy::builder().build().expect("valid IPv4 policy"),
+        )
+        .expect("attach IPv4 lease");
+    let ipv6_lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(IpAddr::V6(Ipv6Addr::LOCALHOST)),
+            Policy::builder().build().expect("valid IPv6 policy"),
+        )
+        .expect("attach IPv6 lease");
+    let port = proxy.endpoint().socket_addr().port();
+    let mut occupying = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).expect("connect IPv4");
+    occupying.write_all(b"CONNECT slow").expect("hold permit");
+    let admission_deadline = Instant::now() + Duration::from_secs(1);
+    while ipv4_lease.usage().active_connections != 1 && Instant::now() < admission_deadline {
+        thread::yield_now();
+    }
+    assert_eq!(ipv4_lease.usage().active_connections, 1);
+
+    let mut rejected = TcpStream::connect((Ipv6Addr::LOCALHOST, port)).expect("connect IPv6");
+    rejected
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .expect("set rejection timeout");
+    rejected.write_all(b"CONNECT queued").ok();
+    let mut byte = [0_u8; 1];
+    assert_terminal_read(rejected.read(&mut byte));
+    assert_eq!(ipv4_lease.usage().denied_connections, 0);
+    assert_eq!(ipv6_lease.usage().accepted_connections, 0);
+    assert_eq!(ipv6_lease.usage().denied_connections, 1);
+
+    let ipv4_usage = ipv4_lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("release occupied global permit")
+        .usage();
+    assert_eq!(ipv4_usage.accepted_connections, 1);
+    assert_eq!(ipv4_usage.denied_connections, 0);
+    assert_eq!(ipv4_usage.active_connections, 0);
+    drop(occupying);
+
+    let mut retry = TcpStream::connect((Ipv6Addr::LOCALHOST, port)).expect("retry IPv6");
+    retry.write_all(b"CONNECT slow").expect("hold retry header");
+    let retry_deadline = Instant::now() + Duration::from_secs(1);
+    while ipv6_lease.usage().active_connections != 1 && Instant::now() < retry_deadline {
+        thread::yield_now();
+    }
+    assert_eq!(ipv6_lease.usage().active_connections, 1);
+    let ipv6_usage = ipv6_lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close retried lease")
+        .usage();
+    assert_eq!(ipv6_usage.accepted_connections, 1);
+    assert_eq!(ipv6_usage.denied_connections, 1);
+    assert_eq!(ipv6_usage.active_connections, 0);
+    drop(retry);
+
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
 }
 
 #[test]
