@@ -76,6 +76,9 @@ pub enum PolicyError {
     /// A hostname pattern was malformed or ambiguous.
     #[error("invalid hostname pattern: {0}")]
     InvalidHostPattern(String),
+    /// TCP destination port zero cannot be connected.
+    #[error("destination port must be greater than zero")]
+    InvalidPort,
     /// A lease must admit at least one possible connection.
     #[error("connection limit must be greater than zero")]
     ZeroConnectionLimit,

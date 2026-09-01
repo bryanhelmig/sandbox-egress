@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Reject destination port zero while freezing a policy, rather than accepting
+  an immutable grant that no valid CONNECT request can exercise.
 - Reject unspecified and multicast source identities before attachment or lease
   sequence allocation because they cannot identify an accepted TCP peer.
 - Atomically disable diagnostics after the caller-owned receiver disconnects,

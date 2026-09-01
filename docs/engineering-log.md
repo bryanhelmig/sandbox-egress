@@ -5124,3 +5124,27 @@ The pinned Rust 1.88 Linux factory also passes all 186 deterministic cases and
 all eight serialized resource lanes. Its rootless conformance image is
 `sha256:3e166c37dd39f39b837cfb95173e9c73d06f24114e4d9112b58e5e900c8f6bf9`
 (40,957,451 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — reject an impossible destination grant
+
+The next configuration-hardening pass found one remaining invalid value that
+could be frozen into an immutable policy. Every network-facing configuration
+already rejects destination port zero, and the CONNECT parser cannot accept
+it, but `PolicyBuilder::allow_port(0)` previously succeeded as an unusable
+grant. That made a host configuration look valid without permitting any real
+connection.
+
+Policy construction now rejects the value with the distinct
+`PolicyError::InvalidPort` before a policy can be attached. This changes no
+valid policy or wire behavior. A focused regression passed 25 consecutive
+runs; formatting and all-target Clippy pass. The deterministic test count rises
+from 186 to 187, and whole-tree structural/cognitive complexity moves from
+775/2,297 to 776/2,300.
+
+The complete native factory passes all 187 deterministic tests, six
+documentation examples, documentation, dependency policy, package
+verification, benchmark smoke, and release build. The pinned Rust 1.88 Linux
+factory passes the same 187 cases and all eight serialized resource lanes. Its
+rootless conformance image is
+`sha256:fdac242f9973bb657373d8412e977fe4ea8fe19f29e1097624a284fba4d32296`
+(40,958,603 bytes) and runs as UID/GID 65534.

@@ -270,11 +270,14 @@ impl PolicyBuilder {
     ///
     /// # Errors
     ///
-    /// Returns an error for zero deadlines, a DNS deadline longer than the
-    /// complete handshake deadline, or a timeout too large for a runtime
-    /// deadline.
+    /// Returns an error for destination port zero, zero deadlines, a DNS
+    /// deadline longer than the complete handshake deadline, or a timeout too
+    /// large for a runtime deadline.
     pub fn build(self) -> Result<Policy, PolicyError> {
         let mut policy = self.policy;
+        if policy.ports.contains(&0) {
+            return Err(PolicyError::InvalidPort);
+        }
         if policy.dns_timeout.is_zero()
             || policy.handshake_timeout.is_zero()
             || policy.idle_timeout.is_some_and(|timeout| timeout.is_zero())
@@ -557,6 +560,14 @@ mod tests {
             .expect("valid HTTP-only policy");
         assert!(http_only.allows_port(80));
         assert!(!http_only.allows_port(443));
+    }
+
+    #[test]
+    fn destination_port_zero_cannot_be_frozen() {
+        assert!(matches!(
+            Policy::builder().allow_port(0).build(),
+            Err(PolicyError::InvalidPort)
+        ));
     }
 
     #[test]

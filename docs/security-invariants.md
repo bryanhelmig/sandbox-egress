@@ -215,7 +215,8 @@ Policy construction begins with no allowed hostname, destination network, or
 port. Every permitted port is explicit: adding one port cannot retain a hidden
 HTTPS default, and adding a hostname cannot create a port grant. The thin
 executable chooses port 443 itself; that wrapper convenience is not a library
-policy default.
+policy default. Freezing a policy rejects port zero because TCP CONNECT cannot
+reach it; an impossible grant never appears to be installed successfully.
 
 Hostname denials are immutable patterns with the same canonical exact and
 left-most-wildcard grammar as grants. A matching denial takes priority over
