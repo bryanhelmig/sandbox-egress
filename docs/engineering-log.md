@@ -5350,3 +5350,18 @@ identity is reassigned. The prior-art document now puts that boundary beside
 Sandbox Egress's per-run tracker, cancellation, permits, final counters, and
 ownership-retaining failure. No implementation change follows from the table;
 it prevents feature-count comparison from obscuring the lifecycle requirement.
+
+## 2026-09-01 — make expired close deadlines revoke first
+
+The hardening rotation checked the zero-wait edge of the public lifecycle API.
+`Lease::close` already calls `begin_close` before it sends a management command
+or computes the remaining wait, so an already-expired deadline revokes
+admission and signals cancellation synchronously before returning the owning
+`DeadlineExceeded` error. The suite did not state that ordering explicitly.
+
+A new real-listener case supplies a deadline one second in the past, recovers
+the lease, proves replacement attachment remains blocked, and opens another
+socket. That socket is terminal, is charged as one unadmitted denial to the old
+lease, and never increments accepted or active work. A later retry certifies
+the exact snapshot. The focused case passed more than 25 repeated runs; the
+deterministic suite grows from 187 to 188 cases without production changes.

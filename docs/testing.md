@@ -214,6 +214,14 @@ consecutive close deadlines. Every error must return the same lease ID, retain
 the source identity, and preserve the exact nonzero usage snapshot. A later
 successful retry must certify that unchanged snapshot as final.
 
+An already-expired close deadline has its own public boundary case. The call
+must first transition the lease to revoking, then return `DeadlineExceeded`
+with ownership. Replacement attachment remains refused, a newly arriving
+socket is terminated and attributed to the old lease without admission, and a
+later retry certifies exact final counters. The deadline bounds how long the
+caller waits for certification; it never defers cancellation or reopens
+admission.
+
 Four barrier-synchronized cases race explicit proxy shutdown and best-effort
 proxy drop against both certified lease close and lease drop while a dial is
 pending. Explicit shutdown must succeed in both cases; where lease close is

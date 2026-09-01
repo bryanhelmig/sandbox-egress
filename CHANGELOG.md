@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Make an already-expired close deadline begin revocation before returning the
+  still-owning error, so it cannot become a momentary admission escape hatch.
 - Reject destination port zero while freezing a policy, rather than accepting
   an immutable grant that no valid CONNECT request can exercise.
 - Reject unspecified, multicast, and limited-broadcast source identities before

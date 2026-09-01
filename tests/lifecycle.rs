@@ -709,6 +709,60 @@ fn repeated_failed_close_retries_preserve_identity_and_counters() {
 }
 
 #[test]
+fn expired_close_deadline_still_revokes_before_returning_ownership() {
+    let proxy = Proxy::start(
+        ProxyConfig::default().with_identity_reuse_quiet_period(Duration::from_millis(100)),
+    )
+    .expect("start proxy");
+    let lease = attach_local(&proxy, Policy::builder().build().expect("valid policy"));
+    let expired = Instant::now()
+        .checked_sub(Duration::from_secs(1))
+        .expect("representable past deadline");
+    let error = lease
+        .close(expired)
+        .expect_err("expired deadline cannot certify close");
+    assert_eq!(error.kind(), CloseErrorKind::DeadlineExceeded);
+    let lease = error.into_lease();
+
+    assert!(matches!(
+        proxy.attach(
+            PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            Policy::builder().build().expect("replacement policy"),
+        ),
+        Err(AttachError::IdentityInUse)
+    ));
+
+    let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect revoking");
+    client
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .expect("bound revocation observation");
+    let _ = client.write_all(b"CONNECT denied.test:443 HTTP/1.1\r\nHost: denied.test\r\n\r\n");
+    let mut byte = [0_u8; 1];
+    match client.read(&mut byte) {
+        Ok(0) => {}
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::ConnectionAborted
+                    | std::io::ErrorKind::ConnectionReset
+                    | std::io::ErrorKind::BrokenPipe
+            ) => {}
+        result => panic!("revoking lease did not terminate a new socket: {result:?}"),
+    }
+
+    let usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("retry certifies revoked lease")
+        .usage();
+    assert_eq!(usage.accepted_connections, 0);
+    assert_eq!(usage.denied_connections, 1);
+    assert_eq!(usage.active_connections, 0);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
 fn hostname_policy_denies_before_dns() {
     let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
     let lease = attach_local(
