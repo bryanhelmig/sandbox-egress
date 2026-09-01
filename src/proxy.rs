@@ -213,29 +213,16 @@ impl Proxy {
             });
         }
         let remaining = deadline.saturating_duration_since(Instant::now());
-        match reply_rx.recv_timeout(remaining) {
-            Ok(Ok(())) => {
-                if self
-                    .thread
-                    .take()
-                    .is_some_and(|thread| thread.join().is_err())
-                {
-                    return Err(ShutdownError {
-                        kind: ShutdownErrorKind::RuntimeStopped,
-                        proxy: self,
-                    });
-                }
-                Ok(())
+        let result = match reply_rx.recv_timeout(remaining) {
+            Ok(Ok(())) => self.thread.take().map_or(Ok(()), |thread| {
+                thread.join().map_err(|_| ShutdownErrorKind::RuntimeStopped)
+            }),
+            Ok(Err(())) | Err(mpsc::RecvTimeoutError::Timeout) => {
+                Err(ShutdownErrorKind::DeadlineExceeded)
             }
-            Ok(Err(())) | Err(mpsc::RecvTimeoutError::Timeout) => Err(ShutdownError {
-                kind: ShutdownErrorKind::DeadlineExceeded,
-                proxy: self,
-            }),
-            Err(mpsc::RecvTimeoutError::Disconnected) => Err(ShutdownError {
-                kind: ShutdownErrorKind::RuntimeStopped,
-                proxy: self,
-            }),
-        }
+            Err(mpsc::RecvTimeoutError::Disconnected) => Err(ShutdownErrorKind::RuntimeStopped),
+        };
+        result.map_err(|kind| ShutdownError { kind, proxy: self })
     }
 }
 

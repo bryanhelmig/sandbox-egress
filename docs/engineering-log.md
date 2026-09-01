@@ -3947,3 +3947,29 @@ The candidate was therefore discarded in full. The existing independently
 shared handles remain: reducing shared-owner operations in isolation was not a
 measured end-to-end improvement. No production source, dependency, public API,
 test count, or whole-tree 686/2,055 structural/cognitive complexity changed.
+
+## 2026-09-01 — unify proxy-shutdown error ownership
+
+This simplification rotation removed three repeated constructions of a
+`ShutdownError` carrying the still-owned proxy. The synchronous shutdown path
+now computes one `Result<(), ShutdownErrorKind>` from reply delivery and runtime
+thread joining, then attaches ownership to an error in one place. Successful
+join, deadline failure, disconnected runtime, and a panicked or unavailable
+runtime thread retain their existing behavior; the fallible shutdown boundary
+and retryable owner are unchanged.
+
+The retained change removes 13 production lines. Whole-tree SCC 4.0.0
+complexity moves from 686/2,055 to 685/2,050 structural/cognitive. Four focused
+shutdown retry and proxy/lease race cases passed before the full factory. No
+performance benchmark was run because the path executes once per process-wide
+shutdown and changes no connection work, allocation, task, dependency, or
+public API.
+
+The native and exact Rust 1.88 Linux factories passed the unchanged 162
+deterministic cases, five doctests, documentation, package verification, and
+all six Linux resource lanes; native dependency policy checks also passed.
+Linux's TLS lane peaked at 15,140 KiB RSS, 265 descriptors, and six threads,
+then returned after shutdown to 6,316 KiB, four descriptors, and two threads.
+The rootless 162/162 image is
+`sha256:5221971ab058ede00994ea6f930495372b95acdf288f55f5619b4e9a5cfc02c3`
+(40,740,442 bytes) and runs as UID/GID 65534.
