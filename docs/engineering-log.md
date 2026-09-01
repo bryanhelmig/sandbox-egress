@@ -5306,3 +5306,17 @@ All 75 focused runs passed. The first two exercise the listener-owner ordering
 and deliberate quiet-period waits, while the third requires both hostile
 writers to observe terminal sockets. No flake, ownership gap, or accounting
 mismatch appeared, so production code and the 187-case suite are unchanged.
+
+## 2026-09-01 — retain the two-worker owned runtime
+
+A controlled runtime-sizing experiment temporarily changed the owned Tokio
+runtime from its committed two workers to one and four. Each shape ran three
+10,000-CONNECT samples at 64 clients and 16 loopback destinations. Median
+throughput was 20,297, 19,623, and 17,972 connections per second for one, two,
+and four workers respectively.
+
+The one-worker result is only 3.4% above the contemporaneous two-worker median
+and individual samples overlapped substantially; it is not evidence for a
+speedup. Four workers were 8.4% below the two-worker median and add two steady
+threads. Both candidates were removed. The committed two-worker runtime and
+production behavior are unchanged.
