@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Make the Docker source-validation stage offline after dependency warmup and
+  discard its compilation tree after collecting conformance executables.
 - Prove that legacy numeric host spellings remain on the checked DNS path and
   cannot turn a forbidden answer into an unchecked dial.
 - Prove explicit and best-effort proxy shutdown racing both lease close and

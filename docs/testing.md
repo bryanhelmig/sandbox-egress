@@ -132,13 +132,15 @@ still destroy the dial; best-effort proxy drop must join the owned runtime in
 the test boundary, and lease drop must release the final strong lease-state
 reference.
 
-The Docker factory is multi-stage. Rust 1.88 performs the complete check and
-resource lane in the builder. A checked collector reads Cargo's JSON artifact
-records, requires exactly one executable for each conformance target, strips
-copies, and carries only those binaries into a Debian runner. The CLI's
-compile-time executable dependency is copied at its exact embedded path. The
-final image runs as UID/GID 65534 and must reproduce all 107 deterministic
-cases without Cargo, source, or a build cache.
+The Docker factory is multi-stage. Rust 1.88 first warms every locked build and
+test dependency, then performs the complete check and resource lane with Cargo
+offline. A checked collector reads Cargo's JSON artifact records, requires
+exactly one executable for each conformance target, strips copies, and carries
+only those binaries into a Debian runner. The CLI's compile-time executable
+dependency is copied at its exact embedded path. The factory deletes its
+compilation tree only after collection, before committing the source-dependent
+layer. The final image runs as UID/GID 65534 and must reproduce all 107
+deterministic cases without Cargo, source, or a build cache.
 
 Source-identity cases prove an IPv4 address and its mapped IPv6 transport
 spelling collide in the registry. A real dual-stack listener routes an IPv4

@@ -2100,3 +2100,36 @@ native dependency policy checks also passed. Linux's 500-lease lane returned
 from eight descriptors and five threads to four and two, finishing at 3,960
 KiB RSS in 1,017 ms. The rootless runner reproduced 107/107 as UID/GID 65534
 and measured 40,391,595 bytes.
+
+## 2026-09-01 — bound source-cycle Docker storage
+
+A legacy Docker build exhausted its storage only after the Rust 1.88 factory
+had passed tests, package verification, and the resource lane. Inspection found
+one 1.9 GB failed Sandbox Egress container and several enumerated stale project
+factory images; Docker reported 18.63 GB in images and 1.9 GB in the exited
+container. Only those explicit project artifact IDs were removed. No broad
+prune or unrelated image deletion was used.
+
+The source-validation step needs `target/` while checking, but the next stage
+copies only the already-collected executables under `/conformance`. The first
+trial therefore deleted `target/` after successful collection in the same
+layer. The source-dependent layer fell from 1.90 GB to 172 MB, and comparable
+factory content reported by image inspection fell from 1,145,464,261 to
+662,347,550 bytes. The rootless runner reused exactly the same output layers
+and passed all 107 cases.
+
+That trial still changed about 137 MB of Cargo registry state during package
+verification. A second trial set `CARGO_NET_OFFLINE=true` only after the locked
+dependency-warmup stage. The complete source check, documentation, package
+verification, and resource lane succeeded without registry access. The
+source-dependent layer fell again to 35.8 MB: 98.1% below the original. Factory
+content measured 635,814,086 bytes, 44.5% below the original and 4.0% below the
+first cleanup trial.
+
+The retained runner remained byte-identical at image
+`sha256:6019ada1245e1242842e1a6451aa1f456b788711c4078d0732b5179d4784ba08`
+and 40,391,595 bytes, then reproduced 107/107 as UID/GID 65534. The final Linux
+resource lane returned from eight descriptors and five threads to four and two,
+finishing at 3,960 KiB RSS in 1,074 ms. No Rust source or complexity changed;
+this is a factory storage and network-reproducibility improvement, not a proxy
+throughput result.

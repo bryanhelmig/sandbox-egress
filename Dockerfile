@@ -20,11 +20,14 @@ RUN printf '# Sandbox Egress dependency cache\n' > README.md \
     && cargo test --locked --release --test resource_soak --no-run \
     && rm -rf src benches tests README.md
 
+ENV CARGO_NET_OFFLINE=true
+
 COPY . .
 
 RUN find src tests benches -type f -exec touch {} + \
     && ./scripts/check-container.sh \
-    && ./scripts/collect-conformance-binaries.sh /conformance
+    && ./scripts/collect-conformance-binaries.sh /conformance \
+    && rm -rf target
 
 FROM debian:bookworm-slim AS conformance
 
