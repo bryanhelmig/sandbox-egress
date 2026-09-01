@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Pin complete OpenSSL and Apple SecureTransport ClientHello fixtures with
+  offline compatibility checks for exact SNI, ECH state, and wire retention.
 - Repeat certified close and identity reuse after both tunnel send queues
   observe backpressure, enforcing exact per-lease results and process resource
   recovery across batches.

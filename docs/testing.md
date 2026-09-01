@@ -432,6 +432,14 @@ not mistake it for ECH, and the full inspected path must forward every byte
 unchanged. This is an ordinary deterministic compatibility case, not a claim
 that one fixture represents every deployed TLS client.
 
+Two complete first records captured from independent clients add a small,
+offline compatibility corpus: OpenSSL 3.6.3 and Apple SecureTransport. Each
+must parse to the exact `fixture.example` SNI, report no ECH, and retain every
+wire byte unchanged. Their invocation, length, and SHA-256 provenance live
+beside the fixtures in `tests/fixtures/README.md`; changing them is a reviewed
+compatibility update rather than an ambient dependency on locally installed
+TLS software.
+
 A constrained-forwarding case uses a valid roughly 64 KiB ClientHello split
 across bounded TLS records and reduces both upstream socket buffers. The test
 connector fills its send queue to an observed `WouldBlock` before returning the

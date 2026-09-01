@@ -295,6 +295,11 @@ mod tests {
     use super::*;
     use tokio::io::ReadBuf;
 
+    const OPENSSL_3_6_3_CLIENT_HELLO: &[u8] =
+        include!("../tests/fixtures/client_hello_openssl_3_6_3.rs");
+    const APPLE_SECURE_TRANSPORT_CLIENT_HELLO: &[u8] =
+        include!("../tests/fixtures/client_hello_apple_secure_transport.rs");
+
     struct OneByteReader<'a>(&'a [u8]);
 
     impl AsyncRead for OneByteReader<'_> {
@@ -338,6 +343,29 @@ mod tests {
         assert_eq!(inspected.wire_bytes, hello);
         assert_eq!(inspected.server_name.as_deref(), Some("grease.example"));
         assert!(!inspected.ech_present);
+    }
+
+    #[test]
+    fn accepts_fixed_independent_client_hellos() {
+        for (implementation, hello, expected_length) in [
+            ("OpenSSL 3.6.3", OPENSSL_3_6_3_CLIENT_HELLO, 1_546),
+            (
+                "Apple SecureTransport",
+                APPLE_SECURE_TRANSPORT_CLIENT_HELLO,
+                325,
+            ),
+        ] {
+            assert_eq!(hello.len(), expected_length, "{implementation}");
+            let inspected = inspect(hello)
+                .unwrap_or_else(|error| panic!("rejected {implementation}: {error:?}"));
+            assert_eq!(inspected.wire_bytes, hello, "{implementation}");
+            assert_eq!(
+                inspected.server_name.as_deref(),
+                Some("fixture.example"),
+                "{implementation}"
+            );
+            assert!(!inspected.ech_present, "{implementation}");
+        }
     }
 
     #[test]

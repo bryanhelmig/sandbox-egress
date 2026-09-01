@@ -3570,3 +3570,40 @@ it returned to 4,992 KiB, four descriptors, and two threads. The rootless
 shipped deterministic cases are unchanged:
 `sha256:9fdd4d14741dce47c20c0f047f40432a66ea43a342ca9c3f498e34a56d0f59c4`
 (40,701,820 bytes).
+
+## 2026-09-01 — pin independent ClientHello compatibility samples
+
+The maintained parser already had generated Rustls-compatible ClientHellos,
+every record split and truncation, large multi-record messages, GREASE, ECH,
+and malformed-length cases. Those shapes are useful adversarial boundaries,
+but generated test messages alone do not establish that independent deployed
+clients remain compatible.
+
+Two complete first TLS records are now fixed as offline test inputs. One came
+from OpenSSL 3.6.3 `s_client`; the other came from Apple curl 8.7.1 using
+SecureTransport. Both connected to a local listener that sent no response and
+used `fixture.example` as SNI. The OpenSSL record is 1,546 bytes with SHA-256
+`228f135c07a4d5491653e229e5c73302f51b589dcbce17c3695aad0ac91ec78f`;
+the SecureTransport record is 325 bytes with SHA-256
+`6c801c49925112cd01849a1ea4a0983ef740fd3a7bd049af6a49dd5d809142ed`.
+The recorded invocations live beside the fixtures. Random and public ephemeral
+key-share bytes are intentionally frozen; no server response or secret input
+is present.
+
+The compatibility case requires mature parsing, exact normalized SNI, explicit
+absence of ECH, and byte-for-byte wire retention for each record. It passed 25
+consecutive focused repetitions. Ordinary tests do not run either client or
+access the network, so local client upgrades cannot silently change the
+evidence. A broader versioned corpus remains open rather than treating these
+two samples as representative of every deployed client.
+
+Production code and runtime dependencies are unchanged. Whole-tree SCC 4.0.0
+complexity moves from 669/2,016 to 670/2,019 structural/cognitive, entirely in
+the small test loop. The native and exact Rust 1.88 Linux factories passed 156
+deterministic cases, five doctests, documentation, and package verification;
+native dependency policy checks also passed. Linux's six resource lanes passed.
+The TLS lane peaked at 14,980 KiB RSS, 265 descriptors, and six threads, then
+returned after shutdown to 5,920 KiB, four descriptors, and two threads. The
+rootless 156/156 conformance image is
+`sha256:2431bfc656ff9d10117af0e3c49e7a4f14802bedc62e6ba66f0d41f40ccb1d63`
+(40,722,834 bytes) and runs as UID/GID 65534.

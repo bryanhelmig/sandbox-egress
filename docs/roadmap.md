@@ -25,7 +25,10 @@
 - [x] Revocation and absolute-deadline conformance during partial ClientHello.
 - [x] Deterministic malformed CONNECT and ClientHello cases.
 - [x] Fixed GREASE cipher-suite and extension conformance.
-- [ ] Broader real-client ClientHello corpus.
+- [x] Fixed OpenSSL and Apple SecureTransport ClientHello compatibility
+  fixtures.
+- [ ] Broader versioned real-client corpus beyond the fixed cross-stack
+  samples.
 - [ ] Application-authority research and tests without overstating what is
   enforceable without TLS termination.
 

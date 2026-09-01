@@ -33,7 +33,8 @@ contributor instead of preserving solved work as apparent backlog.
 ## TLS and application authority
 
 - Compatibility across deployed TLS versions and clients beyond the committed
-  Rustls, fragmentation, malformed-length, and GREASE matrices.
+  Rustls, OpenSSL, Apple SecureTransport, fragmentation, malformed-length, and
+  GREASE matrices.
 - ECH evolution and interoperability beyond the explicit current policy modes.
 - Domain fronting and the exact difference between CONNECT, SNI, and
   application authority.
