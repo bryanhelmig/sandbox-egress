@@ -5210,3 +5210,20 @@ formatting and all-target Clippy. The deterministic test count remains 187;
 whole-tree structural/cognitive complexity moves from 776/2,300 to 778/2,311.
 An attempted single-arm predicate measured worse cognitive complexity than the
 explicit address-family match and was discarded.
+
+## 2026-09-01 — reject a destination-network index
+
+The next performance rotation temporarily added 1,024 distinct nonmatching
+IPv4 `/24` denials to the allowed loopback CONNECT benchmark. A five-second
+same-process run measured direct TCP at 42.80 microseconds and proxied setup at
+128.32 microseconds, or about 85.52 microseconds of control-normalized proxy
+work. After removing the temporary rules, direct TCP measured 41.29
+microseconds and proxied setup 120.94 microseconds, or about 79.65 microseconds
+of normalized proxy work.
+
+The linear scan therefore cost roughly 5.9 microseconds at an intentionally
+large 1,024-rule boundary. That is measurable, but does not justify a radix
+tree, another dependency, or two immutable policy representations for the
+expected small per-run rule sets. Freeze-time duplicate removal stays; a
+network index and the temporary benchmark code are discarded. Production code,
+the 187-case suite, and complexity are unchanged.
