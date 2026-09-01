@@ -5477,3 +5477,17 @@ listener. The comparison therefore changes no production code. It reinforces
 the current honest CONNECT-plus-visible-SNI promise and records transparent L7
 enforcement as a wider host-integration design, not a feature to imply through
 SNI inspection.
+
+## 2026-09-01 — recheck the current connection curve
+
+The exact post-comparison tree repeated the release load harness with 10,000
+local CONNECT tunnels, concurrency 64, and 16 upstream destinations. Three
+runs produced 18,929.5, 19,812.5, and 20,904.4 connections per second; the
+median is 19,812.5. Median per-connection latency in those runs was 1,837,
+1,868, and 1,804 microseconds, respectively.
+
+The earlier two-worker runtime experiment measured a 19,623 connections per
+second median under the same workload shape. The new median is 1.0 percent
+higher and remains inside the observed run-to-run spread, so there is no
+performance regression or optimization claim. Production configuration stays
+unchanged.
