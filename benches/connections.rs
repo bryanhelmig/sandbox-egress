@@ -144,7 +144,30 @@ fn allowed_visible_sni(criterion: &mut Criterion) {
 }
 
 fn upstream_proxy_connect(criterion: &mut Criterion) {
-    let (upstream_proxy, stop, upstream) = start_upstream_proxy();
+    upstream_proxy_connect_case(
+        criterion,
+        "connect_via_upstream_proxy",
+        Arc::from(&b"HTTP/1.1 200 Connection Established\r\n\r\n"[..]),
+        true,
+    );
+}
+
+fn upstream_proxy_near_terminator(criterion: &mut Criterion) {
+    upstream_proxy_connect_case(
+        criterion,
+        "connect_upstream_near_terminator_32k",
+        Arc::from(b"\r\n\rX".repeat((32 * 1_024) / 4)),
+        false,
+    );
+}
+
+fn upstream_proxy_connect_case(
+    criterion: &mut Criterion,
+    name: &'static str,
+    response: Arc<[u8]>,
+    successful: bool,
+) {
+    let (upstream_proxy, stop, upstream) = start_upstream_proxy(response);
     let proxy = Proxy::start(
         ProxyConfig::default()
             .with_identity_reuse_quiet_period(Duration::ZERO)
@@ -166,15 +189,22 @@ fn upstream_proxy_connect(criterion: &mut Criterion) {
     let endpoint = lease.endpoint().socket_addr();
     let request = format!("CONNECT {target} HTTP/1.1\r\nHost: {}\r\n\r\n", target.ip());
 
-    criterion.bench_function("connect_via_upstream_proxy", |bencher| {
+    criterion.bench_function(name, |bencher| {
         bencher.iter(|| {
             let mut client = TcpStream::connect(endpoint).expect("connect proxy");
             client.write_all(request.as_bytes()).expect("write CONNECT");
-            let mut response = [0_u8; 39];
-            client
-                .read_exact(&mut response)
-                .expect("read CONNECT response");
-            black_box(response);
+            if successful {
+                let mut response = [0_u8; 39];
+                client
+                    .read_exact(&mut response)
+                    .expect("read CONNECT response");
+                black_box(&response[..]);
+            } else {
+                let mut response = [0_u8; 256];
+                let bytes = client.read(&mut response).expect("read proxy denial");
+                assert!(response[..bytes].starts_with(b"HTTP/1.1 502"));
+                black_box(&response[..bytes]);
+            }
             reset_on_drop(client);
         });
     });
@@ -334,7 +364,9 @@ fn start_receiving_upstream(
     (address, stop, handle)
 }
 
-fn start_upstream_proxy() -> (SocketAddr, Arc<AtomicBool>, thread::JoinHandle<()>) {
+fn start_upstream_proxy(
+    response: Arc<[u8]>,
+) -> (SocketAddr, Arc<AtomicBool>, thread::JoinHandle<()>) {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind upstream proxy");
     let address = listener.local_addr().expect("upstream proxy address");
     let stop = Arc::new(AtomicBool::new(false));
@@ -351,8 +383,8 @@ fn start_upstream_proxy() -> (SocketAddr, Arc<AtomicBool>, thread::JoinHandle<()
                 .expect("read upstream CONNECT");
             assert_eq!(&request, UPSTREAM_CONNECT);
             stream
-                .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
-                .expect("approve upstream CONNECT");
+                .write_all(&response)
+                .expect("write upstream response");
         }
     });
     (address, stop, handle)
@@ -365,6 +397,6 @@ criterion_group! {
         .measurement_time(Duration::from_secs(1))
         .sample_size(20);
     targets = allowed_connect, allowed_hostname, allowed_visible_sni, upstream_proxy_connect,
-        denied_connect, oversized_header
+        upstream_proxy_near_terminator, denied_connect, oversized_header
 }
 criterion_main!(benches);

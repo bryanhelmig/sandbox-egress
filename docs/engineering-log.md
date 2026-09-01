@@ -4253,3 +4253,29 @@ lane peaked at 14,564 KiB RSS, 265 descriptors, and six threads, recovered to
 descriptors, and two threads. The rootless 175/175 image is
 `sha256:f8b4bb00ca2425eeefe5f7368caeecf8926de3709113d21442f06f0a0bbfa0aa`
 (40,879,838 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — upstream response scan benchmark
+
+This performance rotation identified a bounded but avoidable CPU shape in the
+new upstream response reader. After every 1 KiB read it rescans the full
+accumulated buffer for the four-byte terminator. A response at the 32 KiB
+ceiling therefore repeats work across 32 increasingly large prefixes.
+
+A new offline Criterion target makes that path reproducible. Its local peer
+verifies the numeric CONNECT request, then sends exactly 32 KiB of repeated
+`\r\n\rX` near matches with no terminator. The guest must receive the ordinary
+bounded 502 denial. Three baseline runs measured 553.65–598.69,
+553.73–592.69, and 558.32–627.98 microseconds.
+
+The benchmark setup was generalized rather than duplicated and still runs the
+successful upstream negotiation target. No production source or dependency
+changed. Whole-tree SCC 4.0.0 complexity moves from 739/2,192 to 741/2,200
+structural/cognitive, entirely in benchmark code and its documentation. The
+measured baseline will be committed before changing the scanner so the next
+rotation can compare against an exact parent.
+
+The native and exact Rust 1.88 factories passed the unchanged 175 deterministic
+cases, six doctests, documentation, package verification, both upstream
+benchmark smokes, and all six Linux resource lanes. Production artifacts are
+unchanged, so the rootless image remains
+`sha256:f8b4bb00ca2425eeefe5f7368caeecf8926de3709113d21442f06f0a0bbfa0aa`.

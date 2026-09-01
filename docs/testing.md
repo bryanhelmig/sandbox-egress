@@ -432,6 +432,9 @@ negotiation beside direct allowed CONNECT. The local peer consumes and verifies
 the exact numeric CONNECT request before replying, so the measurement includes
 the second TCP setup, request reconstruction, bounded response parse, and guest
 success response without involving public DNS or traffic.
+Another target sends the full 32 KiB upstream response ceiling as repeated
+`\r\n\rX` near matches without a terminator. It requires the normal bounded 502
+denial and exposes repeated-scan CPU growth in the upstream response reader.
 
 Dial admission has its own process-wide phase budget. With five approved
 connections and two permits, the connector must observe exactly two live
