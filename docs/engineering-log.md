@@ -4025,3 +4025,30 @@ peaked at 14,700 KiB RSS, 265 descriptors, and six threads, recovered to
 four descriptors, and two threads. The rootless 165/165 image is
 `sha256:de0aba6cb82f87555845ed2d10097fb640e4c775e3957be9c4e78759fb4c3950`
 (40,743,228 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — rejected inline single-address iterator
+
+This performance rotation tested removing the one-element `Vec` allocation
+from the common direct-IP path. The candidate represented a literal address
+inline and retained a consuming vector iterator only for bounded DNS answers.
+It preserved address ordering, exact-size fallback budgeting, and all phase
+lifetimes; strict linting passed.
+
+Three alternating Criterion pairs measured direct loopback CONNECT setup
+against detached `5de90d0`. Candidate intervals were 104.18–117.22,
+113.56–131.85, and 114.69–147.02 microseconds; baseline intervals were
+111.05–116.33, 112.43–115.17, and 114.33–127.65. Every pair overlapped and
+the median moved in both directions.
+
+Four alternating 50,000-connection runs then used 64 clients and 16 loopback
+destinations. Candidate throughput was 18,075, 17,517, 18,367, and 17,330
+connections/second; baseline throughput was 17,728, 18,195, 16,989, and
+18,816. Each side won two pairs. Median candidate throughput was approximately
+17,796 connections/second versus 17,961 for the baseline, with no consistent
+tail-latency improvement.
+
+The candidate was discarded in full. One small allocation is below the
+socket-and-scheduler variance of the measured path, while a custom iterator
+would add production type surface. The comparison worktree was removed; source,
+dependencies, public API, test counts, and whole-tree 694/2,077
+structural/cognitive complexity remain unchanged.
