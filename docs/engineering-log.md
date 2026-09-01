@@ -5561,3 +5561,16 @@ at 40,982,993 bytes. It contains the checked executables rather than the
 compiler, source, or build cache. The container package list has 68 files
 because the build context intentionally lacks local Git metadata; the native
 repository package remains the verified 69-file artifact.
+
+## 2026-09-01 — sustain five million connections
+
+One optimized proxy and lease completed 5,000,000 local CONNECT tunnels at
+concurrency 64 across 16 upstream destinations. The fixed workload ran for
+288.49 seconds at 17,424.2 connections per second, with p50/p95/p99 setup
+latencies of 1,922/2,433/3,134 microseconds.
+
+The harness checks every response, joins every worker and upstream, certifies
+the lease's final counters, and shuts down the shared proxy only after the
+whole workload. It passed without throughput collapse, capacity leakage, or
+ownership failure. This is a sustained local loopback result, not an external
+network or multi-host capacity claim.
