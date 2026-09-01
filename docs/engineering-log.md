@@ -5227,3 +5227,18 @@ tree, another dependency, or two immutable policy representations for the
 expected small per-run rule sets. Freeze-time duplicate removal stays; a
 network index and the temporary benchmark code are discarded. Production code,
 the 187-case suite, and complexity are unchanged.
+
+## 2026-09-01 — certify the final 187-case Linux factory
+
+The pinned Rust 1.88 Linux factory passes all 187 deterministic cases, six
+documentation examples, formatting, all-target lints, documentation, package
+verification, benchmark smoke, and release build on the final implementation.
+All eight serialized release resource lanes pass, including partial headers,
+partial ClientHellos, partial upstream responses, simultaneous
+backpressure, idle expiry, management churn, identity churn, and 2,000-cycle
+terminal connection churn.
+
+The stripped conformance image is
+`sha256:d7739b3ddf7faac5406df48f9edb14f5fa87b580e3387183520dee7cf89f71da`
+(40,980,588 bytes). It contains the assembled test executables rather than
+Cargo or source and runs successfully as UID/GID 65534.
