@@ -1726,3 +1726,46 @@ exact Rust 1.88 factories passed all 93 deterministic cases and verified the
 assembled crate; the serialized Linux image ran the same set. Its 500-lease
 smoke held eight descriptors and five threads while live, returned to four
 descriptors and two threads, and finished at 3,996 KiB RSS.
+
+## 2026-08-31 — preserve lease certificates across proxy shutdown
+
+### Finding
+
+`Proxy::shutdown` already stopped the listener, drained every lease tracker,
+captured final counters, and marked each lease closed before joining the owned
+runtime. A `Lease` retained by the embedding service could not observe that
+completed work, however: its later `close` tried to send to the stopped runtime
+and returned `RuntimeStopped`. The API therefore hid an existing certificate
+and left the caller holding an identity that was already safely closed.
+
+The fail-first integration case sent one denied CONNECT, completed proxy-wide
+shutdown, and then asked the surviving lease for its certificate. The old
+implementation failed with `CloseErrorKind::RuntimeStopped` instead of the
+known final counters.
+
+### Result
+
+A lease can now consume a local counter snapshot only after its shared phase is
+`Closed`. That phase is committed only after the lease tracker is empty, so no
+connection, DNS lookup, dial, tunnel direction, or counter writer can survive
+the snapshot. The same check resolves the narrow races where the command send
+fails or its reply channel disconnects as shutdown finishes. A receive timeout
+deliberately does not infer success: the deadline boundary still returns the
+owning lease so the caller can retry.
+
+The real-socket regression proves the surviving lease observes exactly one
+accepted connection, one denial, and zero active connections after successful
+proxy shutdown. The empty-lease lifecycle benchmark measured 1.3382–1.3530
+milliseconds, a change of -2.85% to -0.83%; Criterion classified it within the
+configured noise threshold, so this is recorded as no regression rather than
+an improvement.
+
+The local certificate path and its integration proof move whole-tree
+structural/cognitive complexity from 433/1,265 to 439/1,283. The native and
+exact Rust 1.88 factories passed all 94 deterministic cases and verified the
+assembled crate; the freshly serialized Linux image ran the same set. Its
+500-lease smoke held eight descriptors and five threads while live, returned to
+four descriptors and two threads, and finished at 4,052 KiB RSS. A first Linux
+export exhausted Docker's internal disk after the checks had passed; the older
+project image and two disposable build containers were removed, then a clean
+rebuild and serialized run proved that the tagged image contained all 94 cases.

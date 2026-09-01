@@ -25,6 +25,12 @@ load-bearing:
 An integration that cannot guarantee that ordering must use unique per-run
 source addresses or a stronger host-authenticated transport identity.
 
+Successful proxy-wide shutdown drains every tracker and marks each lease
+closed before the runtime thread joins. A surviving lease handle may consume
+that already-certified final snapshot locally. Send or reply disconnection is
+rechecked against closed state, but a deadline timeout still retains ownership;
+the shutdown race cannot silently turn uncommitted cleanup into success.
+
 IPv6 listeners can report an IPv4 peer with the IPv4-mapped IPv6 transport
 spelling. Attachment and accepted peers both canonicalize that spelling to
 IPv4 before registry lookup. The two spellings therefore cannot hold separate

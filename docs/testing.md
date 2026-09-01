@@ -88,6 +88,11 @@ It requires `DeadlineExceeded`, recovers the still-owning lease, observes the
 denial, gets `IdentityInUse` from replacement attachment, then retries close
 successfully only after old traffic stops.
 
+A proxy-wide shutdown case first records one real denied CONNECT, then joins
+the runtime while retaining its lease handle. Calling `Lease::close` afterward
+must return the committed snapshot with one accepted, one denied, and zero
+active connections instead of reporting `RuntimeStopped`.
+
 Source-identity cases prove an IPv4 address and its mapped IPv6 transport
 spelling collide in the registry. A real dual-stack listener routes an IPv4
 client to that canonical lease, while the IPv6 CONNECT case uses an IPv6

@@ -158,6 +158,30 @@ fn connect_tunnels_and_accounts_bytes() {
 }
 
 #[test]
+fn lease_close_observes_a_completed_proxy_shutdown() {
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let lease = attach_local(&proxy, Policy::builder().build().expect("valid policy"));
+    let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+    client
+        .write_all(b"CONNECT denied.test:443 HTTP/1.1\r\nHost: denied.test\r\n\r\n")
+        .expect("write denied CONNECT");
+    let mut response = String::new();
+    client.read_to_string(&mut response).expect("read denial");
+    assert!(response.contains("port-denied"), "{response}");
+
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("certified proxy shutdown");
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("observe proxy-wide certificate")
+        .usage();
+    assert_eq!(final_usage.active_connections, 0);
+    assert_eq!(final_usage.accepted_connections, 1);
+    assert_eq!(final_usage.denied_connections, 1);
+}
+
+#[test]
 fn close_revokes_a_slow_header_without_waiting_for_the_peer() {
     let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
     let lease = attach_local(

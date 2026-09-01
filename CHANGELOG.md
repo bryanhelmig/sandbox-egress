@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Let a surviving lease consume the final counters already certified by a
+  successful proxy-wide shutdown, including runtime-disconnect races.
 - Divide the remaining absolute handshake budget fairly across sequential
   approved-address dial attempts so a pending first address cannot starve a
   reachable fallback or multiply live sockets.

@@ -256,13 +256,31 @@ impl Lease {
             .map_or_else(Usage::default, |state| state.counters.snapshot())
     }
 
+    fn take_closed_usage(&mut self, state: &LeaseState) -> Option<FinalUsage> {
+        let usage = state.closed_snapshot()?;
+        self.state.take();
+        Some(usage)
+    }
+
+    fn runtime_stopped_or_closed(mut self, state: &LeaseState) -> Result<FinalUsage, CloseError> {
+        if let Some(usage) = self.take_closed_usage(state) {
+            Ok(usage)
+        } else {
+            Err(CloseError {
+                kind: CloseErrorKind::RuntimeStopped,
+                lease: self,
+            })
+        }
+    }
+
     /// Revoke this lease and wait for all of its tracked work to be destroyed.
     ///
     /// # Errors
     ///
     /// On timeout or runtime failure, the returned [`CloseError`] retains the
     /// lease. Recover it with [`CloseError::into_lease`] and retry; the identity
-    /// remains unavailable in the meantime.
+    /// remains unavailable in the meantime. If proxy-wide shutdown already
+    /// certified this lease, `close` consumes that committed snapshot locally.
     pub fn close(mut self, deadline: Instant) -> Result<FinalUsage, CloseError> {
         let Some(state) = self.state.as_ref().map(Arc::clone) else {
             return Err(CloseError {
@@ -270,6 +288,9 @@ impl Lease {
                 lease: self,
             });
         };
+        if let Some(usage) = self.take_closed_usage(&state) {
+            return Ok(usage);
+        }
         state.begin_close();
         let (reply_tx, reply_rx) = mpsc::sync_channel(1);
         if self
@@ -281,10 +302,7 @@ impl Lease {
             })
             .is_err()
         {
-            return Err(CloseError {
-                kind: CloseErrorKind::RuntimeStopped,
-                lease: self,
-            });
+            return self.runtime_stopped_or_closed(&state);
         }
         let remaining = deadline.saturating_duration_since(Instant::now());
         match reply_rx.recv_timeout(remaining) {
@@ -305,10 +323,7 @@ impl Lease {
                 kind: CloseErrorKind::DeadlineExceeded,
                 lease: self,
             }),
-            Err(mpsc::RecvTimeoutError::Disconnected) => Err(CloseError {
-                kind: CloseErrorKind::RuntimeStopped,
-                lease: self,
-            }),
+            Err(mpsc::RecvTimeoutError::Disconnected) => self.runtime_stopped_or_closed(&state),
         }
     }
 }
@@ -390,6 +405,11 @@ impl LeaseState {
 
     fn is_closed(&self) -> bool {
         *self.phase.lock().expect("lease phase poisoned") == Phase::Closed
+    }
+
+    fn closed_snapshot(&self) -> Option<FinalUsage> {
+        let phase = self.phase.lock().expect("lease phase poisoned");
+        (*phase == Phase::Closed).then(|| self.counters.final_snapshot())
     }
 
     fn admit(self: &Arc<Self>, stream: TcpStream) -> Option<(Admission, TcpStream)> {

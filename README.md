@@ -108,6 +108,10 @@ lease. The identity remains unavailable, so a supervisor cannot accidentally
 assign a new run to work left behind by the old one. `Drop` starts best-effort
 cancellation, but never certifies cleanup.
 
+A successful `Proxy::shutdown` certifies all attached leases before its runtime
+thread joins. A still-held lease can call `close` afterward to consume that
+committed certificate and retrieve its final counters without a live runtime.
+
 ## Current enforcement
 
 The current vertical slice provides:

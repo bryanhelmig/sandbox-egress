@@ -39,6 +39,11 @@ quiesced snapshot immediately; it does not rerun the quiet-period barrier.
 `Lease` is intentionally not `Clone`. `close(self, deadline)` either produces
 `FinalUsage` or a `CloseError` containing the still-owning lease.
 
+A successful proxy-wide shutdown drains every lease tracker and marks each
+state closed before joining the runtime thread. A surviving lease handle reads
+that immutable closed snapshot locally; runtime loss alone cannot hide an
+already-committed certificate.
+
 Optional diagnostics use a caller-owned bounded synchronous channel. Proxy
 tasks call only `try_send`; they never wait for a logger or spawn a logging
 thread. One process-wide fixed-window limiter records rate- and
