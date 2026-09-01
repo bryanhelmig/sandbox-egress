@@ -1,6 +1,8 @@
+use std::io;
 use std::net::{IpAddr, Ipv6Addr};
 
 use http::uri::Authority;
+use tokio::io::{AsyncRead, AsyncReadExt};
 
 const MAX_CONNECT_HEADERS: usize = 64;
 
@@ -10,6 +12,49 @@ pub(crate) fn find_header_end(bytes: &[u8], scan_from: usize) -> Option<usize> {
         .windows(4)
         .position(|window| window == b"\r\n\r\n")
         .map(|index| scan_from + index + 4)
+}
+
+pub(crate) struct HeaderBlock {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) end: usize,
+}
+
+// Keep the hostile-input scan behind a stable code-generation boundary.
+// Whole-program LTO otherwise coupled its loop layout to unrelated policy
+// constructor changes; the committed 1 MiB benchmark reproduced the effect.
+#[inline(never)]
+pub(crate) async fn read_bounded_header<R>(
+    stream: &mut R,
+    max: usize,
+    chunk_bytes: usize,
+) -> io::Result<HeaderBlock>
+where
+    R: AsyncRead + Unpin,
+{
+    debug_assert!((1..=4_096).contains(&chunk_bytes));
+    let mut bytes = Vec::with_capacity(max.min(1_024));
+    let mut chunk = [0_u8; 4_096];
+    loop {
+        if bytes.len() >= max {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "header too large",
+            ));
+        }
+        let allowed = (max - bytes.len()).min(chunk_bytes);
+        let read = stream.read(&mut chunk[..allowed]).await?;
+        if read == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "header ended early",
+            ));
+        }
+        let scan_from = bytes.len().saturating_sub(3);
+        bytes.extend_from_slice(&chunk[..read]);
+        if let Some(end) = find_header_end(&bytes, scan_from) {
+            return Ok(HeaderBlock { bytes, end });
+        }
+    }
 }
 
 #[derive(Debug)]

@@ -75,8 +75,8 @@ deadline into an idle timeout; a separate real-listener test checks the exact
 408 wire response and final accounting. Each case must close with one denial
 and no active connection; lease close during a still-pending header is tested
 separately. A parser boundary case accepts 64 fields and rejects field 65 with
-the stable `too-many-headers`
-response and diagnostic code, without copying attacker-controlled names or
+the stable `too-many-headers` response and diagnostic code, without copying
+attacker-controlled names or
 values into the event. The byte ceiling accepts a complete terminator whose
 last byte lands exactly at the configured limit and rejects the same terminator
 shifted one byte beyond it.
@@ -90,6 +90,8 @@ reason is `invalid-authority`, not generic malformed syntax.
 The connection benchmark also sends a full 1 MiB header made from repeated
 `\r\n\rX` near matches. It must remain an ordinary bounded 431 denial and makes
 linear-scan CPU drift visible beside the existing all-`a` input.
+The same incremental framer reads upstream-proxy responses under an independent
+32 KiB ceiling; split-terminator and near-terminator cases cover both callers.
 
 Authority cases require bracketed IPv6 to remain accepted while bracketed DNS,
 IPv4, and IPvFuture text return the exact `invalid-ipv6-literal` reason. A real

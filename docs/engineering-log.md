@@ -4657,3 +4657,38 @@ The candidate was discarded. It provided no measurable end-to-end benefit and
 would replace expected constant-time duplicate checks with quadratic work for
 a hostile maximum-size DNS answer. Production source, behavior, test count,
 and complexity remain unchanged.
+
+## 2026-09-01 — share one bounded header framer
+
+The simplification rotation found two independent implementations of the same
+security-sensitive framing loop: one for the guest CONNECT request and one for
+an upstream proxy's CONNECT response. Both accumulated a bounded byte vector,
+resumed scanning three bytes before the previous read boundary, distinguished
+oversize from EOF, and returned bytes coalesced past the terminator.
+
+One crate-private `read_bounded_header` primitive now owns those mechanics.
+Each caller keeps its original ceiling, read chunk size, mature parser, and
+denial mapping. No public API, allocation shape, task, or dependency changes.
+Focused guest and upstream framing suites pass, including exact-limit,
+split-terminator, 1 MiB near-terminator, and 32 KiB upstream near-terminator
+cases.
+
+Three exact-parent comparisons put allowed CONNECT at 107.42–140.55
+microseconds for the candidate and 114.57–149.01 for the baseline. The
+intervals overlap, so no ordinary-path improvement is claimed. Three 32 KiB
+upstream near-terminator comparisons put the candidate at 173.79–199.96
+microseconds and the baseline at 176.50–228.92; this rules out a measured
+regression without treating the favorable direction as a durable speedup.
+
+The consolidation removes ten production code lines. Whole-tree SCC 4.0.0
+complexity moves from 757/2,253 to 751/2,236 structural/cognitive while the
+deterministic test count remains 180.
+
+The native and exact Rust 1.88 Linux factories passed all 180 deterministic
+cases, six doctests, documentation, package verification, benchmark smoke, and
+all six Linux resource lanes. Linux's TLS lane peaked at 14,948 KiB RSS, 265
+descriptors, and six threads, recovered to 10,256 KiB, eight descriptors, and
+five threads, and finished at 6,192 KiB, four descriptors, and two threads.
+The rootless 180/180 image is
+`sha256:41133bfefe81f2821cf16af889aebd453de02d38283d15081f2d70c7f8f6c63e`
+(40,904,531 bytes) and runs as UID/GID 65534.

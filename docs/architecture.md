@@ -84,7 +84,10 @@ backend or another public core object.
 The listener uses the socket peer address as host-supplied identity. Lease
 attachment and socket acceptance canonicalize an IPv4-mapped IPv6 peer to the
 equivalent IPv4 identity before registry lookup. Admission is reserved before
-a task is spawned. `httparse` parses a bounded header block. HTTP/1.1 requires
+a task is spawned. One internal incremental framer enforces the byte ceiling
+and terminator boundary for both guest CONNECT requests and upstream-proxy
+responses; the two callers retain distinct limits and read chunk sizes.
+`httparse` parses each bounded header block. HTTP/1.1 requires
 one valid Host field consistent with the CONNECT request-target, but only the
 request-target supplies authority to policy, DNS, and dialing. The policy then
 checks hostname denials, grants, and port before DNS. Hickory performs one

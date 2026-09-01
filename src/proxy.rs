@@ -11,7 +11,9 @@ use std::time::{Duration, Instant};
 
 #[cfg(test)]
 use hickory_resolver::TokioResolver;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
+#[cfg(test)]
+use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Builder as RuntimeBuilder;
 use tokio::sync::{Semaphore, mpsc as tokio_mpsc, watch};
@@ -20,7 +22,7 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tokio_util::task::task_tracker::TaskTrackerToken;
 
-use crate::connect::{ConnectRequest, find_header_end, parse_connect};
+use crate::connect::{ConnectRequest, HeaderBlock, parse_connect, read_bounded_header};
 use crate::diagnostic::{DenialReason, DiagnosticReporter};
 use crate::policy::canonical_hostname;
 use crate::resolver::{ResolverBackend, build_system_resolver};
@@ -1420,7 +1422,7 @@ async fn read_connect_header<R>(
 where
     R: AsyncRead + Unpin,
 {
-    match complete_before_deadline(deadline, read_header(client, max_bytes)).await {
+    match complete_before_deadline(deadline, read_bounded_header(client, max_bytes, 4_096)).await {
         Some(Ok(header)) => Ok(header),
         Some(Err(error)) if error.kind() == io::ErrorKind::InvalidData => {
             Err(Denial::HEADER_TOO_LARGE)
@@ -1508,46 +1510,6 @@ fn is_proxy_endpoint(address: SocketAddr, endpoint: SocketAddr) -> bool {
         || endpoint_ip.is_unspecified()
             && address_ip.is_loopback()
             && (endpoint.is_ipv6() || address.is_ipv4())
-}
-
-struct HeaderBlock {
-    bytes: Vec<u8>,
-    end: usize,
-}
-
-// Keep the hostile-input scan behind a stable code-generation boundary.
-// Whole-program LTO otherwise coupled its loop layout to unrelated policy
-// constructor changes; the committed 1 MiB benchmark reproduced the effect.
-#[inline(never)]
-async fn read_header<R>(stream: &mut R, max: usize) -> io::Result<HeaderBlock>
-where
-    R: AsyncRead + Unpin,
-{
-    // Keep ordinary CONNECT requests in one allocation without reserving a
-    // full read chunk for every concurrent handshake.
-    let mut bytes = Vec::with_capacity(max.min(1_024));
-    let mut chunk = [0_u8; 4_096];
-    loop {
-        if bytes.len() >= max {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "header too large",
-            ));
-        }
-        let allowed = (max - bytes.len()).min(chunk.len());
-        let read = stream.read(&mut chunk[..allowed]).await?;
-        if read == 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "header ended early",
-            ));
-        }
-        let scan_from = bytes.len().saturating_sub(3);
-        bytes.extend_from_slice(&chunk[..read]);
-        if let Some(end) = find_header_end(&bytes, scan_from) {
-            return Ok(HeaderBlock { bytes, end });
-        }
-    }
 }
 
 async fn deny(
@@ -4212,7 +4174,7 @@ mod tests {
             wire.extend_from_slice(b"\r\n\r\nfollowing");
             let mut input = wire.as_slice();
             let header = runtime
-                .block_on(read_header(&mut input, 8_192))
+                .block_on(read_bounded_header(&mut input, 8_192, 4_096))
                 .expect("boundary-spanning terminator");
 
             assert_eq!(header.end, start + 4);
@@ -4232,13 +4194,14 @@ mod tests {
         let mut exact = vec![b'a'; LIMIT - 4];
         exact.extend_from_slice(b"\r\n\r\n");
         let header = runtime
-            .block_on(read_header(&mut exact.as_slice(), LIMIT))
+            .block_on(read_bounded_header(&mut exact.as_slice(), LIMIT, 4_096))
             .expect("terminator ending at the byte limit");
         assert_eq!(header.end, LIMIT);
 
         let mut over = vec![b'a'; LIMIT - 3];
         over.extend_from_slice(b"\r\n\r\n");
-        let Err(error) = runtime.block_on(read_header(&mut over.as_slice(), LIMIT)) else {
+        let Err(error) = runtime.block_on(read_bounded_header(&mut over.as_slice(), LIMIT, 4_096))
+        else {
             panic!("accepted terminator ending beyond the byte limit");
         };
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);

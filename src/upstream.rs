@@ -3,10 +3,10 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::TcpStream;
 
-use crate::connect::find_header_end;
+use crate::connect::{HeaderBlock, read_bounded_header};
 
 const MAX_RESPONSE_HEADER_BYTES: usize = 32 * 1_024;
 const MAX_RESPONSE_HEADERS: usize = 64;
@@ -39,30 +39,8 @@ pub(crate) async fn connect_via(
     let request = format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n");
     stream.write_all(request.as_bytes()).await?;
 
-    let mut bytes = Vec::with_capacity(1_024);
-    let end = loop {
-        if bytes.len() == MAX_RESPONSE_HEADER_BYTES {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "upstream proxy response header is too large",
-            ));
-        }
-        let mut chunk = [0_u8; 1_024];
-        let remaining = MAX_RESPONSE_HEADER_BYTES - bytes.len();
-        let chunk_len = remaining.min(chunk.len());
-        let read = stream.read(&mut chunk[..chunk_len]).await?;
-        if read == 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "upstream proxy closed before a complete response",
-            ));
-        }
-        let scan_from = bytes.len().saturating_sub(3);
-        bytes.extend_from_slice(&chunk[..read]);
-        if let Some(end) = find_header_end(&bytes, scan_from) {
-            break end;
-        }
-    };
+    let HeaderBlock { mut bytes, end } =
+        read_bounded_header(&mut stream, MAX_RESPONSE_HEADER_BYTES, 1_024).await?;
     validate_response(&bytes[..end])?;
     let prefix = bytes.split_off(end);
     Ok(ConnectedStream::with_prefix(stream, prefix))
@@ -154,7 +132,10 @@ mod tests {
             let mut bytes = response[..first_read].to_vec();
             let scan_from = bytes.len().saturating_sub(3);
             bytes.extend_from_slice(&response[first_read..]);
-            assert_eq!(find_header_end(&bytes, scan_from), Some(expected));
+            assert_eq!(
+                crate::connect::find_header_end(&bytes, scan_from),
+                Some(expected)
+            );
         }
     }
 }
