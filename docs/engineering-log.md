@@ -2932,3 +2932,32 @@ host-kernel identity limits, broader parser and resolver behavior, evolving TLS
 compatibility, terminal-path resources under active tunnels, admission
 fairness, control-plane saturation, and deployment integration. No security
 claim, public API, source, test, dependency, or factory behavior changed.
+
+## 2026-09-01 — soak real connection terminal paths
+
+The resource factory previously measured empty identity churn and concurrent
+host management, but neither lane repeatedly owned guest and upstream sockets.
+A third opt-in lane now keeps one proxy, lease, and local echo listener alive.
+Each iteration completes a one-byte CONNECT tunnel with graceful half-close,
+then sends a hostname denial that must stop before DNS. Every batch waits for
+the lease's active count to return to zero before sampling resources; certified
+close must report exactly one completion and one denial per iteration.
+
+At the standard small-factory setting, the macOS lane ran 500 completed tunnels
+plus 500 denials in 282 ms. It held the active baseline's descriptor envelope
+at 13–14 during batches and returned to 9 descriptors and 2 threads after
+shutdown. The exact Rust 1.88 Linux lane ran the same 1,000 connections in 253
+ms: it began active at 9 descriptors and 6 threads, returned to 8 and 5 after
+the second batch, and finished at 4 and 2. RSS finished at 4,944 KiB. This scope
+is explicit: repeated reset, timeout, transfer-limit, long-lived, and
+backpressured resource lanes remain open rather than being implied by these two
+terminal paths.
+
+Whole-tree SCC 4.0.0 complexity moved from 573/1,742 to 580/1,758
+structural/cognitive, entirely in the opt-in measurement target. Production
+code and deterministic case count are unchanged. The native and exact Linux
+factories, package verification, and rootless 138/138 conformance run passed.
+Because the resource executable is not shipped in the stripped runner, the
+image remains
+`sha256:911cf1e1b00046aeed79dad19d252c52863ada036992da6a0b201b8494ab6e97`
+(40,555,530 bytes).

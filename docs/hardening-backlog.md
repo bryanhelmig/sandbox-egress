@@ -39,7 +39,8 @@ contributor instead of preserving solved work as apparent backlog.
 - Accounting when a policy ceiling and an independent transport failure become
   observable at nearly the same time.
 - Large full-duplex transfers and asymmetric traffic.
-- File-descriptor release after every terminal path.
+- File-descriptor release under repeated reset, timeout, and transfer-limit
+  terminal paths; completion and pre-DNS denial are already soaked.
 
 ## Capacity and denial of service
 
@@ -51,8 +52,8 @@ contributor instead of preserving solved work as apparent backlog.
 - A bounded trusted-host control-plane design that preserves nonblocking Drop
   cleanup; concurrent caller recovery is measured, but outstanding host calls
   are not currently capped inside the crate.
-- Stable RSS, threads, tasks, sockets, and descriptors under active connection
-  and tunnel soak.
+- Stable RSS, threads, tasks, sockets, and descriptors under long-lived,
+  concurrent, and backpressured tunnel soak.
 - Allocation and copy overhead per connection and per transferred byte.
 - Long-duration downstream diagnostic retention and aggregation behavior; the
   proxy-side reason cardinality, emission rate, and channel work are bounded.

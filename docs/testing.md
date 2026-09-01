@@ -235,10 +235,13 @@ p50/p95/p99 setup latency, peak RSS, threads, and file descriptors.
 The opt-in resource target first runs identity churn with the proxy still alive
 and samples each batch. A second lane synchronizes 64 host threads, holds all
 of their distinct attached leases, then releases their close calls together in
-four repeated batches. It samples the intentional peak and requires descriptor
-and thread recovery after every batch and shutdown. On Linux the collectors
-read `/proc`; on macOS they use `ps` and `lsof`; other targets compile and
-report unsupported counters as absent. Run
+four repeated batches. A third lane keeps one real lease and upstream alive,
+then alternates completed echo tunnels with pre-DNS hostname denials. It waits
+for active ownership to return to zero and samples descriptor and thread
+recovery after every batch and final shutdown; final counters must exactly
+match both terminal paths. On Linux the collectors read `/proc`; on macOS they
+use `ps` and `lsof`; other targets compile and report unsupported counters as
+absent. Run
 `./scripts/measure-resources.sh [runs-per-batch] [batches]`; the concurrent lane
 can be adjusted with `SANDBOX_EGRESS_CONTROL_CONCURRENCY` and
 `SANDBOX_EGRESS_CONTROL_BATCHES`.

@@ -254,7 +254,7 @@ scripts:
 ./scripts/check.sh              format, compile, lint, test, docs, package
 ./scripts/test-conformance.sh   hostile lifecycle and concurrency cases
 ./scripts/bench.sh              Criterion performance baseline
-./scripts/measure-resources.sh  opt-in RSS, thread, and descriptor soak
+./scripts/measure-resources.sh  lease, control, and active-socket resource soak
 ./scripts/measure-complexity.sh source size and complexity trend report
 ./scripts/measure-load.sh       concurrent CONNECT capacity and tail latency
 ./scripts/measure-throughput.sh concurrent upload/download tunnel throughput

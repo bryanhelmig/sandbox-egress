@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Extend resource measurement through repeated completed tunnels and pre-DNS
+  denials, with exact accounting and per-batch descriptor/thread recovery.
 - Forward the exact permitted upload and download prefix before rejecting the
   first read beyond a tunnel byte ceiling, independent of read coalescing.
 - Pin upstream refusal before CONNECT success and guest-reset broken-pipe

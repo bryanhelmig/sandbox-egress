@@ -1,13 +1,15 @@
 //! Opt-in process resource measurements under repeated lease churn.
 
 use std::env;
-use std::net::{IpAddr, Ipv4Addr};
+use std::io::{Read, Write};
+use std::net::{IpAddr, Ipv4Addr, Shutdown, TcpListener, TcpStream};
 #[cfg(target_os = "macos")]
 use std::process::Command;
 use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use ipnet::IpNet;
 use sandbox_egress::{PeerIdentity, Policy, Proxy, ProxyConfig};
 
 #[derive(Clone, Copy, Debug)]
@@ -195,6 +197,136 @@ fn concurrent_management_churn_releases_process_resources() {
         finished.threads,
     );
     assert_stable_non_memory_resources(process_start, finished);
+}
+
+#[test]
+#[ignore = "resource soak is opt-in; run scripts/measure-resources.sh"]
+fn terminal_connection_churn_releases_process_resources() {
+    let runs_per_batch = env_number("SANDBOX_EGRESS_SOAK_RUNS", 2_000);
+    let batches = env_number("SANDBOX_EGRESS_SOAK_BATCHES", 4);
+    assert!(runs_per_batch > 0 && batches > 0);
+    let completed_tunnels = runs_per_batch.saturating_mul(batches);
+    assert!(completed_tunnels < 0x00ff_ffff);
+
+    let process_start = Resources::sample();
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind soak upstream");
+    let port = listener.local_addr().expect("soak upstream address").port();
+    let upstream = thread::spawn(move || {
+        for _ in 0..completed_tunnels {
+            let (mut stream, _) = listener.accept().expect("accept soak tunnel");
+            let mut marker = [0_u8; 1];
+            stream.read_exact(&mut marker).expect("read soak marker");
+            stream.write_all(&marker).expect("echo soak marker");
+        }
+    });
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            Policy::builder()
+                .allow_network("127.0.0.0/8".parse::<IpNet>().expect("loopback CIDR"))
+                .allow_port(port)
+                .build()
+                .expect("valid soak policy"),
+        )
+        .expect("attach soak lease");
+    thread::sleep(Duration::from_millis(25));
+    let active_start = Resources::sample();
+    let started = Instant::now();
+    let allowed_request = format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
+    let denied_request =
+        format!("CONNECT denied.test:{port} HTTP/1.1\r\nHost: denied.test\r\n\r\n");
+
+    eprintln!(
+        "connection_soak event=start runs_per_batch={runs_per_batch} batches={batches} process_rss_kib={:?} process_fds={:?} process_threads={:?} active_rss_kib={:?} active_fds={:?} active_threads={:?}",
+        process_start.rss_kib,
+        process_start.descriptors,
+        process_start.threads,
+        active_start.rss_kib,
+        active_start.descriptors,
+        active_start.threads,
+    );
+
+    for batch in 0..batches {
+        for _ in 0..runs_per_batch {
+            complete_soak_tunnel(lease.endpoint().socket_addr(), allowed_request.as_bytes());
+            deny_soak_tunnel(lease.endpoint().socket_addr(), denied_request.as_bytes());
+        }
+        wait_for_no_active_connections(&lease);
+        let current = Resources::sample();
+        eprintln!(
+            "connection_soak event=batch batch={} completed={} denied={} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
+            batch + 1,
+            (batch + 1).saturating_mul(runs_per_batch),
+            (batch + 1).saturating_mul(runs_per_batch),
+            started.elapsed().as_millis(),
+            current.rss_kib,
+            current.descriptors,
+            current.threads,
+        );
+        assert_stable_non_memory_resources(active_start, current);
+    }
+
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(2))
+        .expect("close connection-soak lease")
+        .usage();
+    assert_eq!(final_usage.completed_connections, completed_tunnels as u64);
+    assert_eq!(final_usage.denied_connections, completed_tunnels as u64);
+    assert_eq!(final_usage.active_connections, 0);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(2))
+        .expect("proxy shutdown");
+    upstream.join().expect("soak upstream thread");
+    thread::sleep(Duration::from_millis(25));
+    let finished = Resources::sample();
+    eprintln!(
+        "connection_soak event=finish completed={completed_tunnels} denied={completed_tunnels} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
+        started.elapsed().as_millis(),
+        finished.rss_kib,
+        finished.descriptors,
+        finished.threads,
+    );
+    assert_stable_non_memory_resources(process_start, finished);
+}
+
+fn complete_soak_tunnel(endpoint: std::net::SocketAddr, request: &[u8]) {
+    let mut client = TcpStream::connect(endpoint).expect("connect soak proxy");
+    client.write_all(request).expect("write soak CONNECT");
+    let mut response = [0_u8; 39];
+    client
+        .read_exact(&mut response)
+        .expect("read soak CONNECT response");
+    assert_eq!(&response, b"HTTP/1.1 200 Connection Established\r\n\r\n");
+    client.write_all(b"x").expect("write soak marker");
+    client
+        .shutdown(Shutdown::Write)
+        .expect("finish soak upload");
+    let mut echoed = Vec::new();
+    client.read_to_end(&mut echoed).expect("read soak echo");
+    assert_eq!(echoed, b"x");
+}
+
+fn deny_soak_tunnel(endpoint: std::net::SocketAddr, request: &[u8]) {
+    let mut client = TcpStream::connect(endpoint).expect("connect denial proxy");
+    client.write_all(request).expect("write denied CONNECT");
+    let mut response = String::new();
+    client
+        .read_to_string(&mut response)
+        .expect("read soak denial");
+    assert!(response.starts_with("HTTP/1.1 403"), "{response}");
+    assert!(response.contains("host-denied"), "{response}");
+}
+
+fn wait_for_no_active_connections(lease: &sandbox_egress::Lease) {
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while lease.usage().active_connections != 0 {
+        assert!(
+            Instant::now() < deadline,
+            "connection work did not return to zero"
+        );
+        thread::yield_now();
+    }
 }
 
 fn env_number(name: &str, default: usize) -> usize {
