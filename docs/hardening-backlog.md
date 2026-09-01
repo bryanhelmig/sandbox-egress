@@ -10,8 +10,10 @@ contributor instead of preserving solved work as apparent backlog.
 
 ## Lifecycle and identity
 
-- Source-address reuse with accepted, queued, retransmitted, and delayed SYNs.
-- Old-run connections that arrive after a new policy is attached.
+- Retransmitted or delayed old-run SYNs that arrive after listener-level close
+  certification, including before or after a replacement policy is attached.
+  This needs the host-cage/conntrack harness because a TCP listener cannot
+  authenticate the run generation of a packet arriving after identity reuse.
 - Host fencing requirements for Firecracker TAP/NAT/conntrack teardown.
 
 ## Request parsing and authority

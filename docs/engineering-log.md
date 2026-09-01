@@ -5320,3 +5320,18 @@ and individual samples overlapped substantially; it is not evidence for a
 speedup. Four workers were 8.4% below the two-worker median and add two steady
 threads. Both candidates were removed. The committed two-worker runtime and
 production behavior are unchanged.
+
+## 2026-09-01 — remove completed work from the active map
+
+The final documentation simplification reconciled the hardening backlog with
+the conformance record. Accepted old sockets, queued sockets under command
+pressure, and replacement-policy isolation are implemented and tested, so the
+active lifecycle item now names only retransmitted or delayed SYNs arriving
+after listener-level certification. That residual problem explicitly belongs
+to the future host-cage and conntrack harness because the listener cannot
+authenticate a packet's run generation after source-address reuse.
+
+The roadmap now marks the completed repository spine and phase-revocation
+milestones, and old nono commit references are labeled historical instead of
+appearing to conflict with the reviewed table pin. This changes no security
+claim or production behavior; it makes the next work selection more accurate.

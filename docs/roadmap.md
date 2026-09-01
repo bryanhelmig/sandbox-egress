@@ -2,19 +2,19 @@
 
 ## M0 — repository and lifecycle spine
 
-- Public `Proxy / Policy / Lease` shape.
-- Owned runtime and synchronous management channel.
-- Immutable per-run policy and source-IP attachment.
-- CONNECT authority filtering, DNS/IP guard, direct dialing, accounting.
-- Fallible, ownership-retaining close.
-- Unit, integration, concurrency, docs, CI, and microbenchmark entry points.
+- [x] Public `Proxy / Policy / Lease` shape.
+- [x] Owned runtime and synchronous management channel.
+- [x] Immutable per-run policy and source-IP attachment.
+- [x] CONNECT authority filtering, DNS/IP guard, direct dialing, accounting.
+- [x] Fallible, ownership-retaining close.
+- [x] Unit, integration, concurrency, docs, CI, and microbenchmark entry points.
 
 ## M1 — prove revocation
 
-- Controlled resolver and dialer phase barriers.
-- Revocation conformance for headers, DNS, dial, and tunnel.
-- Active socket/task gauges and final-zero assertions.
-- File-descriptor/thread/RSS soak harness on Linux and macOS.
+- [x] Controlled resolver and dialer phase barriers.
+- [x] Revocation conformance for headers, DNS, dial, and tunnel.
+- [x] Active socket/task gauges and final-zero assertions.
+- [x] File-descriptor/thread/RSS soak harness on Linux and macOS.
 - [x] Structured denial events with bounded fields and rate limiting.
 
 ## M2 — precise TLS authority

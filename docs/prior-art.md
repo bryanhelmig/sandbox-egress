@@ -110,9 +110,10 @@ conformance case now proves that distinction on the real resolver wire path
 for shorthand, leading-zero, hexadecimal, and decimal spellings; all resolve
 to loopback and reach zero connector calls.
 
-The nono pin advanced from `8f15fc86` to `7989b578` during this review. The
-intervening change only expanded environment variables in credential
-local-socket paths; it did not alter the proxy or the comparison above.
+An earlier nono review advanced from `8f15fc86` to `7989b578`. That intervening
+change only expanded environment variables in credential local-socket paths;
+it did not alter the proxy or the comparison above. The later table pin
+`d3c6f6b0` is the revision used for the current accept-loop comparison.
 
 ## Provider control-plane comparison
 
@@ -126,7 +127,7 @@ reviewed in the same comparison are already inside the default link-local or
 non-global IPv6 floor; importing provider domain lists or broad internal DNS
 suffixes would duplicate the resolve-and-check guarantee and was not retained.
 
-A follow-up against nono `46867b2f` and ressrf `52fc89cf` found no
+An earlier follow-up against nono `46867b2f` and ressrf `52fc89cf` found no
 additional default address class to import. Nono's proxy inventory names AWS
 IPv4 and IPv6 metadata plus Google and Azure metadata hostnames. Ressrf's cloud
 tier additionally names the ECS task endpoint `169.254.170.2` and Azure
