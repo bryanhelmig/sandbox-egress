@@ -5365,3 +5365,20 @@ socket. That socket is terminal, is charged as one unadmitted denial to the old
 lease, and never increments accepted or active work. A later retry certifies
 the exact snapshot. The focused case passed more than 25 repeated runs; the
 deterministic suite grows from 187 to 188 cases without production changes.
+
+## 2026-09-01 — retain the explicit coalesced-hello copy
+
+A performance simplification trial reused the owned CONNECT header vector for
+TLS inspection by draining the parsed header prefix, instead of copying the
+bounded coalesced `ClientHello` suffix into a new vector. All 20 TLS-focused
+cases passed, including exact wire retention, fragmentation, ECH, malformed
+input, deadline, and close behavior.
+
+Three one-second Criterion samples before and after used the end-to-end visible
+SNI path. Baseline point estimates were 143.50, 146.88, and 150.08 microseconds;
+candidate estimates were 142.70, 149.01, and 153.70 microseconds. The medians
+move from 146.88 to 149.01 microseconds, and Criterion classified every pair as
+no change or within its noise threshold. Saving one small allocation did not
+improve the measured connection path, while prefix draining adds mutation and
+partial-move mechanics. The candidate was removed and production code is
+unchanged.
