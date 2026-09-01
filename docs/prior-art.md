@@ -14,8 +14,8 @@ links remain upstream-owned and are not vendored.
 | [RunSeal](https://github.com/runseal-labs/runseal) | `001b0dd6` | black-box proxy-bypass conformance across the process and network cage | sandbox product; listener lifecycle is not its reusable boundary |
 | [canister](https://github.com/dergraf/canister) | `27434158` | hostile L7 contracts, body limits, DLP | sandbox product, not reusable lifecycle primitive |
 | [eavs](https://github.com/byteowlz/eavs) | `afa178a0` | transparent destination recovery and SNI/Host ACLs | no ephemeral run ownership |
-| [microsandbox](https://github.com/superradcompany/microsandbox) | `5b1c63d9` | network-layer DNS timeout/rebinding controls | microVM network subsystem, not forward-proxy lease API |
-| [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) | `f7180c0f` | operator-owned corporate proxy chaining after local SSRF validation | product supervisor with broader TLS/auth/bypass configuration |
+| [microsandbox](https://github.com/superradcompany/microsandbox) | `df4e1ead` | network-layer DNS timeout/rebinding controls | microVM network subsystem, not forward-proxy lease API |
+| [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) | `4ef84234` | operator-owned corporate proxy chaining after local SSRF validation | product supervisor with broader TLS/auth/bypass configuration |
 
 Also relevant: Rama for composable mature proxy machinery and VEY/G3 for
 production daemon limits, metrics, ACLs, and per-user policy.

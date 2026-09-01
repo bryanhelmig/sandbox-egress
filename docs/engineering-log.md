@@ -5084,3 +5084,18 @@ agrees with the earlier run: useful capacity saturates around 32–64 clients,
 and 256 materially worsens tail latency while reducing throughput. The recent
 policy and diagnostic changes do not justify a runtime tuning change. No
 production code is retained from this measurement.
+
+## 2026-09-01 — refresh prior-art provenance
+
+The final comparison rotation rechecked every pinned upstream head. Smokescreen,
+Lens, motosan-sandbox, ressrf, Raincoat, canister, eavs, and the previously
+reviewed smaller projects remain at their recorded commits. Microsandbox moved
+from `5b1c63d9` to `df4e1ead`; its three intervening commits cover immutable
+runtime-image publication and dependency updates, including its guest TCP
+stack, but no DNS-policy or egress-contract change. OpenShell moved from
+`f7180c0f` to `4ef84234`; its ten commits cover CLI exit status, process
+shutdown, release mechanics, policy provenance, and product resource cleanup,
+with no proxy or egress-policy change.
+
+The two table pins now point at the reviewed heads. No Sandbox Egress feature,
+dependency, or behavior change is justified by these deltas.
