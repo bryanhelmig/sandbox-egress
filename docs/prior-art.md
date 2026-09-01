@@ -7,7 +7,7 @@ links remain upstream-owned and are not vendored.
 | --- | --- | --- | --- |
 | [Stripe Smokescreen](https://github.com/stripe/smokescreen) | `d4da883a` | ACL and IP filtering, operational limits, diagnostics | Go daemon; no run lease |
 | [lens-sandbox-core](https://github.com/lensapp/lens-sandbox-core) | `2bc4ecc5` | broad Rust DNS/proxy/TLS/policy implementation and Linux cage boundary | shared mutable policy and detached connection lifecycle |
-| [nono](https://github.com/nolabs-ai/nono) | `46867b2f` | supervisor-side proxy, credential boundary, audit | guest session token and accept-loop shutdown, not certified close |
+| [nono](https://github.com/nolabs-ai/nono) | `d3c6f6b0` | supervisor-side proxy, credential boundary, bounded-consumer operational lessons | guest session token and accept-loop shutdown, not certified close |
 | [motosan-sandbox](https://github.com/motosan-dev/motosan-sandbox) | `13eab245` | small per-run CONNECT proxy and hard routing | one proxy per run; spawned tunnels are not a shared lease |
 | [ressrf](https://github.com/timescale/ressrf) | `52fc89cf` | generated forbidden ranges, DNS-pinned transports, adversarial parser cases | policy/transport components rather than lease ownership |
 | [Raincoat](https://github.com/zachgenius/raincoat) | `811c8330` | honest host-cage boundary and hostile plain-HTTP framing cases | sandbox product with per-process proxy ownership |

@@ -427,4 +427,5 @@ channel-suppressed events accumulate with saturation and are reported on the
 next event the channel accepts. Diagnostic loss never weakens enforcement or
 denial accounting. A public real-socket concurrency case holds a zero-capacity
 channel full throughout a 64-connection denial storm, then requires certified
-close and exact final counters.
+close and exact final counters. The first disconnected send atomically disables
+later reporting before rate-state locking or event construction.

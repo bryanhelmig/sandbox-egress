@@ -278,7 +278,9 @@ zero.
 
 Diagnostic limiter tests use an injected monotonic instant rather than sleeps.
 They prove a fixed-window excess and a full channel are both nonblocking and
-appear in the next delivered event's saturating suppression count. A public
+appear in the next delivered event's saturating suppression count. A
+receiver-disconnect case proves the first failed send disables later reporting
+before it consumes another rate slot. A public
 real-socket concurrency case keeps a zero-capacity diagnostic channel full
 while 64 admitted connections are denied, then requires successful certified
 close and exact final accounting. A separate case queues one hostname denial,

@@ -5042,3 +5042,27 @@ branch or secondary index. A focused case covers duplicate exact grants,
 wildcard grants, and denials. Public API, rule precedence, and accepted
 hostname behavior are unchanged. Structural/cognitive complexity remains
 770/2,282, and the deterministic test count rises from 183 to 184.
+
+## 2026-09-01 — stop diagnostic work after receiver disconnect
+
+The comparison rotation refreshed nono from `46867b2f` to `d3c6f6b0`. Its only
+intervening proxy change disables a standalone audit buffer that has no
+consumer; otherwise the buffer fills and every later request produces more
+operational noise. Sandbox Egress already uses a bounded nonblocking channel,
+but the review exposed a smaller mismatch in its own promise: after receiver
+disconnect, every denial still locked and advanced the rate state before the
+send failed.
+
+The reporter now records receiver disconnection in one atomic flag. The first
+failed send performs the existing bounded work and disables the path; later
+denials return before rate-state locking and event construction. A deterministic
+case drops the receiver, reports twice, and requires only the first attempt to
+consume a rate slot. Enforcement and denial accounting remain upstream of
+diagnostic delivery and are unchanged. Fifty consecutive focused runs pass;
+whole-tree structural/cognitive complexity moves from 770/2,282 to 771/2,285,
+localized to the reporter and its proof. The deterministic test count rises
+from 184 to 185.
+
+The complete native factory passes all 185 deterministic tests, six
+documentation examples, formatting, all-target lints, documentation,
+dependency policy, package verification, benchmark smoke, and release build.

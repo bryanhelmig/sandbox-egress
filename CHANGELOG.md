@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Atomically disable diagnostics after the caller-owned receiver disconnects,
+  avoiding repeated rate-state work under later denial volume.
 - Canonically order and deduplicate exact and wildcard hostname grants and
   denials when freezing a policy, avoiding redundant retained matching work.
 - Add optional host-configured HTTP CONNECT chaining after local destination

@@ -1,4 +1,5 @@
 use std::fmt;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
@@ -61,6 +62,7 @@ impl fmt::Debug for DiagnosticReporter {
 struct ReporterInner {
     sender: mpsc::SyncSender<DiagnosticEvent>,
     max_events_per_second: u32,
+    connected: AtomicBool,
     state: Mutex<RateState>,
 }
 
@@ -76,6 +78,7 @@ impl DiagnosticReporter {
             Arc::new(ReporterInner {
                 sender: config.sender.clone(),
                 max_events_per_second: config.max_events_per_second,
+                connected: AtomicBool::new(true),
                 state: Mutex::new(RateState {
                     window_started: Instant::now(),
                     emitted: 0,
@@ -91,6 +94,9 @@ impl DiagnosticReporter {
 
     fn report_at(&self, lease_id: u64, identity: PeerIdentity, reason: DenialReason, now: Instant) {
         let Some(inner) = &self.0 else { return };
+        if !inner.connected.load(Ordering::Acquire) {
+            return;
+        }
         let event = {
             let mut state = inner.state.lock().expect("diagnostic rate state poisoned");
             if now.saturating_duration_since(state.window_started) >= DIAGNOSTIC_WINDOW {
@@ -110,7 +116,10 @@ impl DiagnosticReporter {
             }
         };
         match inner.sender.try_send(event) {
-            Ok(()) | Err(mpsc::TrySendError::Disconnected(_)) => {}
+            Ok(()) => {}
+            Err(mpsc::TrySendError::Disconnected(_)) => {
+                inner.connected.store(false, Ordering::Release);
+            }
             Err(mpsc::TrySendError::Full(event)) => {
                 let mut state = inner.state.lock().expect("diagnostic rate state poisoned");
                 state.suppressed = state
@@ -175,6 +184,24 @@ mod tests {
                 .suppressed_before,
             1
         );
+    }
+
+    #[test]
+    fn disconnected_receiver_disables_later_reporting_work() {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let reporter = DiagnosticReporter::new(Some(&DiagnosticConfig {
+            sender,
+            max_events_per_second: 2,
+        }));
+        drop(receiver);
+        let started = Instant::now();
+
+        reporter.report_at(LEASE_ID, IDENTITY.clone(), REASON, started);
+        reporter.report_at(LEASE_ID, IDENTITY, REASON, started);
+
+        let inner = reporter.0.as_ref().expect("configured reporter");
+        assert!(!inner.connected.load(Ordering::Acquire));
+        assert_eq!(inner.state.lock().expect("rate state").emitted, 1);
     }
 
     #[test]
