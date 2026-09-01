@@ -83,6 +83,36 @@ fn attach_local(proxy: &Proxy, policy: Policy) -> sandbox_egress::Lease {
         .expect("attach localhost")
 }
 
+fn header_denial(config: ProxyConfig, bytes: &[u8], finish_upload: bool) -> String {
+    let proxy = Proxy::start(config).expect("start proxy");
+    let lease = attach_local(&proxy, Policy::builder().build().expect("valid policy"));
+    let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+    client
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .expect("set denial timeout");
+    client.write_all(bytes).expect("write header bytes");
+    if finish_upload {
+        client
+            .shutdown(Shutdown::Write)
+            .expect("finish header upload");
+    }
+    let mut response = String::new();
+    client
+        .read_to_string(&mut response)
+        .expect("read header denial");
+
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close denied lease")
+        .usage();
+    assert_eq!(final_usage.active_connections, 0);
+    assert_eq!(final_usage.denied_connections, 1);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+    response
+}
+
 #[test]
 fn connect_tunnels_and_accounts_bytes() {
     let (port, echo) = start_echo();
@@ -156,6 +186,35 @@ fn close_revokes_a_slow_header_without_waiting_for_the_peer() {
     proxy
         .shutdown(Instant::now() + Duration::from_secs(1))
         .expect("proxy shutdown");
+}
+
+#[test]
+fn oversized_header_has_a_distinct_denial() {
+    let response = header_denial(
+        ProxyConfig::default().with_max_header_bytes(1_024),
+        &[b'x'; 1_024],
+        false,
+    );
+    assert!(response.starts_with("HTTP/1.1 431"), "{response}");
+    assert!(response.contains("header-too-large"), "{response}");
+}
+
+#[test]
+fn early_header_eof_has_a_distinct_denial() {
+    let response = header_denial(ProxyConfig::default(), b"CONNECT incomplete", true);
+    assert!(response.starts_with("HTTP/1.1 400"), "{response}");
+    assert!(response.contains("header-eof"), "{response}");
+}
+
+#[test]
+fn header_deadline_has_a_distinct_denial() {
+    let response = header_denial(
+        ProxyConfig::default().with_header_timeout(Duration::from_millis(20)),
+        b"CONNECT slow",
+        false,
+    );
+    assert!(response.starts_with("HTTP/1.1 408"), "{response}");
+    assert!(response.contains("header-timeout"), "{response}");
 }
 
 #[test]

@@ -640,14 +640,11 @@ async fn serve_connect(
     let started = TokioInstant::now();
     let handshake_deadline = started + state.policy.handshake_timeout;
     let header_deadline = (started + config.header_timeout).min(handshake_deadline);
-    let Ok(Ok(header)) = timeout_at(
-        header_deadline,
-        read_header(&mut client, config.max_header_bytes),
-    )
-    .await
-    else {
-        return deny(&mut client, state, 408, "header-timeout").await;
-    };
+    let header =
+        match read_connect_header(&mut client, config.max_header_bytes, header_deadline).await {
+            Ok(header) => header,
+            Err(denial) => return deny(&mut client, state, denial.status, denial.reason).await,
+        };
 
     let request = match parse_connect(&header.bytes[..header.end]) {
         Ok(request) => request,
@@ -839,9 +836,29 @@ impl Denial {
     const INVALID_HOSTNAME: Self = Self::new(400, "invalid-hostname");
     const IP_LITERAL_DENIED: Self = Self::new(403, "ip-literal-denied");
     const RESOLVED_ADDRESS_DENIED: Self = Self::new(403, "resolved-address-denied");
+    const HEADER_EOF: Self = Self::new(400, "header-eof");
+    const HEADER_READ_FAILED: Self = Self::new(400, "header-read-failed");
+    const HEADER_TIMEOUT: Self = Self::new(408, "header-timeout");
+    const HEADER_TOO_LARGE: Self = Self::new(431, "header-too-large");
 
     const fn new(status: u16, reason: &'static str) -> Self {
         Self { status, reason }
+    }
+}
+
+async fn read_connect_header(
+    client: &mut TcpStream,
+    max_bytes: usize,
+    deadline: TokioInstant,
+) -> Result<HeaderBlock, Denial> {
+    match timeout_at(deadline, read_header(client, max_bytes)).await {
+        Ok(Ok(header)) => Ok(header),
+        Ok(Err(error)) if error.kind() == io::ErrorKind::InvalidData => {
+            Err(Denial::HEADER_TOO_LARGE)
+        }
+        Ok(Err(error)) if error.kind() == io::ErrorKind::UnexpectedEof => Err(Denial::HEADER_EOF),
+        Ok(Err(_)) => Err(Denial::HEADER_READ_FAILED),
+        Err(_) => Err(Denial::HEADER_TIMEOUT),
     }
 }
 

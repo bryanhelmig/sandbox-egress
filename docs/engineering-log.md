@@ -738,3 +738,37 @@ classified it within the noise threshold.
 The exact Rust 1.88 Linux image passed the same factory and hostile lane. Its
 500-lease smoke again held eight descriptors and five threads while live,
 returned to four descriptors and two threads, and finished at 3,916 KiB RSS.
+
+## 2026-08-31 — precise bounded-header denials
+
+### Finding
+
+The CONNECT header reader was bounded and fail-closed, but its caller mapped
+every outcome to `408 header-timeout`. A byte-ceiling violation, guest write
+EOF, and an actual slow-header deadline were therefore indistinguishable in
+the client response and future operational telemetry.
+
+### Result
+
+Accepted a private acquisition phase that preserves four bounded outcomes:
+
+- `431 header-too-large` for the configured byte ceiling;
+- `400 header-eof` when the guest ends an incomplete request;
+- `408 header-timeout` for the absolute deadline;
+- `400 header-read-failed` for other socket failures.
+
+Three real-socket tests drive the first three outcomes and certify one denial
+and zero active connections after close. The four-case header filter, including
+the pre-existing close-during-slow-header test, passed 25 consecutive runs. The
+complete native factory passed 31 unit and 20 integration tests plus the
+serialized hostile lane.
+
+Whole-tree structural complexity moved from 328 to 334 and cognitive
+complexity from 966 to 983, including the new integration helper and cases.
+Connection benchmarks found no change: hostname denial centered at 73.94
+microseconds; the warmed rerun of allowed CONNECT centered at 111.18
+microseconds with a -6.89% to +1.26% interval and `p=0.43`.
+
+The exact Rust 1.88 Linux image passed the same factory and hostile lane. Its
+500-lease smoke held eight descriptors and five threads while live, returned
+to four descriptors and two threads, and finished at 4,012 KiB RSS.

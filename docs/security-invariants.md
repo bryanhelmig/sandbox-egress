@@ -42,6 +42,11 @@ Dialing receives only approved `SocketAddr` values and shares the absolute
 handshake deadline. Lease cancellation drops the in-progress connect future;
 certified close waits for the owning tracked connection task to disappear.
 
+CONNECT header acquisition has a process-wide byte ceiling and an absolute
+deadline capped by the lease handshake deadline. Oversize input, early EOF,
+timeout, and other socket read failure remain fail-closed and have distinct
+bounded reason codes.
+
 The forbidden-address floor applies IPv4 rules to both mapped and deprecated
 compatible IPv6 forms. The well-known NAT64 `/96` is decoded and the embedded
 IPv4 destination is checked. Local-use NAT64, Teredo, 6to4, and non-global
