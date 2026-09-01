@@ -1034,6 +1034,35 @@ removing four entries from a short linear prefix scan. The Linux 500-lease
 smoke held eight descriptors and five threads while live, returned to four
 descriptors and two threads, and finished at 3,980 KiB RSS.
 
+## 2026-08-31 — require native IPv6 global-unicast shape
+
+### Finding
+
+IANA's IPv6 address-space registry assigns global unicast from `2000::/3`.
+After the embedded-IPv4 cases, the policy still allowed any native IPv6 address
+that was not in the special-purpose table. Reserved shapes such as `4000::1`,
+`8000::1`, and `fe00::1` therefore passed. A deterministic policy case first
+reproduced the miss at `4000::1`.
+
+### Result
+
+Native IPv6 must now match `2000::/3`; the separately checked IPv4-mapped,
+IPv4-compatible, and well-known NAT64 paths retain their existing behavior.
+The special-purpose table then needs only four unsafe children inside the
+global block. Seven rows for local, reserved, multicast-adjacent, and other
+out-of-block shapes were removed because the global-unicast check subsumes
+them.
+
+Tests deny representative reserved blocks, continue to allow a native public
+IPv6 address and checked public embedded IPv4, and retain explicit network
+override. Whole-tree structural/cognitive complexity falls from 361/1,059 to
+359/1,052.
+
+The native factory, dependency audit, and exact Rust 1.88 Linux factory passed
+66 deterministic cases. The Linux 500-lease smoke held eight descriptors and
+five threads while live, returned to four descriptors and two threads, and
+finished at 3,996 KiB RSS.
+
 Whole-tree structural/cognitive complexity moved from 350/1,020 to 356/1,036.
 With diagnostics disabled, Criterion detected no change: allowed loopback was
 102.17–117.52 microseconds (`p=0.23`) and hostname denial was 68.00–73.52

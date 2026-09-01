@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Require native IPv6 destinations to be inside IANA's `2000::/3` global
+  unicast block before applying the smaller special-purpose deny table.
 - Reject the full IANA `2001::/23` protocol-assignments umbrella by default,
   closing unassigned IPv6 special-purpose gaps while preserving CIDR override.
 - Add opt-in, rate-limited structured denial events through a caller-owned

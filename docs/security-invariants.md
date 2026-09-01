@@ -86,6 +86,13 @@ more-specific special assignments that a deployment might intentionally use;
 those require an explicit CIDR grant. Unassigned children cannot become an
 allow-by-omission gap as the registry evolves.
 
+After separately decoding IPv4-mapped, deprecated IPv4-compatible, and
+well-known NAT64 forms, a native IPv6 destination must be inside IANA's
+`2000::/3` global unicast block. Reserved address-space blocks are denied by
+shape rather than by an incomplete enumeration. Four special-purpose ranges
+inside `2000::/3` remain explicitly denied. As with every floor rule, a trusted
+host can override this deliberately with an explicit CIDR grant.
+
 ## Shutdown result
 
 `Lease::close` consumes the lease. On deadline or coordination failure the

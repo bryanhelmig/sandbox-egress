@@ -321,17 +321,10 @@ const FORBIDDEN_V4_PREFIXES: &[(u32, u32)] = &[
 ];
 
 const FORBIDDEN_V6_PREFIXES: &[(u128, u32)] = &[
-    (0x0064_ff9b_0001_0000_0000_0000_0000_0000, 48), // local NAT64
-    (0x0100_0000_0000_0000_0000_0000_0000_0000, 64), // discard-only
-    (0x0100_0000_0000_0001_0000_0000_0000_0000, 64), // dummy
     (0x2001_0000_0000_0000_0000_0000_0000_0000, 23), // IETF assignments umbrella
     (0x2001_0db8_0000_0000_0000_0000_0000_0000, 32), // documentation
     (0x2002_0000_0000_0000_0000_0000_0000_0000, 16), // 6to4
     (0x3fff_0000_0000_0000_0000_0000_0000_0000, 20), // documentation
-    (0x5f00_0000_0000_0000_0000_0000_0000_0000, 16), // SRv6 SIDs
-    (0xfc00_0000_0000_0000_0000_0000_0000_0000, 7),  // unique-local
-    (0xfe80_0000_0000_0000_0000_0000_0000_0000, 10), // link-local
-    (0xfec0_0000_0000_0000_0000_0000_0000_0000, 10), // deprecated site-local
 ];
 
 fn forbidden_v4(address: Ipv4Addr) -> bool {
@@ -341,12 +334,14 @@ fn forbidden_v4(address: Ipv4Addr) -> bool {
 }
 
 fn forbidden_v6(address: Ipv6Addr) -> bool {
-    address.is_unspecified()
-        || address.is_loopback()
-        || address.is_multicast()
-        || FORBIDDEN_V6_PREFIXES
-            .iter()
-            .any(|&(network, length)| prefix_matches(u128::from(address), network, length, 128))
+    !prefix_matches(
+        u128::from(address),
+        0x2000_0000_0000_0000_0000_0000_0000_0000,
+        3,
+        128,
+    ) || FORBIDDEN_V6_PREFIXES
+        .iter()
+        .any(|&(network, length)| prefix_matches(u128::from(address), network, length, 128))
 }
 
 fn prefix_matches<T>(address: T, network: T, length: u32, width: u32) -> bool
@@ -405,6 +400,9 @@ mod tests {
             "2002::1",
             "3fff::1",
             "5f00::1",
+            "4000::1",
+            "8000::1",
+            "fe00::1",
         ] {
             let address = address.parse().expect("test IP");
             assert!(is_forbidden_destination(address), "{address}");
@@ -419,6 +417,11 @@ mod tests {
         ));
         assert!(!is_forbidden_destination(
             "64:ff9b::5db8:d822".parse().expect("NAT64 public test IP")
+        ));
+        assert!(!is_forbidden_destination(
+            "2606:4700:4700::1111"
+                .parse()
+                .expect("native public IPv6 test IP")
         ));
     }
 
