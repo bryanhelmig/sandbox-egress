@@ -5547,3 +5547,17 @@ this records allocator retention rather than claiming that resident memory
 returns to its pre-allocation value. The existing isolated Linux lanes remain
 the cross-platform release comparison, while this repetition proves the exact
 final local tree releases live sockets and workers.
+
+## 2026-09-01 — rebuild the final Linux certificate
+
+The pinned Rust 1.88 Debian factory passes the full current tree, including all
+188 deterministic tests, six doctests, benchmark smoke, documentation, package
+verification, and the eight release resource lanes. The stripped runner then
+repeats all 188 cases successfully as UID/GID 65534.
+
+The resulting conformance image is
+`sha256:85c1ecf02231e14a60d258ce0fecf6534fd5b9ca81797aa606ab4e2e2be79088`
+at 40,982,993 bytes. It contains the checked executables rather than the
+compiler, source, or build cache. The container package list has 68 files
+because the build context intentionally lacks local Git metadata; the native
+repository package remains the verified 69-file artifact.
