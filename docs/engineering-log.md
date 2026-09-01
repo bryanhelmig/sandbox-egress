@@ -4972,3 +4972,18 @@ workers. Four through eight remain on the broad plateau, while 16 declines and
 small `measure-throughput-sweep.sh` wrapper now reproduces the fixed-work,
 six-point, three-repeat experiment rather than changing behavior from a single
 favorable measurement.
+
+## 2026-09-01 — remove an unusable public policy type
+
+The simplification rotation audited every direct dependency and exported type.
+All eight runtime dependencies still own a deliberate maintained-parser,
+resolver, runtime, cancellation, network, or error boundary. One exported type
+did not: `HostPattern` was public even though no public API accepted or returned
+it. Callers can only install hostname rules through `PolicyBuilder::allow_host`
+and `deny_host`, which already parse and validate strings.
+
+`HostPattern` and its parser are now crate-private. This removes an orphan
+public compatibility obligation before 0.1 without changing the builder,
+immutable policy representation, accepted rule set, allocations, tasks, or
+data path. The deterministic test count and whole-tree 770/2,282
+structural/cognitive complexity remain unchanged.

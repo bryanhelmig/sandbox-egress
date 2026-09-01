@@ -29,24 +29,14 @@ pub enum EchPolicy {
     AllowOuterSni,
 }
 
-/// A canonical hostname pattern accepted by a [`Policy`].
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub enum HostPattern {
-    /// Match one canonical hostname exactly.
+pub(crate) enum HostPattern {
     Exact(String),
-    /// Match one or more subdomain labels, but not the suffix apex itself.
     Subdomains(String),
 }
 
 impl HostPattern {
-    /// Parse an ASCII hostname or a single left-most wildcard such as
-    /// `*.example.com`. The wildcard matches one or more complete labels.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`PolicyError::InvalidHostPattern`] for Unicode, malformed DNS
-    /// labels, IP literals, or wildcards in any other position.
-    pub fn parse(value: impl AsRef<str>) -> Result<Self, PolicyError> {
+    fn parse(value: impl AsRef<str>) -> Result<Self, PolicyError> {
         let value = value.as_ref();
         let (wildcard, hostname) = match value.strip_prefix("*.") {
             Some(hostname) => (true, hostname),

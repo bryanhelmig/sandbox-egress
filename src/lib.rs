@@ -21,6 +21,6 @@ pub use error::{
     ShutdownErrorKind,
 };
 pub use identity::{Endpoint, PeerIdentity};
-pub use policy::{EchPolicy, HostPattern, Policy, PolicyBuilder, TlsAuthority};
+pub use policy::{EchPolicy, Policy, PolicyBuilder, TlsAuthority};
 pub use proxy::{Lease, Proxy};
 pub use usage::{FinalUsage, Usage};
