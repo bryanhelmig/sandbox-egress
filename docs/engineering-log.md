@@ -2798,3 +2798,22 @@ peaked at 5,284 KiB RSS and returned to four descriptors and two threads at
 4,748 KiB in 1,094 ms. The rootless 134/134 conformance image is
 `sha256:7d595c29f08dae162dfd2a17654d7f03d5cf89d4a064821b4748886f8bc2e8d7`
 (40,531,681 bytes).
+
+## 2026-09-01 — add the missing usage observation barrier
+
+The first exact Rust 1.88 Linux run of the resolver-module simplification
+exposed a race in `global_capacity_rejection_is_attributed_and_retry_recovers`.
+The rejected IPv6 socket was terminal, but the immediate point-in-time usage
+snapshot still observed zero denials. Socket destruction and the atomic denial
+increment are both ordered under the lease phase lock before certified final
+usage, but the public live snapshot does not promise which becomes observable
+first to two different threads.
+
+The conformance case now waits, with a one-second deadline, for the expected
+atomic denial count just as it already waits for active admission. Production
+ordering was left unchanged; strengthening it would add a contract that lease
+correctness does not need. The focused case then passed 50 consecutive native
+runs. The corrected exact Linux factory passed all 134 deterministic cases,
+resource lanes, documentation, and package verification, and the rootless
+134/134 conformance run passed in the combined candidate image. Deterministic
+case count and production complexity are unchanged.

@@ -114,6 +114,10 @@ fn global_capacity_rejection_is_attributed_and_retry_recovers() {
     rejected.write_all(b"CONNECT queued").ok();
     let mut byte = [0_u8; 1];
     assert_terminal_read(rejected.read(&mut byte));
+    let accounting_deadline = Instant::now() + Duration::from_secs(1);
+    while ipv6_lease.usage().denied_connections != 1 && Instant::now() < accounting_deadline {
+        thread::yield_now();
+    }
     assert_eq!(ipv4_lease.usage().denied_connections, 0);
     assert_eq!(ipv6_lease.usage().accepted_connections, 0);
     assert_eq!(ipv6_lease.usage().denied_connections, 1);
