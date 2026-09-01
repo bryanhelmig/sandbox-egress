@@ -1,5 +1,5 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Process-wide proxy configuration.
 #[derive(Clone, Debug)]
@@ -15,6 +15,17 @@ pub struct ProxyConfig {
 }
 
 impl ProxyConfig {
+    pub(crate) fn validate(&self) -> Result<(), &'static str> {
+        let now = Instant::now();
+        if now.checked_add(self.header_timeout).is_none() {
+            return Err("header timeout is too large");
+        }
+        if now.checked_add(self.identity_reuse_quiet_period).is_none() {
+            return Err("identity reuse quiet period is too large");
+        }
+        Ok(())
+    }
+
     /// Set the listener address. Port zero asks the operating system to choose.
     pub fn with_bind_address(mut self, address: SocketAddr) -> Self {
         self.bind_address = address;
@@ -48,6 +59,9 @@ impl ProxyConfig {
     }
 
     /// Set the absolute deadline for receiving a complete CONNECT header.
+    ///
+    /// [`Proxy::start`](crate::Proxy::start) rejects durations that cannot be
+    /// represented as a runtime deadline.
     pub fn with_header_timeout(mut self, timeout: Duration) -> Self {
         self.header_timeout = timeout;
         self
@@ -55,6 +69,9 @@ impl ProxyConfig {
 
     /// Set the post-cancellation interval during which the old identity remains
     /// revoking so the accept loop can drain already-queued sockets.
+    ///
+    /// [`Proxy::start`](crate::Proxy::start) rejects durations that cannot be
+    /// represented as a runtime deadline.
     pub fn with_identity_reuse_quiet_period(mut self, period: Duration) -> Self {
         self.identity_reuse_quiet_period = period;
         self
@@ -72,5 +89,30 @@ impl Default for ProxyConfig {
             header_timeout: Duration::from_secs(10),
             identity_reuse_quiet_period: Duration::from_millis(25),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_unrepresentable_runtime_durations() {
+        assert!(
+            ProxyConfig::default()
+                .with_header_timeout(Duration::MAX)
+                .validate()
+                .is_err()
+        );
+        assert!(
+            ProxyConfig::default()
+                .with_identity_reuse_quiet_period(Duration::MAX)
+                .validate()
+                .is_err()
+        );
+        assert!(matches!(
+            crate::Proxy::start(ProxyConfig::default().with_header_timeout(Duration::MAX)),
+            Err(crate::ProxyError::Initialization(_))
+        ));
     }
 }

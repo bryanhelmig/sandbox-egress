@@ -848,3 +848,38 @@ contract and compile-surface cleanup, not a runtime performance claim.
 A cold exact-Rust-1.88 Linux rebuild passed the same factory and hostile lane.
 Its 500-lease smoke held eight descriptors and five threads while live,
 returned to four descriptors and two threads, and finished at 3,952 KiB RSS.
+
+## 2026-08-31 — reject unrepresentable runtime deadlines
+
+### Finding
+
+Public timeout setters accept `Duration`, including values that cannot be added
+to the platform's current monotonic clock. The connection path used unchecked
+`Instant + Duration` arithmetic for its absolute handshake, header, and DNS
+deadlines, so an extreme trusted configuration could panic a runtime task
+instead of returning a construction error or bounded denial.
+
+### Result
+
+`Policy::build` and `Proxy::start` now reject unrepresentable durations. The
+live connection path retains checked arithmetic as defense against elapsed
+startup time and platform clock boundaries. A runtime check that cannot form a
+handshake deadline fails closed with a bounded denial instead of panicking.
+
+The first implementation pushed `serve_connect` over the project's 100-line
+function ceiling. It was not retained: the stable tunnel phase was extracted
+into a small helper, leaving the orchestration path within the existing lint
+policy without an exception.
+
+The complete native factory and 55-case deterministic conformance set passed.
+Whole-tree structural complexity moved from 342 to 348 and cognitive
+complexity from 1,000 to 1,017, including validation tests and the tunnel-phase
+helper extraction.
+The connection benchmark detected no performance change: allowed loopback was
+109.28–127.56 microseconds with a -2.24% to +6.51% comparison interval
+(`p=0.66`), and hostname denial was 66.08–71.64 microseconds with a -9.55% to
++2.76% interval (`p=0.30`).
+
+The exact Rust 1.88 Linux image passed the factory and hostile lane. Its
+500-lease smoke held eight descriptors and five threads while live, returned
+to four descriptors and two threads, and finished at 4,004 KiB RSS.

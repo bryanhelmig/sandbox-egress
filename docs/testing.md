@@ -17,6 +17,8 @@ The suite is organized by claimed invariant rather than by source module.
   passing.
 - Parser robustness: deterministic malformed-input matrices and ordinary
   regression tests for every discovered defect.
+- Boundary validation: extreme but type-valid durations are rejected by the
+  public construction APIs before they can overflow runtime deadline math.
 
 No test may depend on the public internet. DNS and upstream behavior must be
 locally controlled so failures are reproducible.

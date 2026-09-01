@@ -35,6 +35,9 @@ pub enum PolicyError {
     /// DNS must fit within the absolute handshake budget.
     #[error("DNS timeout cannot exceed handshake timeout")]
     DnsTimeoutExceedsHandshake,
+    /// The operating system cannot represent the configured timeout deadline.
+    #[error("timeout is too large to represent safely")]
+    TimeoutTooLarge,
 }
 
 /// Failure to attach a run identity to the proxy.

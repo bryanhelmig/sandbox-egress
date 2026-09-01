@@ -50,6 +50,11 @@ deadline capped by the lease handshake deadline. Oversize input, early EOF,
 timeout, and other socket read failure remain fail-closed and have distinct
 bounded reason codes.
 
+Configuration and immutable policy construction reject durations too large for
+the platform clock to represent as deadlines. The connection path also uses
+checked deadline arithmetic, so elapsed startup time or a platform clock edge
+cannot turn a trusted configuration mistake into a panicking runtime task.
+
 Per-tunnel byte ceilings count bytes read from the guest or upstream. Bytes in
 the read that crosses a ceiling are accounted but not forwarded. A ceiling
 violation is a policy denial, distinct from an ordinary tunnel I/O failure, and

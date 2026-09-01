@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ipnet::IpNet;
 
@@ -214,14 +214,18 @@ impl PolicyBuilder {
     ///
     /// # Errors
     ///
-    /// Returns an error for zero deadlines or a DNS deadline longer than the
-    /// complete handshake deadline.
+    /// Returns an error for zero deadlines, a DNS deadline longer than the
+    /// complete handshake deadline, or a timeout too large for a runtime
+    /// deadline.
     pub fn build(self) -> Result<Policy, PolicyError> {
         if self.dns_timeout.is_zero() || self.handshake_timeout.is_zero() {
             return Err(PolicyError::ZeroTimeout);
         }
         if self.dns_timeout > self.handshake_timeout {
             return Err(PolicyError::DnsTimeoutExceedsHandshake);
+        }
+        if Instant::now().checked_add(self.handshake_timeout).is_none() {
+            return Err(PolicyError::TimeoutTooLarge);
         }
         Ok(Policy {
             hosts: self.hosts,
@@ -367,6 +371,18 @@ mod tests {
         assert!(pattern.matches("api.example.com"));
         assert!(!pattern.matches("example.com"));
         assert!(!pattern.matches("notexample.com"));
+    }
+
+    #[test]
+    fn rejects_unrepresentable_handshake_deadline() {
+        assert_eq!(
+            Policy::builder()
+                .dns_timeout(Duration::MAX)
+                .handshake_timeout(Duration::MAX)
+                .build()
+                .unwrap_err(),
+            PolicyError::TimeoutTooLarge
+        );
     }
 
     #[test]

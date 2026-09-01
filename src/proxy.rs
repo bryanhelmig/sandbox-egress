@@ -62,6 +62,9 @@ impl Proxy {
         resolver: Option<ResolverBackend>,
         connector: Option<ConnectorBackend>,
     ) -> Result<Self, ProxyError> {
+        config
+            .validate()
+            .map_err(|reason| ProxyError::Initialization(reason.to_owned()))?;
         let (commands, receiver) = tokio_mpsc::unbounded_channel();
         let runtime_commands = commands.clone();
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
@@ -641,8 +644,13 @@ async fn serve_connect(
     config: &ProxyConfig,
 ) -> io::Result<ConnectionDisposition> {
     let started = TokioInstant::now();
-    let handshake_deadline = started + state.policy.handshake_timeout;
-    let header_deadline = (started + config.header_timeout).min(handshake_deadline);
+    let Some((handshake_deadline, header_deadline)) = connection_deadlines(
+        started,
+        state.policy.handshake_timeout,
+        config.header_timeout,
+    ) else {
+        return deny(&mut client, state, 500, "invalid-handshake-deadline").await;
+    };
     let header =
         match read_connect_header(&mut client, config.max_header_bytes, header_deadline).await {
             Ok(header) => header,
@@ -719,6 +727,15 @@ async fn serve_connect(
         }
     };
 
+    tunnel_bidirectionally(client, upstream, state, buffered_upload).await
+}
+
+async fn tunnel_bidirectionally(
+    client: TcpStream,
+    upstream: TcpStream,
+    state: &LeaseState,
+    buffered_upload: usize,
+) -> io::Result<ConnectionDisposition> {
     let mut client = Metered::new(
         client,
         Arc::clone(&state.counters),
@@ -741,6 +758,19 @@ async fn serve_connect(
         }
         Err(error) => Err(error),
     }
+}
+
+fn connection_deadlines(
+    started: TokioInstant,
+    handshake_timeout: Duration,
+    header_timeout: Duration,
+) -> Option<(TokioInstant, TokioInstant)> {
+    let handshake_deadline = started.checked_add(handshake_timeout)?;
+    let header_deadline = started
+        .checked_add(header_timeout)
+        .unwrap_or(handshake_deadline)
+        .min(handshake_deadline);
+    Some((handshake_deadline, header_deadline))
 }
 
 async fn dial_approved_addresses(
@@ -890,7 +920,10 @@ async fn resolve_addresses(
     if !state.policy.allows_hostname(&hostname) {
         return Err(Denial::HOST_DENIED);
     }
-    let dns_deadline = (TokioInstant::now() + state.policy.dns_timeout).min(handshake_deadline);
+    let dns_deadline = TokioInstant::now()
+        .checked_add(state.policy.dns_timeout)
+        .unwrap_or(handshake_deadline)
+        .min(handshake_deadline);
     let dns_permit = timeout_at(dns_deadline, Arc::clone(dns_permits).acquire_owned())
         .await
         .map_err(|_| Denial::DNS_CAPACITY)?
