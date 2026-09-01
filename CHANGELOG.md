@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Let a close retry immediately certify an already-quiesced lease without
+  repeating the identity-reuse quiet period or changing its final counters.
 - Commit final counters under the lease lifecycle lock before close success,
   preventing late unadmitted sockets from mutating `FinalUsage`.
 - Require native IPv6 destinations to be inside IANA's `2000::/3` global

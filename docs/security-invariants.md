@@ -106,7 +106,8 @@ drain interval has elapsed, and the state becomes internally quiesced under the
 lifecycle lock. Its counters are then immutable: tracked work is gone and
 later unadmitted sockets do not count. Quiescing alone does not make the
 identity reusable; if success delivery is lost, the lease retains ownership
-until a retry is observed successfully.
+until a retry is observed successfully. That retry returns the already-frozen
+snapshot without repeating cleanup or the identity-reuse quiet period.
 
 ## Protocol claims
 

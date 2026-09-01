@@ -31,7 +31,8 @@ The internal lifecycle is `Open -> Revoking -> Quiesced -> Closed`. Quiescing
 commits final counters under the lifecycle lock after tracked work and the
 queued-socket drain interval finish. It does not release identity ownership;
 only the synchronous caller's observation of close success advances to
-`Closed` and sends the registry release.
+`Closed` and sends the registry release. A retry can certify an already
+quiesced snapshot immediately; it does not rerun the quiet-period barrier.
 
 `Lease` is intentionally not `Clone`. `close(self, deadline)` either produces
 `FinalUsage` or a `CloseError` containing the still-owning lease.

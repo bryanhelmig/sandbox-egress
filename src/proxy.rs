@@ -440,6 +440,11 @@ impl LeaseState {
         self.counters.final_snapshot()
     }
 
+    fn quiesced_snapshot(&self) -> Option<FinalUsage> {
+        let phase = self.phase.lock().expect("lease phase poisoned");
+        (*phase == Phase::Quiesced).then(|| self.counters.final_snapshot())
+    }
+
     fn reject_unadmitted(&self, stream: TcpStream, reason: &'static str) {
         let phase = self.phase.lock().expect("lease phase poisoned");
         drop(stream);
@@ -687,6 +692,9 @@ fn spawn_close_wait(
 ) {
     tokio::spawn(async move {
         let close = async {
+            if let Some(usage) = state.quiesced_snapshot() {
+                return usage;
+            }
             state.tracker.wait().await;
             sleep(quiet_period).await;
             state.quiesce_and_snapshot()
@@ -1646,6 +1654,23 @@ mod tests {
         assert_eq!(state.counters.snapshot(), usage.usage());
         let mut byte = [0];
         assert!(matches!(std::io::Read::read(&mut client, &mut byte), Ok(0)));
+
+        let (retry_tx, retry_rx) = mpsc::sync_channel(1);
+        {
+            let _runtime_guard = runtime.enter();
+            spawn_close_wait(
+                Arc::clone(&state),
+                Duration::from_secs(1),
+                Instant::now() + Duration::from_millis(50),
+                retry_tx,
+            );
+        }
+        let retried = retry_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("retry reply")
+            .expect("quiesced cleanup is already ready");
+        assert_eq!(retried, usage);
+        assert_eq!(*state.phase.lock().expect("lease phase"), Phase::Quiesced);
         state.mark_closed();
         assert!(state.is_closed());
     }

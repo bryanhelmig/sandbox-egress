@@ -1103,9 +1103,34 @@ The native factory, dependency audit, and exact Rust 1.88 Linux factory passed
 five threads while live, returned to four descriptors and two threads, and
 finished at 4,004 KiB RSS.
 
-Whole-tree structural/cognitive complexity moved from 350/1,020 to 356/1,036.
-With diagnostics disabled, Criterion detected no change: allowed loopback was
-102.17–117.52 microseconds (`p=0.23`) and hostname denial was 68.00–73.52
-microseconds (`p=0.75`). The Linux 500-lease smoke retained five live threads
-and eight descriptors, returned to two threads and four descriptors, and
-finished at 4,064 KiB RSS.
+## 2026-08-31 — certify already-quiesced close retries immediately
+
+### Finding
+
+The new non-replaceable `Quiesced` state made final counters immutable and
+retained identity after a lost success reply, but a retry still waited through
+the complete identity-reuse quiet period again. A deterministic test used an
+already-quiesced lease, a one-second quiet period, and a 50-millisecond retry
+deadline. Before the change, it returned `DeadlineExceeded` even though no
+cleanup work remained.
+
+### Result
+
+The close waiter first checks for a frozen quiesced snapshot under the same
+lifecycle lock. If present, it returns that exact value immediately; the
+caller's observed success remains the only transition to replaceable `Closed`.
+The test also injects and closes a late socket before retry, proving the second
+snapshot equals the first rather than merely returning quickly.
+
+The focused phase barrier passed 25 consecutive runs. Criterion detected no
+empty-lease lifecycle regression at 1.349–1.368 milliseconds (`p=0.33`). The
+extra state check and regression evidence move whole-tree
+structural/cognitive complexity from 364/1,069 to 367/1,079.
+
+The native factory and dependency audit passed 66 deterministic cases. A
+clean-cache Rust 1.88 image passed the same factory and its serialized hostile
+lane. Its 500-lease Linux smoke held eight descriptors and five threads while
+live, returned to four descriptors and two threads, and finished at 3,940 KiB
+RSS. Repeated prior image layers filled Docker's internal disk during the first
+save attempt; removing only stopped and dangling Sandbox Egress build output
+and the reproducible stale image made the clean rebuild succeed.
