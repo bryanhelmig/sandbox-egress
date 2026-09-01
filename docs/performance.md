@@ -481,3 +481,24 @@ Every pair overlaps. The first candidate contains a wide host outlier; the two
 following pairs are nearly coincident. No allowed-path latency change is
 claimed. The security rule and deterministic zero-dial proof are retained, and
 the detached comparison worktree was removed.
+
+## Borrowed DNS admission permit
+
+Recorded 2026-09-01 on the same Apple M1 with Rust 1.97.1. Three alternating
+A/B pairs compared the allowed-hostname path after replacing an owned DNS
+semaphore permit with a permit borrowed for the lookup's lexical scope:
+
+```text
+command: cargo bench --bench connections -- connect_allowed_hostname \
+         --noplot --sample-size 50 --measurement-time 3
+baseline: 7b63b9a
+candidate intervals: 139.56 .. 162.71, 144.74 .. 157.94,
+                     147.66 .. 169.33 us
+baseline intervals:  141.71 .. 159.46, 148.88 .. 165.85,
+                     147.75 .. 163.44 us
+```
+
+Every pair overlaps and the medians move in both directions, so no latency
+change is claimed. The retained result is a narrower ownership boundary, one
+fewer atomic shared-owner operation per hostname lookup, and one fewer
+production line. The detached comparison worktree was removed.

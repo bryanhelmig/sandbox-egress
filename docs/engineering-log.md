@@ -3860,3 +3860,31 @@ shutdown to 5,956 KiB, four descriptors, and two threads. The rootless 161/161
 image is
 `sha256:2940aa20f2fc68d460ca2dcfa7baf1ee3f5d34ff0a15f796275aaba9f3931934`
 (40,738,584 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — borrow phase permits inside bounded work
+
+This simplification rotation found an inconsistency between the DNS and dial
+budgets. Both operations acquire a permit and finish entirely inside one helper,
+but DNS cloned its semaphore `Arc` and requested an owned permit while dialing
+borrowed its permit. DNS now borrows too, and both helper signatures accept
+`&Semaphore` rather than exposing shared ownership they do not retain. The
+change removes one production line and one atomic shared-owner operation from
+each hostname lookup without changing a task, deadline, permit lifetime, or
+public API.
+
+The focused DNS-capacity cancellation and DNS-deadline cases pass. Three
+alternating allowed-hostname A/B pairs against detached `7b63b9a` all overlap;
+candidate intervals were 139.56–162.71, 144.74–157.94, and 147.66–169.33
+microseconds, while baseline intervals were 141.71–159.46, 148.88–165.85, and
+147.75–163.44. Medians moved in both directions, so no latency change is
+claimed. The comparison worktree was removed. Whole-tree SCC 4.0.0 complexity
+moves from 683/2,048 to 683/2,046 structural/cognitive.
+
+The native and exact Rust 1.88 Linux factories passed the unchanged 161
+deterministic cases, five doctests, documentation, package verification, and
+all six Linux resource lanes; native dependency policy checks also passed.
+Linux's TLS lane peaked at 14,792 KiB RSS, 265 descriptors, and six threads,
+then returned after shutdown to 5,840 KiB, four descriptors, and two threads.
+The rootless 161/161 image is
+`sha256:94ab401a97e01bded1a3b3810d3e62ad0153f38b22d2bdf2626dac0446b52651`
+(40,736,538 bytes) and runs as UID/GID 65534.

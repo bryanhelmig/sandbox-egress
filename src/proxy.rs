@@ -1165,7 +1165,7 @@ async fn dial_approved_addresses(
 async fn dial_with_budget(
     addresses: Vec<SocketAddr>,
     connector: &ConnectorBackend,
-    permits: &Arc<Semaphore>,
+    permits: &Semaphore,
     handshake_deadline: TokioInstant,
 ) -> Result<Option<TcpStream>, Denial> {
     let permit = complete_before_deadline(handshake_deadline, permits.acquire())
@@ -1316,7 +1316,7 @@ async fn resolve_addresses(
     request: &ConnectRequest,
     state: &LeaseState,
     resolver: &ResolverBackend,
-    dns_permits: &Arc<Semaphore>,
+    dns_permits: &Semaphore,
     max_resolved_addresses: usize,
     nat64_prefixes: &[ipnet::Ipv6Net],
     handshake_deadline: TokioInstant,
@@ -1337,11 +1337,10 @@ async fn resolve_addresses(
         .checked_add(state.policy.dns_timeout)
         .unwrap_or(handshake_deadline)
         .min(handshake_deadline);
-    let dns_permit =
-        complete_before_deadline(dns_deadline, Arc::clone(dns_permits).acquire_owned())
-            .await
-            .ok_or(Denial::DNS_CAPACITY)?
-            .map_err(|_| Denial::DNS_CAPACITY)?;
+    let dns_permit = complete_before_deadline(dns_deadline, dns_permits.acquire())
+        .await
+        .ok_or(Denial::DNS_CAPACITY)?
+        .map_err(|_| Denial::DNS_CAPACITY)?;
     let lookup = complete_before_deadline(
         dns_deadline,
         resolver.lookup(&hostname, max_resolved_addresses),
