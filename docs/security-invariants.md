@@ -2,7 +2,9 @@
 
 The threat model is an untrusted guest that can open arbitrary connections,
 send malformed bytes slowly, race shutdown, and control requested hostnames and
-DNS answers. The host supervisor and kernel network boundary are trusted.
+DNS answers. The host supervisor and kernel network boundary are trusted. Only
+host management handles can enqueue runtime commands; guest sockets cannot
+reach that control plane.
 
 ## Identity and reuse
 

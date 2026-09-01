@@ -61,7 +61,9 @@ services may supplement research but must not become test dependencies.
 - Listener backlog saturation and general accept-loop fairness beyond the
   certified close/attach drain barriers.
 - DNS and dial concurrency distinct from tunnel concurrency.
-- Runtime command-channel flooding and synchronous caller contention.
+- A bounded trusted-host control-plane design that preserves nonblocking Drop
+  cleanup; concurrent caller recovery is measured, but outstanding host calls
+  are not currently capped inside the crate.
 - Stable RSS, threads, tasks, sockets, and descriptors under soak.
 - Allocation and copy overhead per connection and per transferred byte.
 - Long-duration downstream diagnostic retention and aggregation behavior; the

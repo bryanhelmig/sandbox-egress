@@ -4,6 +4,7 @@ use std::env;
 use std::net::{IpAddr, Ipv4Addr};
 #[cfg(target_os = "macos")]
 use std::process::Command;
+use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -87,6 +88,107 @@ fn identity_churn_has_bounded_process_resources() {
     eprintln!(
         "resource_soak event=finish completed={} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
         runs_per_batch.saturating_mul(batches),
+        started.elapsed().as_millis(),
+        finished.rss_kib,
+        finished.descriptors,
+        finished.threads,
+    );
+    assert_stable_non_memory_resources(process_start, finished);
+}
+
+#[test]
+#[ignore = "resource soak is opt-in; run scripts/measure-resources.sh"]
+fn concurrent_management_churn_releases_process_resources() {
+    let concurrency = env_number("SANDBOX_EGRESS_CONTROL_CONCURRENCY", 64);
+    let batches = env_number("SANDBOX_EGRESS_CONTROL_BATCHES", 4);
+    assert!(concurrency > 0 && batches > 0);
+    assert!(concurrency.saturating_mul(batches) < 0x00ff_ffff);
+
+    let process_start = Resources::sample();
+    let proxy = Arc::new(
+        Proxy::start(ProxyConfig::default().with_identity_reuse_quiet_period(Duration::ZERO))
+            .expect("start proxy"),
+    );
+    thread::sleep(Duration::from_millis(25));
+    let proxy_start = Resources::sample();
+    let started = Instant::now();
+
+    eprintln!(
+        "control_soak event=start concurrency={concurrency} batches={batches} process_rss_kib={:?} process_fds={:?} process_threads={:?} proxy_rss_kib={:?} proxy_fds={:?} proxy_threads={:?}",
+        process_start.rss_kib,
+        process_start.descriptors,
+        process_start.threads,
+        proxy_start.rss_kib,
+        proxy_start.descriptors,
+        proxy_start.threads,
+    );
+
+    for batch in 0..batches {
+        let attach_barrier = Arc::new(Barrier::new(concurrency));
+        let attached_barrier = Arc::new(Barrier::new(concurrency + 1));
+        let close_barrier = Arc::new(Barrier::new(concurrency + 1));
+        let mut callers = Vec::with_capacity(concurrency);
+        for offset in 0..concurrency {
+            let proxy = Arc::clone(&proxy);
+            let attach_barrier = Arc::clone(&attach_barrier);
+            let attached_barrier = Arc::clone(&attached_barrier);
+            let close_barrier = Arc::clone(&close_barrier);
+            let sequence = batch.saturating_mul(concurrency) + offset + 1;
+            callers.push(thread::spawn(move || {
+                attach_barrier.wait();
+                let lease = proxy
+                    .attach(
+                        PeerIdentity::SourceIp(churn_address(sequence)),
+                        Policy::builder().build().expect("valid policy"),
+                    )
+                    .expect("attach contended lease");
+                attached_barrier.wait();
+                close_barrier.wait();
+                lease
+                    .close(Instant::now() + Duration::from_secs(2))
+                    .expect("close contended lease");
+            }));
+        }
+
+        attached_barrier.wait();
+        let peak = Resources::sample();
+        eprintln!(
+            "control_soak event=peak batch={} attached={} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
+            batch + 1,
+            concurrency,
+            started.elapsed().as_millis(),
+            peak.rss_kib,
+            peak.descriptors,
+            peak.threads,
+        );
+        close_barrier.wait();
+        for caller in callers {
+            caller.join().expect("management caller");
+        }
+
+        thread::sleep(Duration::from_millis(25));
+        let current = Resources::sample();
+        eprintln!(
+            "control_soak event=batch batch={} completed={} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
+            batch + 1,
+            (batch + 1).saturating_mul(concurrency),
+            started.elapsed().as_millis(),
+            current.rss_kib,
+            current.descriptors,
+            current.threads,
+        );
+        assert_stable_non_memory_resources(proxy_start, current);
+    }
+
+    Arc::into_inner(proxy)
+        .expect("all proxy references returned")
+        .shutdown(Instant::now() + Duration::from_secs(2))
+        .expect("proxy shutdown");
+    thread::sleep(Duration::from_millis(25));
+    let finished = Resources::sample();
+    eprintln!(
+        "control_soak event=finish completed={} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
+        concurrency.saturating_mul(batches),
         started.elapsed().as_millis(),
         finished.rss_kib,
         finished.descriptors,

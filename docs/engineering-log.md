@@ -2597,3 +2597,44 @@ descriptors and five threads to four and two, finishing at 3,988 KiB RSS in
 1,061 ms. The rootless runner reproduced 128/128 as UID/GID 65534; image
 `sha256:1b29c3f1c3fc757112dc4e4591ee011ee5fbfe5d9aaefa96095d359f9db80b5d`
 measured 40,491,607 bytes.
+
+## 2026-09-01 — measure trusted management contention without weakening Drop
+
+The command audit separated guest and host inputs. Network connections dispatch
+directly from the listener and cannot enqueue commands. The unbounded channel
+is reachable only through trusted `Proxy` and `Lease` handles. It also carries
+nonblocking Drop cleanup: merely replacing it with a bounded `try_send` queue
+could discard `Reap` when full and strand identity ownership. That rewrite was
+therefore rejected without a durable overflow mechanism.
+
+An opt-in resource lane now measures the actual open question instead. In each
+of four batches, 64 host threads attach distinct identities together, hold all
+leases while the process is sampled, then issue close together. It requires
+descriptor and thread recovery after every batch and after proxy shutdown;
+RSS is reported as allocator high-water evidence, not compared with a brittle
+absolute threshold. The case passed its initial native run plus five repeated
+two-batch runs.
+
+The first exact Linux factory exposed a measurement bug: Cargo ran the serial
+identity churn and concurrent control churn tests in parallel. Each test's
+post-shutdown baseline therefore still contained the other test's proxy; the
+control lane correctly rejected eight descriptors against a four-descriptor
+process baseline. The runner now forces `--test-threads=1`. No resource claim
+from that overlapping run was retained.
+
+On the corrected Rust 1.88 Linux run, the control lane peaked at 69 threads and
+5,216 KiB RSS with all 64 callers attached. Each batch returned to five runtime
+threads and eight descriptors; shutdown returned to two threads and four
+descriptors at 4,680 KiB RSS in 166 ms. The following 500-lease lane independently
+returned to two threads and four descriptors at 4,680 KiB in 972 ms. On the M1
+baseline, the four-batch control lane peaked at 10,464 KiB, returned to five
+runtime threads and 13 descriptors after every batch, and shut down at two
+threads and nine descriptors in 480 ms.
+
+No production code or deterministic case count changed. Whole-tree SCC 4.0.0
+complexity moved from 533/1,596 to 538/1,610 structural/cognitive, entirely in
+the opt-in resource harness. The native and corrected Linux factories passed;
+native dependency policy passed. The stripped conformance image excludes the
+resource target and was therefore byte-identical at
+`sha256:1b29c3f1c3fc757112dc4e4591ee011ee5fbfe5d9aaefa96095d359f9db80b5d`
+(40,491,607 bytes); its rootless runner reproduced 128/128 as UID/GID 65534.

@@ -6,4 +6,4 @@ batches=${2:-4}
 
 SANDBOX_EGRESS_SOAK_RUNS=$runs_per_batch \
 SANDBOX_EGRESS_SOAK_BATCHES=$batches \
-  cargo test --release --test resource_soak -- --ignored --nocapture
+  cargo test --release --test resource_soak -- --ignored --nocapture --test-threads=1

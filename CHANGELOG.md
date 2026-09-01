@@ -5,6 +5,9 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Add an opt-in concurrent management soak that holds and closes 64 distinct
+  leases together, sampling peak and recovered RSS, threads, and descriptors;
+  serialize resource lanes so their process baselines cannot overlap.
 - Pin fail-fast global-capacity behavior across two source identities: the
   refusal is attributed to the contender, which recovers on retry after close.
 - Prove a permanently full diagnostic channel cannot block 64 concurrent

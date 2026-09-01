@@ -12,9 +12,9 @@ The suite is organized by claimed invariant rather than by source module.
 - Hostile conformance tests: deterministic phase barriers for headers, DNS,
   dial, ClientHello, and tunnel. Each phase must prove close returns only after
   its work is gone.
-- Resource soak: repeated abuse with sampled RSS, thread count, and descriptor
-  count. Platform-specific collectors report unsupported rather than silently
-  passing.
+- Resource soak: repeated identity churn and concurrent host management with
+  sampled RSS, thread count, and descriptor count. Platform-specific
+  collectors report unsupported rather than silently passing.
 - Parser robustness: deterministic malformed-input matrices and ordinary
   regression tests for every discovered defect.
 - Executable contract: process-level tests pin the no-policy usage error and
@@ -220,10 +220,16 @@ Benchmarks cover attach/close, policy matching, admission contention, and
 accounting overhead. Macrobenchmarks later report connections/sec, throughput,
 p50/p95/p99 setup latency, peak RSS, threads, and file descriptors.
 
-The initial opt-in resource harness runs identity churn with the proxy still
-alive and samples each batch. On Linux it reads `/proc`; on macOS it uses `ps`
-and `lsof`; other targets compile and report unsupported counters as absent.
-Run `./scripts/measure-resources.sh [runs-per-batch] [batches]`.
+The opt-in resource target first runs identity churn with the proxy still alive
+and samples each batch. A second lane synchronizes 64 host threads, holds all
+of their distinct attached leases, then releases their close calls together in
+four repeated batches. It samples the intentional peak and requires descriptor
+and thread recovery after every batch and shutdown. On Linux the collectors
+read `/proc`; on macOS they use `ps` and `lsof`; other targets compile and
+report unsupported counters as absent. Run
+`./scripts/measure-resources.sh [runs-per-batch] [batches]`; the concurrent lane
+can be adjusted with `SANDBOX_EGRESS_CONTROL_CONCURRENCY` and
+`SANDBOX_EGRESS_CONTROL_BATCHES`.
 
 The committed tunnel conformance lane currently checks graceful half-close in
 both directions, upstream reset classification, zero and exact download

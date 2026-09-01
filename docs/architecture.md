@@ -39,6 +39,14 @@ quiesced snapshot immediately; it does not rerun the quiet-period barrier.
 `Lease` is intentionally not `Clone`. `close(self, deadline)` either produces
 `FinalUsage` or a `CloseError` containing the still-owning lease.
 
+The management command channel is an unbounded trusted-control-plane queue;
+guest sockets cannot enqueue into it. Retaining that shape is deliberate:
+`Lease::drop` must initiate cleanup without blocking, and silently discarding a
+cleanup command from a full bounded queue could strand identity ownership.
+Host integrations should still bound their own concurrent management calls. An
+opt-in resource lane releases 64 simultaneous attaches and closes in repeated
+batches and verifies process threads and descriptors recover.
+
 A successful proxy-wide shutdown drains every lease tracker and marks each
 state closed before joining the runtime thread. A surviving lease handle reads
 that immutable closed snapshot locally; runtime loss alone cannot hide an
