@@ -107,10 +107,20 @@ work ends.
 
 The forbidden-address floor applies IPv4 rules to both mapped and deprecated
 compatible IPv6 forms. The well-known NAT64 `/96` is decoded and the embedded
-IPv4 destination is checked. Local-use NAT64, Teredo, 6to4, and non-global
+IPv4 destination is checked. A host using an RFC 6052 network-specific NAT64
+prefix must register that routed prefix in `ProxyConfig`; all six standard
+prefix lengths are decoded, and a translated private or metadata destination
+is denied before dialing. Unknown local-use NAT64, Teredo, 6to4, and non-global
 special-purpose IPv6 prefixes are rejected because the effective endpoint is
 not safely knowable at this layer. A host can deliberately override the floor
 with an explicit CIDR grant.
+
+NAT64 prefix knowledge belongs to the trusted proxy configuration, not the
+guest or a run policy. Registering a network-specific prefix says how the host
+network interprets matching IPv6 addresses; it does not allow a forbidden
+embedded IPv4 destination. An arbitrary global IPv6 address is otherwise
+treated as native because its syntax alone cannot identify an operator's
+translation route.
 
 The conservative floor rejects IANA's full `2001::/23` IETF protocol
 assignments umbrella, as it does IPv4's `192.0.0.0/24` umbrella. This includes

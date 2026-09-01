@@ -1546,3 +1546,45 @@ The native and exact Rust 1.88 factories passed all 83 deterministic cases and
 verified the assembled crate; the serialized Linux lane passed the same set.
 Its 500-lease smoke returned from eight descriptors and five threads while live
 to four descriptors and two threads, finishing at 4,072 KiB RSS.
+
+## 2026-08-31 — check network-specific NAT64 before dialing
+
+### Finding
+
+The address floor decoded mapped and compatible IPv6 plus the well-known
+`64:ff9b::/96` NAT64 prefix. RFC 6052 also permits a network operator to route
+a network-specific `/32`, `/40`, `/48`, `/56`, `/64`, or `/96`. A DNS64 answer
+under such a global prefix therefore looked like ordinary public IPv6 even
+when its effective IPv4 destination was private or link-local metadata.
+
+This cannot be inferred safely from arbitrary IPv6 syntax. Translation-prefix
+knowledge comes from the trusted host network and is shared across runs, so it
+belongs in `ProxyConfig`, not guest input or an individual `Policy`.
+
+### Result
+
+`ProxyConfig::with_nat64_prefix` now registers each network-specific route.
+Startup rejects prefix lengths outside RFC 6052's six layouts. DNS results
+inside a registered prefix are decoded before the normal forbidden IPv4 check;
+the well-known prefix remains automatic. Duplicate configuration is collapsed,
+and a deliberate policy CIDR grant retains its existing floor-override
+semantics.
+
+Unit cases recover `192.0.2.33` from all six address examples published in RFC
+6052. The end-to-end case supplies a globally shaped `/96` DNS answer embedding
+`169.254.169.254`, requires `resolved-address-denied`, and proves the recording
+connector receives zero dial attempts. A public embedded IPv4 remains allowed,
+and startup rejects a syntactically valid but nonstandard `/80`.
+
+Whole-tree structural/cognitive complexity moves from 401/1,172 to 409/1,202;
+the additional decision shape is concentrated in the six-layout decoder and
+its proofs. The first full benchmark replay flagged hostname denial even though
+that path exits before address filtering. An isolated rerun measured
+72.104–77.275 microseconds with `p=0.85`, so no change was detected. Allowed
+loopback, hostname, visible-SNI, oversized-header, and empty-lease paths also
+reported no detected change in the full replay.
+
+The native and exact Rust 1.88 factories passed all 87 deterministic cases and
+verified the assembled crate; the serialized Linux image ran the same set. Its
+500-lease smoke held eight descriptors and five threads while live, returned to
+four descriptors and two threads, and finished at 4,044 KiB RSS.

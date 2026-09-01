@@ -5,6 +5,9 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Decode operator-registered RFC 6052 NAT64 prefixes before destination policy
+  checks, preventing translated private or metadata IPv4 addresses from
+  appearing as ordinary global IPv6 DNS answers.
 - Add fixed GREASE cipher-suite and extension conformance through Rustls, ECH
   detection, visible-SNI enforcement, exact forwarding, and accounting.
 - Specify and test that `*.example.com` matches subdomains at any depth while

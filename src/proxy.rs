@@ -808,6 +808,7 @@ async fn serve_connect(
         resolver,
         dns_permits,
         config.max_resolved_addresses,
+        &config.nat64_prefixes,
         handshake_deadline,
     )
     .await
@@ -1044,6 +1045,7 @@ async fn resolve_addresses(
     resolver: &ResolverBackend,
     dns_permits: &Arc<Semaphore>,
     max_resolved_addresses: usize,
+    nat64_prefixes: &[ipnet::Ipv6Net],
     handshake_deadline: TokioInstant,
 ) -> Result<Vec<SocketAddr>, Denial> {
     if let Ok(ip) = request.host.parse::<IpAddr>() {
@@ -1085,7 +1087,7 @@ async fn resolve_addresses(
     let mut seen = HashSet::with_capacity(addresses.len());
     let mut approved = Vec::with_capacity(addresses.len());
     for ip in addresses {
-        if !state.policy.allows_ip(ip) {
+        if !state.policy.allows_ip(ip, nat64_prefixes) {
             return Err(Denial::RESOLVED_ADDRESS_DENIED);
         }
         let address = SocketAddr::new(ip, request.port);
@@ -1506,6 +1508,46 @@ mod tests {
         assert!(response.contains("resolved-address-denied"), "{response}");
         assert_eq!(dial_attempts.load(Ordering::Acquire), 0);
         assert_eq!(lease.usage().denied_connections, 1);
+
+        lease
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("close lease");
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
+    }
+
+    #[test]
+    fn configured_nat64_prefix_rejects_an_embedded_metadata_destination() {
+        let resolver = Arc::new(FixedAnswerResolver(vec![
+            "2600:1f18:abcd:1234::a9fe:a9fe"
+                .parse()
+                .expect("network-specific NAT64 metadata address"),
+        ]));
+        let dial_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let connector = Arc::new(RejectingConnector(Arc::clone(&dial_attempts)));
+        let config = ProxyConfig::default().with_nat64_prefix(
+            "2600:1f18:abcd:1234::/96"
+                .parse()
+                .expect("network-specific NAT64 prefix"),
+        );
+        let proxy = Proxy::start_with_test_backends(config, resolver, connector)
+            .expect("start NAT64-aware proxy");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                hostname_policy("nat64.test", 443),
+            )
+            .expect("attach lease");
+        let mut client =
+            std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+        std::io::Write::write_all(&mut client, b"CONNECT nat64.test:443 HTTP/1.1\r\n\r\n")
+            .expect("write CONNECT");
+        let mut response = String::new();
+        std::io::Read::read_to_string(&mut client, &mut response).expect("read NAT64 denial");
+        assert!(response.starts_with("HTTP/1.1 403"), "{response}");
+        assert!(response.contains("resolved-address-denied"), "{response}");
+        assert_eq!(dial_attempts.load(Ordering::Acquire), 0);
 
         lease
             .close(Instant::now() + Duration::from_secs(1))

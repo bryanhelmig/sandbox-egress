@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::time::{Duration, Instant};
 
-use ipnet::IpNet;
+use ipnet::{IpNet, Ipv6Net};
 
 use crate::PolicyError;
 
@@ -101,7 +101,7 @@ impl Policy {
         self.ports.contains(&port)
     }
 
-    pub(crate) fn allows_ip(&self, address: IpAddr) -> bool {
+    pub(crate) fn allows_ip(&self, address: IpAddr, nat64_prefixes: &[Ipv6Net]) -> bool {
         if self
             .allowed_networks
             .iter()
@@ -109,7 +109,7 @@ impl Policy {
         {
             return true;
         }
-        !is_forbidden_destination(address)
+        !is_forbidden_destination(address, nat64_prefixes)
     }
 
     pub(crate) fn allows_ip_literal(&self, address: IpAddr) -> bool {
@@ -284,7 +284,7 @@ pub(crate) fn canonical_hostname(value: &str) -> Option<String> {
     Some(canonical)
 }
 
-pub(crate) fn is_forbidden_destination(address: IpAddr) -> bool {
+pub(crate) fn is_forbidden_destination(address: IpAddr, nat64_prefixes: &[Ipv6Net]) -> bool {
     match address {
         IpAddr::V4(address) => forbidden_v4(address),
         IpAddr::V6(address) => {
@@ -292,10 +292,19 @@ pub(crate) fn is_forbidden_destination(address: IpAddr) -> bool {
                 return forbidden_v4(embedded);
             }
             if is_well_known_nat64(address) {
-                let octets = address.octets();
-                return forbidden_v4(Ipv4Addr::new(
-                    octets[12], octets[13], octets[14], octets[15],
-                ));
+                return forbidden_v4(extract_rfc6052_ipv4(address, 96));
+            }
+            let mut translated = false;
+            for prefix in nat64_prefixes {
+                if prefix.contains(&address) {
+                    translated = true;
+                    if forbidden_v4(extract_rfc6052_ipv4(address, prefix.prefix_len())) {
+                        return true;
+                    }
+                }
+            }
+            if translated {
+                return false;
             }
             forbidden_v6(address)
         }
@@ -305,6 +314,20 @@ pub(crate) fn is_forbidden_destination(address: IpAddr) -> bool {
 fn is_well_known_nat64(address: Ipv6Addr) -> bool {
     let segments = address.segments();
     segments[..6] == [0x0064, 0xff9b, 0, 0, 0, 0]
+}
+
+fn extract_rfc6052_ipv4(address: Ipv6Addr, prefix_len: u8) -> Ipv4Addr {
+    let bytes = address.octets();
+    let octets = match prefix_len {
+        32 => [bytes[4], bytes[5], bytes[6], bytes[7]],
+        40 => [bytes[5], bytes[6], bytes[7], bytes[9]],
+        48 => [bytes[6], bytes[7], bytes[9], bytes[10]],
+        56 => [bytes[7], bytes[9], bytes[10], bytes[11]],
+        64 => [bytes[9], bytes[10], bytes[11], bytes[12]],
+        96 => [bytes[12], bytes[13], bytes[14], bytes[15]],
+        _ => unreachable!("ProxyConfig validates RFC 6052 prefix lengths"),
+    };
+    Ipv4Addr::from(octets)
 }
 
 // Derived from the IANA special-purpose registries, reviewed 2026-08-31.
@@ -424,24 +447,73 @@ mod tests {
             "fe00::1",
         ] {
             let address = address.parse().expect("test IP");
-            assert!(is_forbidden_destination(address), "{address}");
+            assert!(is_forbidden_destination(address, &[]), "{address}");
         }
         assert!(!is_forbidden_destination(
-            "93.184.216.34".parse().expect("test IP")
+            "93.184.216.34".parse().expect("test IP"),
+            &[],
         ));
         assert!(!is_forbidden_destination(
             "::93.184.216.34"
                 .parse()
-                .expect("compatible public test IP")
+                .expect("compatible public test IP"),
+            &[],
         ));
         assert!(!is_forbidden_destination(
-            "64:ff9b::5db8:d822".parse().expect("NAT64 public test IP")
+            "64:ff9b::5db8:d822".parse().expect("NAT64 public test IP"),
+            &[],
         ));
         assert!(!is_forbidden_destination(
             "2606:4700:4700::1111"
                 .parse()
-                .expect("native public IPv6 test IP")
+                .expect("native public IPv6 test IP"),
+            &[],
         ));
+    }
+
+    #[test]
+    fn extracts_every_rfc6052_network_specific_layout() {
+        for (address, prefix_len) in [
+            ("2001:db8:c000:221::", 32),
+            ("2001:db8:1c0:2:21::", 40),
+            ("2001:db8:122:c000:2:2100::", 48),
+            ("2001:db8:122:3c0:0:221::", 56),
+            ("2001:db8:122:344:c0:2:2100::", 64),
+            ("2001:db8:122:344::c000:221", 96),
+        ] {
+            assert_eq!(
+                extract_rfc6052_ipv4(address.parse().expect("RFC 6052 example"), prefix_len),
+                Ipv4Addr::new(192, 0, 2, 33),
+                "{address}/{prefix_len}"
+            );
+        }
+    }
+
+    #[test]
+    fn configured_nat64_prefix_checks_the_effective_ipv4_destination() {
+        let prefix: Ipv6Net = "2600:1f18:abcd:1234::/96"
+            .parse()
+            .expect("network-specific NAT64 prefix");
+        let metadata = "2600:1f18:abcd:1234::a9fe:a9fe"
+            .parse()
+            .expect("translated metadata address");
+        let public = "2600:1f18:abcd:1234::5db8:d822"
+            .parse()
+            .expect("translated public address");
+
+        assert!(!is_forbidden_destination(metadata, &[]));
+        assert!(is_forbidden_destination(metadata, &[prefix]));
+        assert!(!is_forbidden_destination(public, &[prefix]));
+
+        let override_policy = Policy::builder()
+            .allow_network(
+                "2600:1f18:abcd:1234::a9fe:a9fe/128"
+                    .parse()
+                    .expect("explicit translated metadata grant"),
+            )
+            .build()
+            .expect("valid override policy");
+        assert!(override_policy.allows_ip(metadata, &[prefix]));
     }
 
     #[test]
@@ -478,7 +550,7 @@ mod tests {
             .build()
             .expect("valid policy");
 
-        assert!(policy.allows_ip(address));
+        assert!(policy.allows_ip(address, &[]));
         assert!(policy.allows_ip_literal(address));
     }
 }

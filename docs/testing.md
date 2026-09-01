@@ -135,6 +135,13 @@ slots and requires exactly one dial attempt. The mixed allowed/metadata case
 uses the same recording connector and requires zero attempts, proving the
 entire set is validated before first-seen-order deduplication reaches dialing.
 
+Network-specific NAT64 cases pin every RFC 6052 embedding layout against the
+standard's published address examples. A controlled resolver also returns a
+globally shaped IPv6 address that embeds `169.254.169.254` under a configured
+`/96`; the ordinary `resolved-address-denied` path must run and the recording
+connector must observe zero attempts. A nonstandard prefix length is rejected
+when the proxy starts.
+
 The equivalent internal connector seam holds a dial future pending after
 recording the exact checked `SocketAddr`. Tests release it only through lease
 cancellation or the absolute handshake deadline and observe its drop directly,

@@ -2,6 +2,8 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::mpsc::SyncSender;
 use std::time::{Duration, Instant};
 
+use ipnet::Ipv6Net;
+
 use crate::DiagnosticEvent;
 use crate::diagnostic::DiagnosticConfig;
 
@@ -15,6 +17,7 @@ pub struct ProxyConfig {
     pub(crate) max_resolved_addresses: usize,
     pub(crate) max_header_bytes: usize,
     pub(crate) max_client_hello_bytes: usize,
+    pub(crate) nat64_prefixes: Vec<Ipv6Net>,
     pub(crate) header_timeout: Duration,
     pub(crate) identity_reuse_quiet_period: Duration,
     pub(crate) diagnostics: Option<DiagnosticConfig>,
@@ -31,6 +34,13 @@ impl ProxyConfig {
         }
         if now.checked_add(self.identity_reuse_quiet_period).is_none() {
             return Err("identity reuse quiet period is too large");
+        }
+        if self
+            .nat64_prefixes
+            .iter()
+            .any(|prefix| !matches!(prefix.prefix_len(), 32 | 40 | 48 | 56 | 64 | 96))
+        {
+            return Err("NAT64 prefix length must be 32, 40, 48, 56, 64, or 96");
         }
         Ok(())
     }
@@ -75,6 +85,20 @@ impl ProxyConfig {
     /// Set the maximum buffered TLS `ClientHello` size for inspected tunnels.
     pub fn with_max_client_hello_bytes(mut self, bytes: usize) -> Self {
         self.max_client_hello_bytes = bytes.clamp(1_024, 1024 * 1024);
+        self
+    }
+
+    /// Register a network-specific NAT64 prefix whose embedded IPv4 address
+    /// must receive the ordinary forbidden-destination checks.
+    ///
+    /// RFC 6052 permits prefix lengths of `/32`, `/40`, `/48`, `/56`, `/64`,
+    /// and `/96`. [`Proxy::start`](crate::Proxy::start) rejects other lengths.
+    /// The well-known `64:ff9b::/96` prefix is always recognized and does not
+    /// need to be registered.
+    pub fn with_nat64_prefix(mut self, prefix: Ipv6Net) -> Self {
+        if !self.nat64_prefixes.contains(&prefix) {
+            self.nat64_prefixes.push(prefix);
+        }
         self
     }
 
@@ -126,6 +150,7 @@ impl Default for ProxyConfig {
             max_resolved_addresses: 64,
             max_header_bytes: 32 * 1_024,
             max_client_hello_bytes: 64 * 1_024,
+            nat64_prefixes: Vec::new(),
             header_timeout: Duration::from_secs(10),
             identity_reuse_quiet_period: Duration::from_millis(25),
             diagnostics: None,
@@ -200,6 +225,27 @@ mod tests {
                 .max_events_per_second,
             10_000
         );
+    }
+
+    #[test]
+    fn rejects_a_nonstandard_nat64_prefix_length() {
+        let config = ProxyConfig::default().with_nat64_prefix(
+            "2600:1f18:abcd:1200::/56"
+                .parse()
+                .expect("valid RFC 6052 prefix"),
+        );
+        config.validate().expect("RFC 6052 length is valid");
+
+        let config = ProxyConfig::default().with_nat64_prefix(
+            "2600:1f18:abcd:1234::/80"
+                .parse()
+                .expect("syntactically valid IPv6 prefix"),
+        );
+        assert!(config.validate().is_err());
+        assert!(matches!(
+            crate::Proxy::start(config),
+            Err(crate::ProxyError::Initialization(_))
+        ));
     }
 
     #[test]

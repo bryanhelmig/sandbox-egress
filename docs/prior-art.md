@@ -30,6 +30,9 @@ production daemon limits, metrics, ACLs, and per-user policy.
   and [IPv6](https://www.iana.org/assignments/iana-ipv6-special-registry)
   special-purpose registries are the source of the default address floor;
   transition prefixes receive extra treatment when they can encode IPv4.
+- [RFC 6052](https://www.rfc-editor.org/rfc/rfc6052.html) defines the
+  well-known and network-specific NAT64 prefix lengths and the six layouts
+  used to recover the effective IPv4 destination.
 - Rust's [`Ipv6Addr`](https://doc.rust-lang.org/stable/std/net/struct.Ipv6Addr.html)
   distinguishes mapped conversion from the broader mapped-or-compatible
   conversion used by the guard.

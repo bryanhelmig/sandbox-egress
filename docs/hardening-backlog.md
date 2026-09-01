@@ -38,7 +38,8 @@ services may supplement research but must not become test dependencies.
 - DNS timeout, cancellation, late answers, cache behavior, and negative cache.
 - DNS rebinding between requests and after policy checks.
 - Proof that the dialer receives only the checked `SocketAddr`.
-- IPv4-mapped IPv6, IPv4-compatible forms, scoped IPv6, and zone identifiers.
+- IPv4-mapped IPv6, IPv4-compatible forms, scoped IPv6, zone identifiers, and
+  host-configured network-specific NAT64 prefixes.
 - Complete special-use range tables, including cloud metadata variants.
 - Resolver concurrency, queueing, and memory bounds.
 - Search domains, trailing dots, case, IDNA, Unicode confusables, and DNS label

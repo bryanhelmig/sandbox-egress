@@ -117,6 +117,9 @@ The current vertical slice provides:
 - default rejection of loopback, private, link-local, multicast,
   documentation, cloud-metadata, and unsafe IPv6 transition destinations
   unless a CIDR is explicitly granted;
+- RFC 6052 decoding for the well-known NAT64 prefix and any operator-registered
+  network-specific NAT64 prefixes, so translated private and metadata IPv4
+  destinations receive the same checks;
 - global and per-lease connection admission reserved before work is spawned;
 - bounded request headers, backpressure, and absolute accept-to-handshake and
   DNS deadlines;
@@ -146,6 +149,22 @@ encrypted tunnel, so Sandbox Egress does not claim to eliminate every form of
 domain fronting. Plain HTTP forwarding, transparent interception,
 and configurable resolver backends are also not yet implemented. These gaps
 are tracked rather than hidden.
+
+If the proxy host uses DNS64/NAT64 with a network-specific prefix, register the
+actual routed prefix in `ProxyConfig` before starting the proxy:
+
+```rust,no_run
+# use sandbox_egress::ProxyConfig;
+let config = ProxyConfig::default().with_nat64_prefix(
+    // Replace this RFC 6052 documentation example with the host's route.
+    "2001:db8:122:344::/96".parse()?,
+);
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Without that host-supplied fact, an arbitrary global IPv6 address cannot be
+distinguished from a translated IPv4 address by syntax alone. The well-known
+`64:ff9b::/96` prefix is recognized automatically.
 
 ## Safe integration order
 
