@@ -29,7 +29,7 @@ pub enum EchPolicy {
     AllowOuterSni,
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum HostPattern {
     Exact(String),
     Subdomains(String),
@@ -274,7 +274,7 @@ impl PolicyBuilder {
     /// complete handshake deadline, or a timeout too large for a runtime
     /// deadline.
     pub fn build(self) -> Result<Policy, PolicyError> {
-        let policy = self.policy;
+        let mut policy = self.policy;
         if policy.dns_timeout.is_zero()
             || policy.handshake_timeout.is_zero()
             || policy.idle_timeout.is_some_and(|timeout| timeout.is_zero())
@@ -294,6 +294,10 @@ impl PolicyBuilder {
         {
             return Err(PolicyError::TimeoutTooLarge);
         }
+        policy.hosts.sort_unstable();
+        policy.hosts.dedup();
+        policy.denied_hosts.sort_unstable();
+        policy.denied_hosts.dedup();
         Ok(policy)
     }
 }
@@ -476,6 +480,28 @@ mod tests {
         assert!(!policy.allows_hostname("admin.example.com"));
         assert!(!policy.allows_hostname("deep.internal.example.com"));
         assert!(!policy.allows_hostname("example.com"));
+    }
+
+    #[test]
+    fn build_normalizes_duplicate_host_rules() {
+        let policy = Policy::builder()
+            .allow_host("example.com")
+            .expect("valid exact grant")
+            .allow_host("example.com")
+            .expect("valid duplicate grant")
+            .allow_host("*.example.com")
+            .expect("valid wildcard grant")
+            .allow_host("*.example.com")
+            .expect("valid duplicate wildcard grant")
+            .deny_host("blocked.example.com")
+            .expect("valid exact denial")
+            .deny_host("blocked.example.com")
+            .expect("valid duplicate denial")
+            .build()
+            .expect("valid policy");
+
+        assert_eq!(policy.hosts.len(), 2);
+        assert_eq!(policy.denied_hosts.len(), 1);
     }
 
     #[test]

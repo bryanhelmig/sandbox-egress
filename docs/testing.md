@@ -57,6 +57,8 @@ returns `host-denied` despite mixed case and a trailing DNS root dot. A deep
 name under a wildcard denial is rejected while the wildcard apex stays outside
 that denial. Neither listener denial produces a resolver or connector call;
 certified close returns two accepted, two denied, and zero active connections.
+Canonical duplicate exact and wildcard rules collapse during construction, so
+an immutable policy does not retain repeated matching work.
 
 Destination precedence is pinned both as a pure immutable-policy case and
 through the listener. A denied public `/24` overlaps an explicit `0.0.0.0/0`

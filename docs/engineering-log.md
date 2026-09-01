@@ -5026,3 +5026,19 @@ remain. Ordinary allowed-hostname control intervals were also recorded at
 138.68–169.75 microseconds, with ordinary host resolution and upstream setup
 still dominating. Production code, permanent benchmarks, and behavior are
 unchanged.
+
+## 2026-09-01 — normalize repeated hostname rules
+
+The simplification rotation left the listener/control-plane state machine
+intact: its single owner and select loop make the shutdown ordering easier to
+audit than a set of helpers sharing mutable state. The policy audit did find
+redundant retained state. Repeating the same canonical exact or wildcard grant
+or denial previously stored another identical matcher for the lifetime of the
+lease.
+
+`PolicyBuilder::build` now canonically sorts and deduplicates each rule vector
+before freezing it. This uses the existing representation and adds no matching
+branch or secondary index. A focused case covers duplicate exact grants,
+wildcard grants, and denials. Public API, rule precedence, and accepted
+hostname behavior are unchanged. Structural/cognitive complexity remains
+770/2,282, and the deterministic test count rises from 183 to 184.

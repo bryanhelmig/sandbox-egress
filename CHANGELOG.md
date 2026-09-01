@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Canonically order and deduplicate exact and wildcard hostname grants and
+  denials when freezing a policy, avoiding redundant retained matching work.
 - Add optional host-configured HTTP CONNECT chaining after local destination
   resolution and policy checks, sending only the approved numeric address and
   preserving cancellation, deadlines, bounded response parsing, and exact
