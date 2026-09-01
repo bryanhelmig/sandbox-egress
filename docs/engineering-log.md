@@ -4564,3 +4564,17 @@ five threads, and finished at 6,304 KiB, four descriptors, and two threads.
 The rootless 179/179 image is
 `sha256:027431a73ad8feed861c02fe7a834a81c54a291af2b12a736b4bbd9cb33740af`
 (40,877,983 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — reject doubling runtime workers
+
+The next performance rotation tested four owned Tokio workers against the
+existing two under 10,000 local CONNECTs, 128 concurrent clients, and 32
+destinations. Five two-worker runs produced 16,630–19,915 connections/second
+with a 17,727 median. Five four-worker runs produced 16,169–19,111 with a
+17,855 median, only 0.7% higher and well inside run variance. Median p50 setup
+latency moved from 3,949 to 4,151 microseconds.
+
+The candidate would also add two steady threads to every embedded proxy. It
+was discarded: this load is not improved by broader scheduling, and the fixed
+two-worker runtime remains the smaller, more reproducible default. Production
+source, complexity, and behavior remain unchanged.
