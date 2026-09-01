@@ -3786,3 +3786,35 @@ descriptors, and six threads, then returned after shutdown to 6,096 KiB, four
 descriptors, and two threads. The rootless 160/160 image is
 `sha256:b0f1affa4b01e315eeee9c88f9cbc2b1bb8df47f31583e2cf79437ba9e7ba826`
 (40,740,585 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — share immutable connection configuration
+
+This performance/simplification cycle found that every admitted connection
+cloned and retained the complete `ProxyConfig` for its full lifetime. That
+object includes owned DNS-server and NAT64-prefix vectors even though proxy
+startup freezes it and connection tasks only read it. The runtime now owns one
+`Arc<ProxyConfig>` and each task clones that handle. The production change is
+three lines and does not alter the public API, task count, limits, or security
+decisions.
+
+Three alternating 50,000-connection A/B pairs against detached `9ae7c31`
+worktrees moved in both directions. Candidate throughput ranged from 17,056 to
+19,718 connections/second and baseline from 18,578 to 19,578; latency ranges
+also overlapped. No end-to-end performance change is claimed, and the detached
+worktree was removed.
+
+An added reproducible microbenchmark isolates the actual ownership operation
+with eight configured DNS servers and six NAT64 prefixes. Direct `ProxyConfig`
+cloning measured 58.900–61.846 ns; shared-handle cloning measured
+9.858–10.029 ns. This supports the narrow structural claim that the admitted
+task no longer allocates and copies populated vectors. Whole-tree SCC 4.0.0
+complexity moves from 679/2,038 to 683/2,048 structural/cognitive, entirely in
+the benchmark; production complexity is unchanged.
+
+The native and exact Rust 1.88 Linux factories passed 160 deterministic cases,
+five doctests, documentation, package verification, and all six Linux resource
+lanes; native dependency policy checks also passed. Linux's TLS lane peaked at
+14,892 KiB RSS, 265 descriptors, and six threads, then returned after shutdown
+to 5,800 KiB, four descriptors, and two threads. The rootless 160/160 image is
+`sha256:fcba3c575f7247c504f2ea6cd2872ce52e08b35b733bf93e6f0fda394929b2f6`
+(40,738,534 bytes) and runs as UID/GID 65534.

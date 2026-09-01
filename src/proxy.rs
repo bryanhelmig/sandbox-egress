@@ -613,7 +613,7 @@ struct ConnectionRuntime {
     connector: Arc<ConnectorBackend>,
     global_permits: Arc<Semaphore>,
     phase_permits: Arc<PhasePermits>,
-    config: ProxyConfig,
+    config: Arc<ProxyConfig>,
 }
 
 struct PhasePermits {
@@ -645,7 +645,7 @@ impl ConnectionRuntime {
         let resolver = Arc::clone(&self.resolver);
         let phase_permits = Arc::clone(&self.phase_permits);
         let connector = Arc::clone(&self.connector);
-        let config = self.config.clone();
+        let config = Arc::clone(&self.config);
         tokio::spawn(async move {
             let mut admission = admission;
             let cancel = admission.state.cancel.clone();
@@ -738,7 +738,7 @@ async fn run_proxy(
         }),
         resolver,
         connector,
-        config,
+        config: Arc::new(config),
     };
 
     let mut stopping = false;

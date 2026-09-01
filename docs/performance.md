@@ -436,3 +436,27 @@ runs. No latency improvement or regression is claimed. The retained effect is
 smaller bounded allocation demand: each in-progress header starts by requesting
 1 KiB rather than 4 KiB of vector capacity, while larger headers still grow up
 to the same configured byte limit.
+
+## Shared immutable proxy configuration
+
+Recorded 2026-09-01 on the same Apple M1 with Rust 1.97.1. Each admitted
+connection used to clone and retain the complete `ProxyConfig`, including its
+DNS-server and NAT64-prefix vectors. The connection runtime now shares one
+immutable configuration through `Arc` and clones only that handle.
+
+The isolated benchmark deliberately populates both vectors so it measures the
+ownership operation this change removes:
+
+```text
+command: cargo bench --bench lifecycle -- clone_ --noplot
+clone_populated_proxy_config_control: 58.900 .. 61.846 ns
+clone_shared_proxy_config:             9.858 .. 10.029 ns
+```
+
+This is not an end-to-end speedup claim. Three alternating 50,000-connection
+load pairs against `9ae7c31` were mixed: candidate throughput ranged from
+17,056 to 19,718 connections/second and baseline from 18,578 to 19,578.
+Setup-latency ranges overlapped as well. DNS, socket, and scheduler work
+dominate that harness. The retained result is narrower: populated vectors are
+no longer allocated and copied once per admitted connection, and connection
+tasks have simpler immutable ownership.
