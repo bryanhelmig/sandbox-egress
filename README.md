@@ -40,6 +40,11 @@ sidecar in the network namespace. Since Linux 5.17 either capability can set
 the mark, and Docker retains `CAP_NET_RAW` by default. Running as a non-root UID
 does not replace this capability check.
 
+The complete [deployment contract](docs/deployment-contract.md) divides the
+guarantees owned by this crate from the direct TCP, UDP, DNS, inherited-socket,
+and host-IPC confinement that the sandbox must own. That checklist is the
+right starting point before calling a deployment safe.
+
 ## The three-object model
 
 - `Proxy` owns the shared listener, resolver, runtime, and global connection

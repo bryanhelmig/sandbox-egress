@@ -19,6 +19,13 @@ socket mark. Container defaults can retain `CAP_NET_RAW`, and changing the
 process UID does not remove an effective capability. This crate does not
 install or certify the host cage; the supervisor must verify that boundary.
 
+Only sockets accepted by the shared listener enter a lease. Direct TCP or UDP,
+an unrelated loopback or host IPC endpoint, and a socket inherited or passed
+to the guest bypass attribution, accounting, and revocation entirely. The host
+must deny those paths and prevent guest DNS from becoming an alternate egress
+channel. The normative integration checklist is in
+[`deployment-contract.md`](deployment-contract.md).
+
 TCP contains no run-generation field. Therefore a shared listener cannot, by
 itself, distinguish a deliberately delayed SYN from an old run after the same
 source address is reassigned. The implementation keeps the identity revoking

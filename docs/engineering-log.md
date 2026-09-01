@@ -4987,3 +4987,24 @@ public compatibility obligation before 0.1 without changing the builder,
 immutable policy representation, accepted rule set, allocations, tasks, or
 data path. The deterministic test count and whole-tree 770/2,282
 structural/cognitive complexity remain unchanged.
+
+## 2026-09-01 — separate listener guarantees from cage guarantees
+
+The comparison rotation reviewed RunSeal `001b0dd6`, whose black-box
+proxy-mode conformance explicitly probes environment overrides, direct TCP and
+UDP, unrelated loopback, host IPC, and inherited-socket bypasses. These are
+valuable deployment tests, but they exercise the process and network cage: a
+listener-only library cannot observe or revoke a connection that never reaches
+its accept loop.
+
+A new deployment contract now divides the guarantees precisely. Sandbox
+Egress owns accepted-connection attribution, immutable policy, resolution,
+accounting, cancellation, and certified close. The host owns unspoofable source
+identity, direct-protocol confinement, resolver and upstream isolation,
+descriptor inheritance, unrelated local endpoints, and identity-reuse order.
+The README and security invariants link that contract, and the backlog now
+calls for a black-box Linux/Firecracker harness covering the same escape paths.
+
+No runtime behavior, public API, dependencies, tests, or complexity changed.
+This pass deliberately does not put OS-specific cage machinery into the
+embeddable proxy crate or weaken the meaning of successful `Lease::close`.

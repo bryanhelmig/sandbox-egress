@@ -60,6 +60,10 @@ contributor instead of preserving solved work as apparent backlog.
 ## Deployment and integration
 
 - Linux network namespaces, nftables, TAP devices, and Firecracker guests.
+- A black-box host-cage conformance harness covering direct TCP/UDP, both IP
+  families, unrelated loopback and host IPC, proxy-environment overrides,
+  inherited sockets, resolver/upstream reachability, and premature identity
+  reuse. These paths cannot be certified by an in-listener library test.
 - DNS routing that cannot bypass the proxy boundary.
 - IPv4-only, IPv6-only, dual-stack, unusual MTU, and packet loss/delay.
 - Resolver configuration changes and absent or malformed `resolv.conf`.

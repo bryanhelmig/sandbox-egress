@@ -11,6 +11,7 @@ links remain upstream-owned and are not vendored.
 | [motosan-sandbox](https://github.com/motosan-dev/motosan-sandbox) | `13eab245` | small per-run CONNECT proxy and hard routing | one proxy per run; spawned tunnels are not a shared lease |
 | [ressrf](https://github.com/timescale/ressrf) | `52fc89cf` | generated forbidden ranges, DNS-pinned transports, adversarial parser cases | policy/transport components rather than lease ownership |
 | [Raincoat](https://github.com/zachgenius/raincoat) | `811c8330` | honest host-cage boundary and hostile plain-HTTP framing cases | sandbox product with per-process proxy ownership |
+| [RunSeal](https://github.com/runseal-labs/runseal) | `001b0dd6` | black-box proxy-bypass conformance across the process and network cage | sandbox product; listener lifecycle is not its reusable boundary |
 | [canister](https://github.com/dergraf/canister) | `27434158` | hostile L7 contracts, body limits, DLP | sandbox product, not reusable lifecycle primitive |
 | [eavs](https://github.com/byteowlz/eavs) | `afa178a0` | transparent destination recovery and SNI/Host ACLs | no ephemeral run ownership |
 | [microsandbox](https://github.com/superradcompany/microsandbox) | `5b1c63d9` | network-layer DNS timeout/rebinding controls | microVM network subsystem, not forward-proxy lease API |
@@ -213,6 +214,14 @@ lists `NET_RAW` in its default retained capability set. A cage that exempts
 marked proxy sockets must therefore remove both capabilities from every
 untrusted workload or sidecar in the governed network namespace. A non-root
 UID alone is not the relevant boundary.
+
+The current RunSeal comparison adds a useful black-box deployment distinction:
+its proxy-mode conformance covers direct TCP and UDP, unrelated loopback,
+host IPC, environment overrides, and inherited-socket bypasses. Those are
+properties of RunSeal's process-and-network cage, not behaviors a listener-only
+crate can implement or certify. Sandbox Egress now records the same cases as a
+host integration contract and future Linux/Firecracker harness, without
+claiming that `Lease::close` can revoke traffic it never accepted.
 
 ## Protocol references
 
