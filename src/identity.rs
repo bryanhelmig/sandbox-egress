@@ -25,7 +25,12 @@ impl PeerIdentity {
 
     pub(crate) const fn is_attachable(&self) -> bool {
         match self {
-            Self::SourceIp(address) => !address.is_unspecified() && !address.is_multicast(),
+            Self::SourceIp(IpAddr::V4(address)) => {
+                !address.is_unspecified() && !address.is_multicast() && !address.is_broadcast()
+            }
+            Self::SourceIp(IpAddr::V6(address)) => {
+                !address.is_unspecified() && !address.is_multicast()
+            }
         }
     }
 }

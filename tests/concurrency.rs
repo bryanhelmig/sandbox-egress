@@ -87,6 +87,8 @@ fn impossible_source_identities_fail_before_consuming_a_lease_id() {
         IpAddr::V4(Ipv4Addr::new(224, 0, 0, 1)),
         IpAddr::V6("ff02::1".parse().expect("IPv6 multicast")),
         IpAddr::V6(Ipv4Addr::new(224, 0, 0, 1).to_ipv6_mapped()),
+        IpAddr::V4(Ipv4Addr::BROADCAST),
+        IpAddr::V6(Ipv4Addr::BROADCAST.to_ipv6_mapped()),
     ] {
         assert!(matches!(
             proxy.attach(

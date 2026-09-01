@@ -5194,3 +5194,19 @@ closing an unbounded phase, while per-address deadlines could multiply one
 guest's total handshake time. Neither behavior is imported. The nono accept
 loop citation is refreshed to its reviewed `d3c6f6b0` pin; production code and
 the 187-case suite are unchanged.
+
+## 2026-09-01 — reject limited-broadcast source identity
+
+The hardening pass extended the impossible-identity boundary to IPv4 limited
+broadcast. `255.255.255.255` cannot be the source of an accepted TCP
+connection, but it previously consumed a lease sequence and appeared attached.
+Attachment now rejects both its native and IPv4-mapped IPv6 spellings after the
+same canonicalization used at socket acceptance.
+
+The public identity matrix covers both new forms and still requires the first
+valid source to receive lease ID 1, proving rejection happens before sequence
+allocation or runtime mutation. Twenty-five consecutive focused runs pass with
+formatting and all-target Clippy. The deterministic test count remains 187;
+whole-tree structural/cognitive complexity moves from 776/2,300 to 778/2,311.
+An attempted single-arm predicate measured worse cognitive complexity than the
+explicit address-family match and was discarded.

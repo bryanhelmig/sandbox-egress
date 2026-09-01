@@ -154,9 +154,10 @@ impl Proxy {
     ///
     /// # Errors
     ///
-    /// Returns [`AttachError::InvalidIdentity`] for an unspecified or multicast
-    /// source address and [`AttachError::IdentityInUse`] until the previous lease
-    /// has closed successfully or completed best-effort cleanup. It returns
+    /// Returns [`AttachError::InvalidIdentity`] for an unspecified, multicast,
+    /// or limited-broadcast source address and [`AttachError::IdentityInUse`]
+    /// until the previous lease has closed successfully or completed best-effort
+    /// cleanup. It returns
     /// [`AttachError::LeaseIdExhausted`] rather than reusing a diagnostic
     /// sequence after process-local exhaustion, and
     /// [`AttachError::ProxyStopping`] after proxy-wide shutdown begins.

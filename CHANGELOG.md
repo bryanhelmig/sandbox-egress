@@ -7,8 +7,9 @@ Changelog and versions follow Semantic Versioning.
 
 - Reject destination port zero while freezing a policy, rather than accepting
   an immutable grant that no valid CONNECT request can exercise.
-- Reject unspecified and multicast source identities before attachment or lease
-  sequence allocation because they cannot identify an accepted TCP peer.
+- Reject unspecified, multicast, and limited-broadcast source identities before
+  attachment or lease sequence allocation because they cannot identify an
+  accepted TCP peer.
 - Atomically disable diagnostics after the caller-owned receiver disconnects,
   avoiding repeated rate-state work under later denial volume.
 - Canonically order and deduplicate exact and wildcard hostname rules and
