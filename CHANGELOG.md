@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Clarify that Linux `SO_MARK` bypass schemes must remove both `CAP_NET_ADMIN`
+  and `CAP_NET_RAW` from every untrusted process sharing the network namespace.
 - Prove repeated failed lease closes preserve ownership and an exact nonzero
   usage snapshot until a later retry certifies it as final.
 - Prove lease Drop remains non-panicking and releases ownership during unwind

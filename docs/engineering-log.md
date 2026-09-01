@@ -2191,3 +2191,26 @@ eight descriptors and five threads to four and two, finishing at 3,960 KiB RSS
 in 1,067 ms. The rootless runner reproduced 110/110 as UID/GID 65534; image
 `sha256:3828250dce921f4b076a5062deb9cfccdb4e9bed2c59e13a02bfae92ba3de590`
 measured 40,402,723 bytes.
+
+## 2026-09-01 — make the mark-bypass capability boundary explicit
+
+The pinned `lens-sandbox-core` reference advanced from `a0a95786` to
+`2bc4ecc5`. Its only network-relevant change was a documentation correction:
+an `SO_MARK`-based nftables cage is forgeable by a process with either
+`CAP_NET_ADMIN` or `CAP_NET_RAW`, not only the former. Linux
+[`socket(7)`](https://man7.org/linux/man-pages/man7/socket.7.html) confirms that
+`CAP_NET_RAW` has sufficed since Linux 5.17, while
+[Docker's runtime documentation](https://docs.docker.com/engine/containers/run/#runtime-privilege-and-linux-capabilities)
+lists `NET_RAW` among its default retained capabilities.
+
+The public integration guidance and security invariants now require both
+capabilities to be absent from every untrusted workload and sidecar sharing a
+mark-governed network namespace. They also state that a non-root UID is not a
+substitute for checking effective and bounding capability sets. Sandbox Egress
+still does not install or certify the host cage; this clarification makes that
+load-bearing deployment boundary harder to misconfigure without expanding the
+crate.
+
+No Rust source, dependency, test count, complexity, or performance result
+changed. The source factory and documentation checks remain the appropriate
+evidence for this research-only clarification.

@@ -34,6 +34,12 @@ files, memory, and syscalls, and must use a namespace, firewall, NAT boundary,
 or equivalent mechanism so the guest cannot bypass the proxy with a direct
 socket. Merely setting `HTTP_PROXY` is not a security boundary.
 
+If that boundary exempts trusted proxy sockets with Linux `SO_MARK`, remove
+both `CAP_NET_ADMIN` and `CAP_NET_RAW` from every untrusted workload and
+sidecar in the network namespace. Since Linux 5.17 either capability can set
+the mark, and Docker retains `CAP_NET_RAW` by default. Running as a non-root UID
+does not replace this capability check.
+
 ## The three-object model
 
 - `Proxy` owns the shared listener, resolver, runtime, and global connection
@@ -207,6 +213,11 @@ certifies the lease, and attach repeats that barrier before installing a new
 mapping. Those barriers destroy sockets already visible to the listener; they
 do not make host-side fencing optional or authenticate a packet delayed beyond
 the configured quiet interval.
+
+For mark-based nftables routing, verify the effective and bounding capability
+sets of every process sharing the guest network namespace. In particular,
+drop both `CAP_NET_ADMIN` and `CAP_NET_RAW`; a default container capability set
+may still include the latter.
 
 ## Development
 

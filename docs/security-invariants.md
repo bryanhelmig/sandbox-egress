@@ -10,6 +10,13 @@ DNS answers. The host supervisor and kernel network boundary are trusted.
 spoof it and cannot bypass the proxy. The supervisor must fence the old
 namespace/NAT path before calling `Lease::close`.
 
+If the host's egress cage exempts trusted proxy sockets with Linux `SO_MARK`,
+every untrusted process in that network namespace must lack both
+`CAP_NET_ADMIN` and `CAP_NET_RAW`. Since Linux 5.17 either capability can set a
+socket mark. Container defaults can retain `CAP_NET_RAW`, and changing the
+process UID does not remove an effective capability. This crate does not
+install or certify the host cage; the supervisor must verify that boundary.
+
 TCP contains no run-generation field. Therefore a shared listener cannot, by
 itself, distinguish a deliberately delayed SYN from an old run after the same
 source address is reassigned. The implementation keeps the identity revoking

@@ -6,7 +6,7 @@ links remain upstream-owned and are not vendored.
 | Project | Reviewed commit | What to learn | Gap this crate targets |
 | --- | --- | --- | --- |
 | [Stripe Smokescreen](https://github.com/stripe/smokescreen) | `d4da883a` | ACL and IP filtering, operational limits, diagnostics | Go daemon; no run lease |
-| [lens-sandbox-core](https://github.com/lensapp/lens-sandbox-core) | `a0a95786` | broad Rust DNS/proxy/TLS/policy implementation | shared mutable policy and detached connection lifecycle |
+| [lens-sandbox-core](https://github.com/lensapp/lens-sandbox-core) | `2bc4ecc5` | broad Rust DNS/proxy/TLS/policy implementation and Linux cage boundary | shared mutable policy and detached connection lifecycle |
 | [nono](https://github.com/nolabs-ai/nono) | `8f15fc86` | supervisor-side proxy, credential boundary, audit | guest session token and accept-loop shutdown, not certified close |
 | [motosan-sandbox](https://github.com/motosan-dev/motosan-sandbox) | `13eab245` | small per-run CONNECT proxy and hard routing | one proxy per run; spawned tunnels are not a shared lease |
 | [ressrf](https://github.com/timescale/ressrf) | `52fc89cf` | generated forbidden ranges, DNS-pinned transports, adversarial parser cases | policy/transport components rather than lease ownership |
@@ -40,6 +40,17 @@ listener-owner command loop serializes identity installation. A 32-caller
 contention case proves exactly one attachment wins and every other caller sees
 `IdentityInUse`; adding a second registry synchronization scheme would not
 strengthen that invariant.
+
+## Host-cage capability boundary
+
+The current Lens cage review corrected a subtle deployment assumption around
+mark-based routing. Linux [`socket(7)`](https://man7.org/linux/man-pages/man7/socket.7.html)
+documents that `SO_MARK` requires `CAP_NET_ADMIN` or, since Linux 5.17,
+`CAP_NET_RAW`. [Docker's runtime documentation](https://docs.docker.com/engine/containers/run/#runtime-privilege-and-linux-capabilities)
+lists `NET_RAW` in its default retained capability set. A cage that exempts
+marked proxy sockets must therefore remove both capabilities from every
+untrusted workload or sidecar in the governed network namespace. A non-root
+UID alone is not the relevant boundary.
 
 ## Protocol references
 
