@@ -14,9 +14,16 @@ TCP contains no run-generation field. Therefore a shared listener cannot, by
 itself, distinguish a deliberately delayed SYN from an old run after the same
 source address is reassigned. The implementation keeps the identity revoking
 until one complete configured interval passes without an accepted old socket;
-each observed arrival restarts that interval. It cannot authenticate a packet
-that arrives after the interval, so the host-side fencing order is
-load-bearing:
+each observed arrival restarts that interval. At the end of a candidate quiet
+interval, the listener owner drains ready accepts in bounded batches and
+rechecks the generation before certifying cleanup. Reaching a batch limit or
+an accept error is not treated as an empty queue. Attachment independently
+requires an empty ready-queue poll before installing a mapping, so management
+command pressure cannot carry an already-queued socket into a replacement
+policy.
+
+The proxy still cannot authenticate a packet that arrives after the interval,
+so the host-side fencing order is load-bearing:
 
 1. prevent the old guest from creating traffic;
 2. close the lease successfully;

@@ -88,6 +88,18 @@ It requires `DeadlineExceeded`, recovers the still-owning lease, observes the
 denial, gets `IdentityInUse` from replacement attachment, then retries close
 successfully only after old traffic stops.
 
+The accept-queue barrier case keeps the biased management branch continuously
+ready while an old-source socket waits in the kernel queue. The pre-fix loop
+certified close and returned `200 Connection Established` under the replacement
+policy. The retained case requires the listener-owned drain to reject and count
+that socket against the old lease, restart quiet time, and leave it terminal
+after replacement attachment. It is deterministic and does not depend on
+public traffic or probabilistic scheduling.
+
+An already-quiesced retry has a separate state-level case. It must request a
+fresh listener drain before returning the stored final snapshot, but does not
+repeat the quiet interval or alter final counters.
+
 A proxy-wide shutdown case first records one real denied CONNECT, then joins
 the runtime while retaining its lease handle. Calling `Lease::close` afterward
 must return the committed snapshot with one accepted, one denied, and zero
@@ -98,7 +110,7 @@ resource lane in the builder. A checked collector reads Cargo's JSON artifact
 records, requires exactly one executable for each conformance target, strips
 copies, and carries only those binaries into a Debian runner. The CLI's
 compile-time executable dependency is copied at its exact embedded path. The
-final image runs as UID/GID 65534 and must reproduce all 94 deterministic
+final image runs as UID/GID 65534 and must reproduce all 96 deterministic
 cases without Cargo, source, or a build cache.
 
 Source-identity cases prove an IPv4 address and its mapped IPv6 transport

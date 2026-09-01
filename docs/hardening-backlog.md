@@ -70,7 +70,8 @@ services may supplement research but must not become test dependencies.
 
 - Global and per-lease reservations before task creation.
 - Fairness between leases under global saturation.
-- Listener backlog saturation and accept-loop starvation.
+- Listener backlog saturation and general accept-loop fairness beyond the
+  certified close/attach drain barriers.
 - DNS and dial concurrency distinct from tunnel concurrency.
 - Runtime command-channel flooding and synchronous caller contention.
 - Stable RSS, threads, tasks, sockets, and descriptors under soak.

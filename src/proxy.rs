@@ -357,6 +357,14 @@ enum Command {
         deadline: Instant,
         reply: mpsc::SyncSender<Result<(), ()>>,
     },
+    DrainAcceptQueue {
+        reply: tokio::sync::oneshot::Sender<()>,
+    },
+    #[cfg(test)]
+    KeepCommandsReady {
+        until: Instant,
+        started: Option<mpsc::SyncSender<()>>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -598,6 +606,88 @@ pub(crate) trait TestConnector: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = io::Result<TcpStream>> + Send + '_>>;
 }
 
+// Yield between bounded drain batches. A full batch is never evidence that the
+// queue is empty; the command is requeued and attachment or cleanup stays held.
+const ACCEPT_DRAIN_BATCH: usize = 256;
+
+struct ConnectionRuntime {
+    resolver: Arc<ResolverBackend>,
+    connector: Arc<ConnectorBackend>,
+    global_permits: Arc<Semaphore>,
+    dns_permits: Arc<Semaphore>,
+    config: ProxyConfig,
+}
+
+impl ConnectionRuntime {
+    fn dispatch(
+        &self,
+        stream: TcpStream,
+        peer: SocketAddr,
+        leases: &HashMap<PeerIdentity, Arc<LeaseState>>,
+    ) {
+        let accepted_at = TokioInstant::now();
+        let identity = PeerIdentity::SourceIp(peer.ip()).canonical();
+        let Some(state) = leases.get(&identity).cloned() else {
+            drop(stream);
+            return;
+        };
+        let Ok(global_permit) = self.global_permits.clone().try_acquire_owned() else {
+            state.reject_unadmitted(stream, "global-capacity");
+            return;
+        };
+        let Some((admission, stream)) = state.admit(stream) else {
+            drop(global_permit);
+            return;
+        };
+        let resolver = Arc::clone(&self.resolver);
+        let dns_permits = Arc::clone(&self.dns_permits);
+        let connector = Arc::clone(&self.connector);
+        let config = self.config.clone();
+        tokio::spawn(async move {
+            let mut admission = admission;
+            let cancel = admission.state.cancel.clone();
+            let state = Arc::clone(&admission.state);
+            let result = tokio::select! {
+                biased;
+                () = cancel.cancelled() => None,
+                result = serve_connect(
+                    stream,
+                    &state,
+                    &resolver,
+                    &dns_permits,
+                    &connector,
+                    &config,
+                    accepted_at,
+                ) => Some(result),
+            };
+            if matches!(result, Some(Ok(ConnectionDisposition::Completed))) {
+                admission.mark_completed();
+            }
+            drop(global_permit);
+        });
+    }
+
+    async fn drain_ready(
+        &self,
+        listener: &TcpListener,
+        leases: &HashMap<PeerIdentity, Arc<LeaseState>>,
+    ) -> bool {
+        for _ in 0..ACCEPT_DRAIN_BATCH {
+            let accepted = std::future::poll_fn(|context| match listener.poll_accept(context) {
+                Poll::Ready(result) => Poll::Ready(Some(result)),
+                Poll::Pending => Poll::Ready(None),
+            })
+            .await;
+            match accepted {
+                Some(Ok((stream, peer))) => self.dispatch(stream, peer, leases),
+                None => return true,
+                Some(Err(_)) => return false,
+            }
+        }
+        false
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 async fn run_proxy(
     config: ProxyConfig,
@@ -639,8 +729,13 @@ async fn run_proxy(
     }
 
     let mut leases: HashMap<PeerIdentity, Arc<LeaseState>> = HashMap::new();
-    let global_permits = Arc::new(Semaphore::new(config.max_connections));
-    let dns_permits = Arc::new(Semaphore::new(config.max_concurrent_dns));
+    let connections = ConnectionRuntime {
+        global_permits: Arc::new(Semaphore::new(config.max_connections)),
+        dns_permits: Arc::new(Semaphore::new(config.max_concurrent_dns)),
+        resolver,
+        connector,
+        config,
+    };
 
     loop {
         tokio::select! {
@@ -650,29 +745,45 @@ async fn run_proxy(
                 match command {
                     Command::Attach { state, reply } => {
                         let replaceable = leases.get(&state.identity).is_none_or(|old| old.is_closed());
-                        if replaceable {
+                        // Policy installation and this empty-queue observation
+                        // are ordered on the one listener-owner task.
+                        if !replaceable {
+                            let _ = reply.send(Err(AttachError::IdentityInUse));
+                        } else if connections.drain_ready(&listener, &leases).await {
                             leases.insert(state.identity.clone(), state);
                             let _ = reply.send(Ok(()));
                         } else {
-                            let _ = reply.send(Err(AttachError::IdentityInUse));
+                            let _ = command_sender.send(Command::Attach { state, reply });
                         }
                     }
                     Command::Close { state, deadline, reply } => {
                         state.begin_close();
-                        spawn_close_wait(state, config.identity_reuse_quiet_period, deadline, reply);
+                        spawn_close_wait(
+                            state,
+                            connections.config.identity_reuse_quiet_period,
+                            deadline,
+                            reply,
+                            Some(command_sender.clone()),
+                        );
                     }
                     Command::Reap { state } => {
                         state.begin_close();
                         let command_sender = command_sender.clone();
+                        let drain_sender = command_sender.clone();
+                        let quiet_period = connections.config.identity_reuse_quiet_period;
                         tokio::spawn(async move {
                             state.tracker.wait().await;
-                            quiesce_after_identity_quiet(
+                            if quiesce_after_identity_quiet(
                                 &state,
-                                config.identity_reuse_quiet_period,
+                                quiet_period,
+                                Some(&drain_sender),
                             )
-                            .await;
-                            state.mark_closed();
-                            let _ = command_sender.send(Command::Release { state });
+                            .await
+                            .is_ok()
+                            {
+                                state.mark_closed();
+                                let _ = command_sender.send(Command::Release { state });
+                            }
                         });
                     }
                     Command::Release { state } => {
@@ -693,42 +804,38 @@ async fn run_proxy(
                         let _ = reply.send(success.then_some(()).ok_or(()));
                         break;
                     }
+                    Command::DrainAcceptQueue { reply } => {
+                        if reply.is_closed() {
+                            continue;
+                        }
+                        let drained = connections.drain_ready(&listener, &leases).await;
+                        if reply.is_closed() {
+                            continue;
+                        }
+                        if drained {
+                            let _ = reply.send(());
+                        } else {
+                            let _ = command_sender.send(Command::DrainAcceptQueue { reply });
+                        }
+                    }
+                    #[cfg(test)]
+                    Command::KeepCommandsReady { until, started } => {
+                        if let Some(started) = started {
+                            let _ = started.send(());
+                        }
+                        if Instant::now() < until {
+                            let _ = command_sender.send(Command::KeepCommandsReady {
+                                until,
+                                started: None,
+                            });
+                        }
+                    }
                 }
             }
             accepted = listener.accept() => {
-                let Ok((stream, peer)) = accepted else { continue };
-                let accepted_at = TokioInstant::now();
-                let identity = PeerIdentity::SourceIp(peer.ip()).canonical();
-                let Some(state) = leases.get(&identity).cloned() else {
-                    drop(stream);
-                    continue;
-                };
-                let Ok(global_permit) = global_permits.clone().try_acquire_owned() else {
-                    state.reject_unadmitted(stream, "global-capacity");
-                    continue;
-                };
-                let Some((admission, stream)) = state.admit(stream) else {
-                    drop(global_permit);
-                    continue;
-                };
-                let resolver = Arc::clone(&resolver);
-                let dns_permits = Arc::clone(&dns_permits);
-                let connector = Arc::clone(&connector);
-                let config = config.clone();
-                tokio::spawn(async move {
-                    let mut admission = admission;
-                    let cancel = admission.state.cancel.clone();
-                    let state = Arc::clone(&admission.state);
-                    let result = tokio::select! {
-                        biased;
-                        () = cancel.cancelled() => None,
-                        result = serve_connect(stream, &state, &resolver, &dns_permits, &connector, &config, accepted_at) => Some(result),
-                    };
-                    if matches!(result, Some(Ok(ConnectionDisposition::Completed))) {
-                        admission.mark_completed();
-                    }
-                    drop(global_permit);
-                });
+                if let Ok((stream, peer)) = accepted {
+                    connections.dispatch(stream, peer, &leases);
+                }
             }
         }
     }
@@ -751,30 +858,54 @@ fn spawn_close_wait(
     quiet_period: Duration,
     deadline: Instant,
     reply: mpsc::SyncSender<Result<FinalUsage, CloseErrorKind>>,
+    drain_sender: Option<tokio_mpsc::UnboundedSender<Command>>,
 ) {
     tokio::spawn(async move {
         let close = async {
             state.tracker.wait().await;
-            quiesce_after_identity_quiet(&state, quiet_period).await
+            quiesce_after_identity_quiet(&state, quiet_period, drain_sender.as_ref()).await
         };
-        let result = timeout_at(TokioInstant::from_std(deadline), close)
-            .await
-            .map_err(|_| CloseErrorKind::DeadlineExceeded);
+        let result = match timeout_at(TokioInstant::from_std(deadline), close).await {
+            Ok(result) => result,
+            Err(_) => Err(CloseErrorKind::DeadlineExceeded),
+        };
         let _ = reply.send(result);
     });
 }
 
-async fn quiesce_after_identity_quiet(state: &LeaseState, quiet_period: Duration) -> FinalUsage {
+async fn quiesce_after_identity_quiet(
+    state: &LeaseState,
+    quiet_period: Duration,
+    drain_sender: Option<&tokio_mpsc::UnboundedSender<Command>>,
+) -> Result<FinalUsage, CloseErrorKind> {
     loop {
         if let Some(usage) = state.quiesced_snapshot() {
-            return usage;
+            if let Some(drain_sender) = drain_sender {
+                drain_accept_queue(drain_sender).await?;
+            }
+            return Ok(usage);
         }
         let before = state.revocation_generation();
         sleep(quiet_period).await;
+        if let Some(drain_sender) = drain_sender {
+            // The listener owner drains first; the generation check below then
+            // rejects this candidate interval if an old socket was observed.
+            drain_accept_queue(drain_sender).await?;
+        }
         if let Some(usage) = state.quiesce_if_generation(before) {
-            return usage;
+            return Ok(usage);
         }
     }
+}
+
+async fn drain_accept_queue(
+    command_sender: &tokio_mpsc::UnboundedSender<Command>,
+) -> Result<(), CloseErrorKind> {
+    let (reply, drained) = tokio::sync::oneshot::channel();
+    command_sender
+        .send(Command::DrainAcceptQueue { reply })
+        .map_err(|_| CloseErrorKind::RuntimeStopped)?;
+    drained.await.map_err(|_| CloseErrorKind::RuntimeStopped)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1915,6 +2046,7 @@ mod tests {
                 Duration::ZERO,
                 Instant::now() + Duration::from_secs(1),
                 reply_tx,
+                None,
             );
         }
         let usage = reply_rx
@@ -1951,6 +2083,7 @@ mod tests {
                 Duration::from_secs(1),
                 Instant::now() + Duration::from_millis(50),
                 retry_tx,
+                None,
             );
         }
         let retried = retry_rx
@@ -1961,6 +2094,40 @@ mod tests {
         assert_eq!(*state.phase.lock().expect("lease phase"), Phase::Quiesced);
         state.mark_closed();
         assert!(state.is_closed());
+    }
+
+    #[test]
+    fn quiesced_close_retry_still_requests_a_fresh_accept_drain() {
+        let state = LeaseState::new(
+            1,
+            PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+            Policy::builder().build().expect("valid policy"),
+            DiagnosticReporter::default(),
+        );
+        state.begin_close();
+        let expected = state.quiesce_if_generation(0).expect("mark cleanup ready");
+        let (commands, mut receiver) = tokio_mpsc::unbounded_channel();
+        let runtime = RuntimeBuilder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("test runtime");
+
+        let actual = runtime.block_on(async {
+            let close =
+                quiesce_after_identity_quiet(&state, Duration::from_secs(1), Some(&commands));
+            let drain = async {
+                let Command::DrainAcceptQueue { reply } =
+                    receiver.recv().await.expect("accept-drain command")
+                else {
+                    panic!("unexpected command while retrying close");
+                };
+                reply.send(()).expect("acknowledge accept drain");
+            };
+            let (usage, ()) = tokio::join!(close, drain);
+            usage.expect("quiesced retry")
+        });
+
+        assert_eq!(actual, expected);
     }
 
     #[test]
@@ -1987,6 +2154,7 @@ mod tests {
                 Duration::from_millis(200),
                 Instant::now() + Duration::from_secs(1),
                 reply_tx,
+                None,
             );
         }
 
@@ -2093,6 +2261,88 @@ mod tests {
 
         let retained = leases.get(&identity).expect("replacement retained");
         assert!(Arc::ptr_eq(retained, &replacement));
+    }
+
+    #[test]
+    fn queued_old_socket_cannot_inherit_replacement_policy_under_command_pressure() {
+        let target = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .expect("bind replacement-policy target");
+        let port = target
+            .local_addr()
+            .expect("replacement-policy target address")
+            .port();
+        let proxy = Proxy::start(
+            ProxyConfig::default().with_identity_reuse_quiet_period(Duration::from_millis(100)),
+        )
+        .expect("start proxy");
+        let identity = PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
+        let lease = proxy
+            .attach(
+                identity.clone(),
+                Policy::builder().build().expect("deny-all old policy"),
+            )
+            .expect("attach old lease");
+        let endpoint = lease.endpoint().socket_addr();
+
+        let close = thread::spawn(move || {
+            lease
+                .close(Instant::now() + Duration::from_secs(2))
+                .expect("close old lease")
+        });
+        let (started_tx, started_rx) = mpsc::sync_channel(1);
+        proxy
+            .commands
+            .send(Command::KeepCommandsReady {
+                until: Instant::now() + Duration::from_millis(300),
+                started: Some(started_tx),
+            })
+            .expect("start command pressure");
+        started_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("command pressure started");
+
+        let mut old_client =
+            std::net::TcpStream::connect(endpoint).expect("queue old-source connection");
+        old_client
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .expect("old-source read timeout");
+        std::io::Write::write_all(
+            &mut old_client,
+            format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n")
+                .as_bytes(),
+        )
+        .expect("write old-source CONNECT");
+
+        let old_usage = close.join().expect("close thread").usage();
+        let replacement = proxy
+            .attach(identity, ip_policy(port, Duration::from_secs(1)))
+            .expect("attach replacement lease");
+        let mut response = [0_u8; 64];
+        let read = std::io::Read::read(&mut old_client, &mut response);
+        let terminal = match &read {
+            Ok(0) => true,
+            Err(error) => matches!(
+                error.kind(),
+                io::ErrorKind::ConnectionReset
+                    | io::ErrorKind::ConnectionAborted
+                    | io::ErrorKind::BrokenPipe
+                    | io::ErrorKind::NotConnected
+            ),
+            _ => false,
+        };
+        assert!(
+            terminal,
+            "queued old-source socket reached the replacement policy: {read:?} {:?}",
+            String::from_utf8_lossy(&response)
+        );
+        assert_eq!(old_usage.denied_connections, 1);
+
+        replacement
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("close replacement lease");
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
     }
 
     #[test]

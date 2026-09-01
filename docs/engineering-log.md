@@ -1812,3 +1812,52 @@ factory layers. Only inspected Sandbox Egress containers and intermediate
 images from this session were removed. The last clean build selected artifacts
 without probing unrelated executables, completed without noisy side effects,
 and reproduced the unprivileged 94-case run from the tagged image.
+
+## 2026-09-01 — drain the accept queue before identity handoff
+
+### Finding
+
+The identity quiet period only observed sockets after the Tokio listener
+accepted them. The runtime loop deliberately prioritized management commands,
+so a continuously ready command channel could leave an already-established
+old-source socket in the kernel accept queue until after close succeeded. Policy
+selection happens at accept time. After the host attached a replacement lease,
+that old socket was therefore interpreted as new-run traffic.
+
+A deterministic test command kept the management branch ready for 300
+milliseconds while an old-source client queued a CONNECT request. The old
+implementation completed a 100 millisecond quiet close, installed a replacement
+policy that allowed the local target, and returned the exact leak signal:
+`HTTP/1.1 200 Connection Established`. Ten retained repetitions pass after the
+fix. Making branch selection merely probabilistically fair was not accepted as
+a lifecycle certificate.
+
+### Result
+
+The listener owner now performs an explicit nonblocking drain after each
+candidate quiet interval. Ready sockets are dispatched under the still-current
+registry; an old socket is refused in `Revoking`, counted against the old lease,
+and advances the generation so another complete interval is required. The
+drain processes at most 256 sockets per command. A full batch or accept error
+is not evidence of emptiness: the same one-shot request is requeued, while an
+expired close cancels its receiver so no orphan command circulates. Best-effort
+reaping shares the barrier.
+
+Attachment independently requires an empty ready-queue poll on that same
+listener-owner task before it installs any mapping. This closes the handoff
+gap without pretending TCP contains a run generation. The host must still
+fence the old namespace/NAT path before close; an arbitrarily delayed packet
+beyond the configured interval remains outside what a shared TCP listener can
+authenticate.
+
+The empty attach/close benchmark measured 1.3642–1.3907 milliseconds, a 2.16%
+median increase that Criterion classified within its noise threshold. This is
+the measured cost of two lifecycle barriers; the connection data path is
+unchanged. Whole-tree complexity moved from 439/1,283 to 460/1,383
+structural/cognitive.
+
+The native and exact Rust 1.88 factories passed all 96 deterministic cases,
+doctests, documentation, and package verification. The serialized runner
+passed the same 96 cases as UID/GID 65534 and measured 40,350,627 bytes. The
+500-lease Linux smoke held eight descriptors and five threads while live,
+returned to four descriptors and two threads, and finished at 4,012 KiB RSS.

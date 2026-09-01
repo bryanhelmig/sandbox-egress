@@ -196,7 +196,11 @@ For a source-IP identity, the host should use this lifecycle:
 TCP does not carry a userspace run generation. The shared listener cannot tell
 a deliberately delayed packet from an old owner after the host reassigns the
 same address. Host-side fencing and ordering are therefore part of the security
-contract.
+contract. Close performs a final nonblocking accept-queue drain before it
+certifies the lease, and attach repeats that barrier before installing a new
+mapping. Those barriers destroy sockets already visible to the listener; they
+do not make host-side fencing optional or authenticate a packet delayed beyond
+the configured quiet interval.
 
 ## Development
 
@@ -223,7 +227,7 @@ docker run --rm sandbox-egress:dev
 
 The build stage is pinned to Rust 1.88 and runs the normal factory plus a small
 Linux resource smoke. The final image contains only the stripped conformance
-executables and runs all 94 deterministic cases as an unprivileged user. It
+executables and runs all 96 deterministic cases as an unprivileged user. It
 does not ship Cargo, the compiler, source tree, or build cache. Tests remain
 local and do not call public network services.
 
