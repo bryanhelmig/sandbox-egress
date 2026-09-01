@@ -357,3 +357,24 @@ rescanned every preceding byte. The retained implementation scans only the new
 bytes and the three-byte overlap where `\r\n\r\n` may cross reads. A complete
 connection-benchmark replay found no measurable change in the ordinary
 allowed, hostname, visible-SNI, or denied paths.
+
+## Empty destination-denial path check
+
+Recorded 2026-09-01 on the same Apple M1 with Rust 1.97.1. A detached
+pre-change worktree and the candidate alternated the end-to-end allowed-hostname
+benchmark after one build warmup:
+
+```text
+command: cargo bench --bench connections -- connect_allowed_hostname
+paired runs: 3
+candidate intervals: 138.17 .. 167.09 us
+baseline intervals:  136.91 .. 155.73 us
+```
+
+The first pair separated with the candidate slower; the second and third
+overlapped, and Criterion reported no change within each candidate's later
+same-binary comparisons. An earlier three-pair run also moved in both
+directions. The loopback and scheduler noise does not support a stable
+regression or improvement claim. The result justifies retaining the security
+rule while keeping this path in the benchmark suite; it does not claim that
+the larger immutable policy is free.

@@ -60,6 +60,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .allow_host("api.example.com")?
         .allow_host("*.static.example.com")?
         .allow_port(443)
+        // Optional: block a destination CIDR even when its hostname is allowed.
+        .deny_network("93.184.216.0/24".parse()?)
         // Optional: require visible TLS SNI to repeat the CONNECT hostname.
         .require_tls_sni()
         // Optional: release a tunnel that moves no bytes in either direction.
@@ -93,8 +95,10 @@ runtime per sandbox run.
 
 `Policy::builder()` is deny-by-default across every rule dimension. Adding a
 hostname does not add a port, and adding port 80 does not silently retain port
-443. The example permits 443 explicitly; the thin executable makes the same
-HTTPS-only choice on behalf of its intentionally smaller command-line surface.
+443. Explicit network denials override both grants and the ordinary public-IP
+behavior. The example permits 443 explicitly; the thin executable makes the
+same HTTPS-only choice on behalf of its intentionally smaller command-line
+surface.
 
 ## Why a lease?
 
@@ -152,6 +156,9 @@ The current vertical slice provides:
 - default rejection of loopback, private, link-local, multicast,
   documentation, cloud-metadata, and unsafe IPv6 transition destinations
   unless a CIDR is explicitly granted;
+- per-policy destination CIDR denials that take priority over explicit grants
+  and the ordinary public-address behavior, including mapped, compatible, and
+  configured NAT64 forms of a denied IPv4 destination;
 - RFC 6052 decoding for the well-known NAT64 prefix and any operator-registered
   network-specific NAT64 prefixes, so translated private and metadata IPv4
   destinations receive the same checks;

@@ -3607,3 +3607,48 @@ returned after shutdown to 5,920 KiB, four descriptors, and two threads. The
 rootless 156/156 conformance image is
 `sha256:2431bfc656ff9d10117af0e3c49e7a4f14802bedc62e6ba66f0d41f40ccb1d63`
 (40,722,834 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — make explicit network denials authoritative
+
+Smokescreen's separate allow/deny address controls exposed a useful missing
+core rule. Sandbox Egress could grant a normally forbidden CIDR, but a lease
+could not exclude a particular public destination range after allowing its
+hostname. The first test deliberately failed to compile because
+`PolicyBuilder::deny_network` did not exist.
+
+The immutable policy now accepts explicit denied networks. A denial is checked
+before the ordinary public-address behavior and before any overlapping grant.
+One listener-level case gives the policy both a public `/24` denial and an
+`0.0.0.0/0` grant. An allowed hostname resolving inside the `/24` receives
+`resolved-address-denied`; the equivalent IP literal receives
+`ip-literal-denied`. Neither path calls the connector, and certified close
+returns exactly two accepted, two denied, and zero active connections.
+
+The first implementation checked only the address spelling and would have let
+a denied IPv4 range reappear through IPv4-mapped, compatible, or DNS64 forms.
+The pure policy proof now covers those two forms, the well-known NAT64 prefix,
+and a configured RFC 6052 prefix while both IPv4 and IPv6 catch-all grants are
+present. Translation interpretation is shared with the default SSRF floor, so
+the two policy paths cannot drift independently. Both focused cases passed 25
+consecutive repetitions.
+
+The initial translated-address draft raised whole-tree SCC 4.0.0 complexity
+from 670/2,019 to 680/2,047 structural/cognitive. Centralizing the translation
+walk reduced the retained result to 676/2,028: a net +6/+9 for the public rule,
+its two proofs, and shared interpretation. No dependency, runtime task, or
+connection-path allocation was added.
+
+Two separate three-pair A/B runs compared the allowed-hostname benchmark with
+a detached `e9387c0` worktree. In the final run, candidate intervals spanned
+138.17–167.09 microseconds and baseline intervals spanned 136.91–155.73. The
+first pair separated with the candidate slower; the next two overlapped, while
+the earlier run moved in both directions. No stable regression or improvement
+is claimed.
+
+The native and exact Rust 1.88 Linux factories passed 158 deterministic cases,
+five doctests, documentation, package verification, and all six Linux resource
+lanes; native dependency policy checks also passed. Linux's TLS lane peaked at
+15,068 KiB RSS, 265 descriptors, and six threads, then returned after shutdown
+to 6,180 KiB, four descriptors, and two threads. The rootless 158/158 image is
+`sha256:5cf7e1f8b27a91525e06a3aca1eb2cc647947fbca93262aa0d17836677b3b36f`
+(40,737,201 bytes) and runs as UID/GID 65534.

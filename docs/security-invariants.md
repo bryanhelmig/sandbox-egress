@@ -129,6 +129,14 @@ that full-set validation, duplicate approved socket addresses are collapsed in
 first-seen order. Repeated records therefore consume one bounded answer slot
 each but cannot amplify sequential connection attempts.
 
+An immutable policy may explicitly deny destination CIDRs. Denial is checked
+before both an explicit network grant and the ordinary public-address behavior,
+and it applies identically to DNS results and direct IP literals. Overlapping
+configuration therefore fails toward the narrower authority: a denied address
+cannot reach the connector through a broader grant or a different authority
+spelling. IPv4 denials also match mapped, compatible, well-known NAT64, and
+host-configured RFC 6052 forms of the same effective destination.
+
 Resolver-followed aliases do not transfer trust from the allowed original
 hostname to their target addresses. Real-wire conformance follows an allowed
 CNAME through separate A and AAAA target questions to a link-local metadata

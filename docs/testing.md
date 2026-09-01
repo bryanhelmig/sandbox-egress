@@ -50,6 +50,15 @@ Port policy cases require an empty builder to allow no port and an HTTP-only
 builder to allow 80 without inheriting 443. A real listener repeats the latter
 case against CONNECT and requires the stable `port-denied` response.
 
+Destination precedence is pinned both as a pure immutable-policy case and
+through the listener. A denied public `/24` overlaps an explicit `0.0.0.0/0`
+grant. An allowed hostname resolving inside that `/24` must return
+`resolved-address-denied`; the equivalent direct literal must return
+`ip-literal-denied`. Together they require zero connector calls, two exact
+denials, and certified final counters. The pure policy matrix repeats the
+denial through IPv4-mapped, compatible, well-known NAT64, and configured NAT64
+spellings while an overlapping IPv6 catch-all grant is present.
+
 Header conformance distinguishes a byte-ceiling violation (`431
 header-too-large`), early EOF (`400 header-eof`), and the absolute slow-header
 deadline (`408 header-timeout`). Each case must close with one denial and no

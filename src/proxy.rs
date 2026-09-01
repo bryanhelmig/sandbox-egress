@@ -1324,7 +1324,7 @@ async fn resolve_addresses(
     if let Ok(ip) = request.host.parse::<IpAddr>() {
         return state
             .policy
-            .allows_ip_literal(ip)
+            .allows_ip_literal(ip, nat64_prefixes)
             .then(|| vec![SocketAddr::new(ip, request.port)])
             .ok_or(Denial::IP_LITERAL_DENIED);
     }
@@ -2554,6 +2554,64 @@ mod tests {
         second
             .close(Instant::now() + Duration::from_secs(1))
             .expect("close second lease");
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
+    }
+
+    #[test]
+    fn explicit_public_network_denial_blocks_dns_and_literal_paths_before_dial() {
+        let resolver = Arc::new(FixedAnswerResolver(vec![
+            "93.184.216.34".parse().expect("public test address"),
+        ]));
+        let dial_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let connector = Arc::new(RejectingConnector(Arc::clone(&dial_attempts)));
+        let proxy = Proxy::start_with_test_backends(ProxyConfig::default(), resolver, connector)
+            .expect("start proxy");
+        let policy = Policy::builder()
+            .allow_host("blocked-public.test")
+            .expect("valid test hostname")
+            .allow_network("0.0.0.0/0".parse().expect("valid catch-all grant"))
+            .deny_network(
+                "93.184.216.0/24"
+                    .parse()
+                    .expect("valid public denial network"),
+            )
+            .allow_port(443)
+            .build()
+            .expect("valid policy");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                policy,
+            )
+            .expect("attach lease");
+
+        for (authority, reason) in [
+            ("blocked-public.test", "resolved-address-denied"),
+            ("93.184.216.34", "ip-literal-denied"),
+        ] {
+            let mut client = std::net::TcpStream::connect(lease.endpoint().socket_addr())
+                .expect("connect proxy");
+            std::io::Write::write_all(
+                &mut client,
+                format!("CONNECT {authority}:443 HTTP/1.1\r\nHost: {authority}\r\n\r\n").as_bytes(),
+            )
+            .expect("write CONNECT");
+            let mut response = String::new();
+            std::io::Read::read_to_string(&mut client, &mut response).expect("read address denial");
+            assert!(response.starts_with("HTTP/1.1 403"), "{response}");
+            assert!(response.contains(reason), "{response}");
+        }
+
+        assert_eq!(dial_attempts.load(Ordering::Acquire), 0);
+        let usage = lease
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("close lease")
+            .usage();
+        assert_eq!(usage.accepted_connections, 2);
+        assert_eq!(usage.denied_connections, 2);
+        assert_eq!(usage.active_connections, 0);
         proxy
             .shutdown(Instant::now() + Duration::from_secs(1))
             .expect("proxy shutdown");

@@ -79,6 +79,7 @@ pub struct Policy {
     pub(crate) hosts: Vec<HostPattern>,
     pub(crate) ports: BTreeSet<u16>,
     pub(crate) allowed_networks: Vec<IpNet>,
+    pub(crate) denied_networks: Vec<IpNet>,
     pub(crate) max_connections: usize,
     pub(crate) dns_timeout: Duration,
     pub(crate) handshake_timeout: Duration,
@@ -103,6 +104,9 @@ impl Policy {
     }
 
     pub(crate) fn allows_ip(&self, address: IpAddr, nat64_prefixes: &[Ipv6Net]) -> bool {
+        if address_matches_networks(&self.denied_networks, address, nat64_prefixes) {
+            return false;
+        }
         if self
             .allowed_networks
             .iter()
@@ -113,11 +117,34 @@ impl Policy {
         !is_forbidden_destination(address, nat64_prefixes)
     }
 
-    pub(crate) fn allows_ip_literal(&self, address: IpAddr) -> bool {
-        self.allowed_networks
-            .iter()
-            .any(|network| network.contains(&address))
+    pub(crate) fn allows_ip_literal(&self, address: IpAddr, nat64_prefixes: &[Ipv6Net]) -> bool {
+        !address_matches_networks(&self.denied_networks, address, nat64_prefixes)
+            && self
+                .allowed_networks
+                .iter()
+                .any(|network| network.contains(&address))
     }
+}
+
+fn address_matches_networks(
+    networks: &[IpNet],
+    address: IpAddr,
+    nat64_prefixes: &[Ipv6Net],
+) -> bool {
+    networks
+        .iter()
+        .any(|network| address_matches_network(network, address, nat64_prefixes))
+}
+
+fn address_matches_network(network: &IpNet, address: IpAddr, nat64_prefixes: &[Ipv6Net]) -> bool {
+    network.contains(&address)
+        || match address {
+            IpAddr::V4(_) => false,
+            IpAddr::V6(address) => translated_ipv4_matches(address, nat64_prefixes, |embedded| {
+                network.contains(&IpAddr::V4(embedded))
+            })
+            .unwrap_or(false),
+        }
 }
 
 /// Builder for an immutable [`Policy`].
@@ -127,6 +154,7 @@ pub struct PolicyBuilder {
     hosts: Vec<HostPattern>,
     ports: BTreeSet<u16>,
     allowed_networks: Vec<IpNet>,
+    denied_networks: Vec<IpNet>,
     max_connections: usize,
     dns_timeout: Duration,
     handshake_timeout: Duration,
@@ -155,9 +183,19 @@ impl PolicyBuilder {
     }
 
     /// Explicitly allow a destination network, overriding the default
-    /// forbidden-address floor for that network.
+    /// forbidden-address floor for that network unless it is also denied.
     pub fn allow_network(mut self, network: IpNet) -> Self {
         self.allowed_networks.push(network);
+        self
+    }
+
+    /// Explicitly deny a destination network.
+    ///
+    /// Denial takes precedence over [`PolicyBuilder::allow_network`] and the
+    /// default public-address behavior. An IPv4 denial also covers mapped,
+    /// compatible, and configured NAT64 forms of that effective destination.
+    pub fn deny_network(mut self, network: IpNet) -> Self {
+        self.denied_networks.push(network);
         self
     }
 
@@ -262,6 +300,7 @@ impl PolicyBuilder {
             hosts: self.hosts,
             ports: self.ports,
             allowed_networks: self.allowed_networks,
+            denied_networks: self.denied_networks,
             max_connections: self.max_connections,
             dns_timeout: self.dns_timeout,
             handshake_timeout: self.handshake_timeout,
@@ -279,6 +318,7 @@ impl Default for PolicyBuilder {
             hosts: Vec::new(),
             ports: BTreeSet::new(),
             allowed_networks: Vec::new(),
+            denied_networks: Vec::new(),
             max_connections: 64,
             dns_timeout: Duration::from_secs(3),
             handshake_timeout: Duration::from_secs(10),
@@ -315,28 +355,32 @@ pub(crate) fn canonical_hostname(value: &str) -> Option<String> {
 pub(crate) fn is_forbidden_destination(address: IpAddr, nat64_prefixes: &[Ipv6Net]) -> bool {
     match address {
         IpAddr::V4(address) => forbidden_v4(address),
-        IpAddr::V6(address) => {
-            if let Some(embedded) = address.to_ipv4() {
-                return forbidden_v4(embedded);
+        IpAddr::V6(address) => translated_ipv4_matches(address, nat64_prefixes, forbidden_v4)
+            .unwrap_or_else(|| forbidden_v6(address)),
+    }
+}
+
+fn translated_ipv4_matches(
+    address: Ipv6Addr,
+    nat64_prefixes: &[Ipv6Net],
+    mut predicate: impl FnMut(Ipv4Addr) -> bool,
+) -> Option<bool> {
+    if let Some(embedded) = address.to_ipv4() {
+        return Some(predicate(embedded));
+    }
+    if is_well_known_nat64(address) {
+        return Some(predicate(extract_rfc6052_ipv4(address, 96)));
+    }
+    let mut translated = false;
+    for prefix in nat64_prefixes {
+        if prefix.contains(&address) {
+            translated = true;
+            if predicate(extract_rfc6052_ipv4(address, prefix.prefix_len())) {
+                return Some(true);
             }
-            if is_well_known_nat64(address) {
-                return forbidden_v4(extract_rfc6052_ipv4(address, 96));
-            }
-            let mut translated = false;
-            for prefix in nat64_prefixes {
-                if prefix.contains(&address) {
-                    translated = true;
-                    if forbidden_v4(extract_rfc6052_ipv4(address, prefix.prefix_len())) {
-                        return true;
-                    }
-                }
-            }
-            if translated {
-                return false;
-            }
-            forbidden_v6(address)
         }
     }
+    translated.then_some(false)
 }
 
 fn is_well_known_nat64(address: Ipv6Addr) -> bool {
@@ -652,6 +696,44 @@ mod tests {
             .expect("valid policy");
 
         assert!(policy.allows_ip(address, &[]));
-        assert!(policy.allows_ip_literal(address));
+        assert!(policy.allows_ip_literal(address, &[]));
+    }
+
+    #[test]
+    fn explicit_network_denial_overrides_every_grant_path() {
+        let nat64_prefix = "2001:db8:64::/96"
+            .parse::<Ipv6Net>()
+            .expect("valid test NAT64 prefix");
+        let policy = Policy::builder()
+            .allow_network("0.0.0.0/0".parse().expect("valid catch-all grant"))
+            .allow_network("::/0".parse().expect("valid IPv6 catch-all grant"))
+            .deny_network(
+                "93.184.216.0/24"
+                    .parse()
+                    .expect("valid public denial network"),
+            )
+            .build()
+            .expect("valid policy");
+        let allowed = "1.1.1.1".parse().expect("public allowed address");
+
+        for denied in [
+            "93.184.216.34",
+            "::ffff:93.184.216.34",
+            "::93.184.216.34",
+            "64:ff9b::5db8:d822",
+            "2001:db8:64::5db8:d822",
+        ] {
+            let denied = denied.parse().expect("public denied address form");
+            assert!(
+                !policy.allows_ip(denied, std::slice::from_ref(&nat64_prefix)),
+                "allowed denied address form {denied}"
+            );
+            assert!(
+                !policy.allows_ip_literal(denied, std::slice::from_ref(&nat64_prefix)),
+                "allowed denied literal form {denied}"
+            );
+        }
+        assert!(policy.allows_ip(allowed, &[]));
+        assert!(policy.allows_ip_literal(allowed, &[]));
     }
 }

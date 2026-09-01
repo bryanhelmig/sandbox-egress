@@ -5,6 +5,9 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Add immutable per-policy destination CIDR denials with deny-overrides-grant
+  precedence across DNS answers, direct IP literals, and translated forms of
+  an effective IPv4 destination.
 - Pin complete OpenSSL and Apple SecureTransport ClientHello fixtures with
   offline compatibility checks for exact SNI, ECH state, and wire retention.
 - Repeat certified close and identity reuse after both tunnel send queues
