@@ -4888,3 +4888,19 @@ lints, dependency policy, package verification, benchmark smoke, and release
 builds. The rootless 181/181 image is
 `sha256:fd3da1b7eb0d0a7b7a2e5102fec03fc9ddd17355220383cb2364d27d4d1bb57d`
 (40,919,749 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — locate the local CONNECT scaling knee
+
+The performance rotation repeated the sustained CONNECT concurrency sweep
+three times per point instead of optimizing from the original single run. At
+1, 8, 32, 64, 128, and 256 callers, median rates were 6,348, 17,676, 19,284,
+19,948, 17,505, and 16,570 connections/sec. Median p99 setup latency was 175,
+419, 1,303, 3,042, 8,409, and 79,435 microseconds respectively. The 256-caller
+p99 range widened from 41.7 to 160.1 milliseconds.
+
+The measurement confirms saturation around 32–64 callers on this host. More
+client concurrency beyond that range adds queueing and unstable tails without
+raising aggregate setup throughput. No production tuning is retained. A small
+`measure-load-sweep.sh` wrapper records the standard six-point, three-repeat
+experiment so future changes can compare the whole curve rather than one
+favorable point.

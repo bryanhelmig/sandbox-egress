@@ -214,6 +214,23 @@ worker, 19,078/sec at eight, 15,411/sec at 32, 20,822/sec at 64, and 17,747/sec
 at 128. The non-monotonic results are a warning against selecting runtime
 settings from one sweep. No production tuning was retained from this baseline.
 
+A later three-run sweep at revision `d9cb0f1` made that experiment
+reproducible with `./scripts/measure-load-sweep.sh 10000 16 3` and extended it
+to 256 concurrent clients:
+
+```text
+concurrency:                 1        8       32       64      128      256
+median connections/sec: 6,348   17,676   19,284   19,948   17,505   16,570
+median p99 latency (us):   175      419    1,303    3,042    8,409   79,435
+```
+
+The local two-worker proxy is throughput-saturated by roughly 32–64 callers.
+Adding callers beyond that point does not increase aggregate setup rate and
+amplifies tail latency; the 256-caller runs ranged from 13,223 to 17,584/sec
+with p99 latency from 41.7 to 160.1 ms. This is a capacity-planning observation,
+not a configured concurrency recommendation. Production code and runtime
+tuning remain unchanged.
+
 The same five-run command in the pinned Rust 1.88 Linux container on the local
 two-vCPU arm64 VM measured 27,421–31,592 connections/second (median 29,989),
 p50 984–1,077 microseconds, p95 1,598–1,856 microseconds, and p99

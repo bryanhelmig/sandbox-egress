@@ -318,6 +318,7 @@ scripts:
 ./scripts/measure-resources.sh  lease, control, idle, TLS, pressure, terminal soak
 ./scripts/measure-complexity.sh source size and complexity trend report
 ./scripts/measure-load.sh       concurrent CONNECT capacity and tail latency
+./scripts/measure-load-sweep.sh repeated concurrency scaling sweep
 ./scripts/measure-throughput.sh concurrent upload/download tunnel throughput
 ./scripts/check-iana-drift.sh   opt-in authoritative registry drift signal
 cargo run --bin sandbox-egress -- example.com
