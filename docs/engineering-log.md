@@ -5431,3 +5431,17 @@ construction remain available. The change is made before publication, when it
 does not disrupt a released API. Formatting, all-target compilation, six
 doctests, and warning-denied rustdoc pass on the locked dependency graph;
 runtime behavior and measured complexity are unchanged.
+
+## 2026-09-01 — distinguish declared portability from checked portability
+
+The portability audit ran a locked all-target, all-feature check for
+`x86_64-unknown-linux-gnu` from the pinned Rust 1.97.1 aarch64 macOS toolchain.
+It passes, complementing the executed aarch64 Linux Rust 1.88 container and
+native aarch64 macOS factories. Cargo metadata also confirms edition 2024 and
+the declared Rust 1.88 minimum.
+
+The repository declares Ubuntu, macOS, and Windows CI jobs, but a workflow file
+is not execution evidence for Windows in this local repository. Windows
+therefore remains an explicit portability backlog item until that job is run
+in a published CI environment or an equivalent target is checked directly.
+No conditional code, dependency, or public claim changes in this pass.
