@@ -175,6 +175,14 @@ request must receive `resolved-address-denied`, the connector must observe zero
 attempts, and certified close must return one accepted, one denied, and zero
 active connections.
 
+Two self-connection cases explicitly grant the listener's loopback network and
+assigned port. A literal real-listener request must still receive
+`proxy-endpoint-denied` with exact final accounting. A controlled hostname
+answer for the same listener must receive that denial with zero connector
+calls. A matching unit matrix covers an IPv4-mapped spelling, IPv4 wildcard
+loopback, dual-stack wildcard loopback, remote-address exclusion, and the port
+boundary.
+
 Lease Drop is exercised while stack unwinding with a pending dial: cancellation
 must complete, the guest socket must become terminal, and the same identity
 must become attachable again after best-effort cleanup. Replacement attachment

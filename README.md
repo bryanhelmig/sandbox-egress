@@ -149,6 +149,8 @@ The current vertical slice provides:
   TCP recovery, independent of host resolver and hosts-file changes;
 - bounded DNS answer cardinality, with oversized sets rejected before dialing;
 - direct dialing of a checked `SocketAddr`, with no second lookup;
+- rejection of the proxy's own concrete listener endpoint before any explicit
+  network grant, preventing nested CONNECT chains through the shared listener;
 - sequential address failover with a fair share of the remaining absolute
   handshake budget per attempt, keeping one live dial per connection;
 - an independently bounded process-wide DNS concurrency budget;

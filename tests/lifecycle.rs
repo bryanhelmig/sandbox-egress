@@ -413,6 +413,48 @@ fn hostname_policy_denies_before_dns() {
 }
 
 #[test]
+fn proxy_listener_cannot_be_a_tunnel_destination() {
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let endpoint = proxy.endpoint().socket_addr();
+    let policy = Policy::builder()
+        .allow_network("127.0.0.0/8".parse::<IpNet>().expect("test CIDR"))
+        .allow_port(endpoint.port())
+        .build()
+        .expect("valid policy");
+    let lease = attach_local(&proxy, policy);
+    let mut client = TcpStream::connect(endpoint).expect("connect proxy");
+    client
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .expect("set response timeout");
+    client
+        .write_all(
+            format!(
+                "CONNECT {endpoint} HTTP/1.1\r\nHost: {}\r\n\r\n",
+                endpoint.ip()
+            )
+            .as_bytes(),
+        )
+        .expect("write self-directed CONNECT");
+    let mut response = [0_u8; 256];
+    let bytes = client
+        .read(&mut response)
+        .expect("read self-connection denial");
+    assert!(response[..bytes].starts_with(b"HTTP/1.1 403"));
+    assert!(String::from_utf8_lossy(&response[..bytes]).contains("proxy-endpoint-denied"));
+
+    let usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close self-connection lease")
+        .usage();
+    assert_eq!(usage.accepted_connections, 1);
+    assert_eq!(usage.denied_connections, 1);
+    assert_eq!(usage.active_connections, 0);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
 fn an_explicit_http_port_does_not_also_allow_https() {
     let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
     let policy = Policy::builder()

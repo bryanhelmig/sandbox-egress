@@ -129,6 +129,18 @@ that full-set validation, duplicate approved socket addresses are collapsed in
 first-seen order. Repeated records therefore consume one bounded answer slot
 each but cannot amplify sequential connection attempts.
 
+The listener's actual post-bind socket address, including its assigned port,
+is frozen into process configuration before any connection is dispatched. A
+matching literal or DNS result is rejected as `proxy-endpoint-denied` before an
+explicit network grant can apply. IPv4-mapped spellings are canonicalized; a
+wildcard listener also rejects same-family loopback, and a dual-stack IPv6
+wildcard rejects both loopback families. This prevents a guest from nesting
+CONNECT requests through the shared listener to multiply lease admissions.
+The guard does not enumerate every host interface. A deployment that binds a
+wildcard or exposes the listener through another local address must keep that
+alias unreachable to proxy-originated dials with its host cage, or bind the
+proxy to the concrete guest-facing address.
+
 An immutable policy may explicitly deny destination CIDRs. Denial is checked
 before both an explicit network grant and the ordinary public-address behavior,
 and it applies identically to DNS results and direct IP literals. Overlapping

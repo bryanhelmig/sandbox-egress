@@ -88,7 +88,9 @@ when enabled. Every result, including a cache hit, is filtered under the
 current lease policy,
 including RFC 6052 decoding under host-configured network-specific NAT64
 prefixes. Explicit destination denials take priority over grants and default
-public-address handling, and Tokio dials a selected checked IP directly.
+public-address handling. The actual listener endpoint is also rejected before
+any explicit grant, preventing recursive CONNECT chains through the proxy
+itself. Tokio then dials a selected checked IP directly.
 Approved addresses are tried sequentially. Each receives
 a fair share of the remaining absolute handshake budget so a pending first
 address cannot consume all fallback time or create parallel socket

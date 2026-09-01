@@ -3973,3 +3973,55 @@ then returned after shutdown to 6,316 KiB, four descriptors, and two threads.
 The rootless 162/162 image is
 `sha256:5221971ab058ede00994ea6f930495372b95acdf288f55f5619b4e9a5cfc02c3`
 (40,740,442 bytes) and runs as UID/GID 65534.
+
+## 2026-09-01 — deny recursive proxy destinations
+
+This comparison rotation reviewed Smokescreen at the pinned `d4da883a`
+revision. Smokescreen enumerates local interface addresses and rejects a
+destination whose address is local and whose port is the proxy listener. A
+new public proof demonstrated the corresponding Sandbox Egress gap: after an
+otherwise legitimate policy explicitly granted loopback and the listener
+port, a literal CONNECT back into the shared listener received `200` and could
+start a nested proxy chain.
+
+Sandbox Egress now freezes the actual post-bind listener address before it can
+dispatch a connection. Literal and DNS results matching that endpoint are
+rejected as `proxy-endpoint-denied` before policy grants and before dialing.
+The comparison intentionally produced a smaller library-boundary guard rather
+than importing interface enumeration: concrete listener addresses match
+exactly after IPv4-mapped canonicalization, while wildcard listeners reject
+loopback on the bound family and dual-stack IPv6 wildcard listeners reject
+both loopback families. The documented host-cage contract remains responsible
+for other local aliases exposed by wildcard or address-translated deployments.
+
+The failing-before-change literal proof now receives `403` with exactly one
+accepted, one denied, and zero active connections. A controlled hostname proof
+resolving to the listener observes the same accounting and zero connector
+calls. Both passed 25 consecutive focused repetitions; a unit matrix also
+covers mapped addresses, wildcard loopback, remote exclusion, and the port
+boundary.
+
+Three alternating Criterion A/B pairs measured the allowed-loopback CONNECT
+path against detached `dd2fbf1`. Candidate intervals were 108.11–123.16,
+112.51–127.94, and 112.16–128.52 microseconds; baseline intervals were
+113.58–131.39, 109.30–125.37, and 111.73–129.28. Every pair overlaps, so no
+latency change is claimed. The comparison worktree was removed. Whole-tree SCC
+4.0.0 complexity moves from 685/2,050 to 694/2,077 structural/cognitive,
+including the production guard and its public and controlled proofs.
+
+The first rootless run exposed a latent scheduling race in the older queued
+identity-reuse proof: it started close before proving that the old socket was
+queued, so cancellation could correctly win before the test's expected denial
+was counted. The proof now queues and writes the old socket under command
+pressure before starting close, with a larger scheduling margin. It passed ten
+strengthened repetitions. The exact Linux factory was restarted rather than
+accepting a retry, and then passed the corrected case again.
+
+The native and final exact Rust 1.88 Linux factories passed 165 deterministic
+cases, five doctests, documentation, package verification, and all six Linux
+resource lanes; native dependency policy checks also passed. Linux's TLS lane
+peaked at 14,700 KiB RSS, 265 descriptors, and six threads, recovered to
+10,524 KiB, eight descriptors, and five threads, and finished at 5,928 KiB,
+four descriptors, and two threads. The rootless 165/165 image is
+`sha256:de0aba6cb82f87555845ed2d10097fb640e4c775e3957be9c4e78759fb4c3950`
+(40,743,228 bytes) and runs as UID/GID 65534.

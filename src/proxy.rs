@@ -680,7 +680,7 @@ impl ConnectionRuntime {
 
 #[allow(clippy::too_many_lines)]
 async fn run_proxy(
-    config: ProxyConfig,
+    mut config: ProxyConfig,
     mut commands: tokio_mpsc::UnboundedReceiver<Command>,
     command_sender: tokio_mpsc::UnboundedSender<Command>,
     ready: mpsc::SyncSender<Result<Endpoint, String>>,
@@ -715,6 +715,7 @@ async fn run_proxy(
     if ready.send(Ok(endpoint)).is_err() {
         return;
     }
+    config.bind_address = endpoint.socket_addr();
 
     let mut leases: HashMap<PeerIdentity, Arc<LeaseState>> = HashMap::new();
     let connections = ConnectionRuntime {
@@ -973,8 +974,7 @@ async fn serve_connect(
         state,
         resolver,
         &phase_permits.dns,
-        config.max_resolved_addresses,
-        &config.nat64_prefixes,
+        config,
         handshake_deadline,
     )
     .await
@@ -1272,6 +1272,7 @@ impl Denial {
     const HOST_DENIED: Self = Self::new(403, "host-denied");
     const INVALID_HOSTNAME: Self = Self::new(400, "invalid-hostname");
     const IP_LITERAL_DENIED: Self = Self::new(403, "ip-literal-denied");
+    const PROXY_ENDPOINT_DENIED: Self = Self::new(403, "proxy-endpoint-denied");
     const RESOLVED_ADDRESS_DENIED: Self = Self::new(403, "resolved-address-denied");
     const HEADER_EOF: Self = Self::new(400, "header-eof");
     const HEADER_READ_FAILED: Self = Self::new(400, "header-read-failed");
@@ -1304,15 +1305,18 @@ async fn resolve_addresses(
     state: &LeaseState,
     resolver: &ResolverBackend,
     dns_permits: &Semaphore,
-    max_resolved_addresses: usize,
-    nat64_prefixes: &[ipnet::Ipv6Net],
+    config: &ProxyConfig,
     handshake_deadline: TokioInstant,
 ) -> Result<Vec<SocketAddr>, Denial> {
     if let Ok(ip) = request.host.parse::<IpAddr>() {
+        let address = SocketAddr::new(ip, request.port);
+        if is_proxy_endpoint(address, config.bind_address) {
+            return Err(Denial::PROXY_ENDPOINT_DENIED);
+        }
         return state
             .policy
-            .allows_ip_literal(ip, nat64_prefixes)
-            .then(|| vec![SocketAddr::new(ip, request.port)])
+            .allows_ip_literal(ip, &config.nat64_prefixes)
+            .then(|| vec![address])
             .ok_or(Denial::IP_LITERAL_DENIED);
     }
 
@@ -1330,7 +1334,7 @@ async fn resolve_addresses(
         .map_err(|_| Denial::DNS_CAPACITY)?;
     let lookup = complete_before_deadline(
         dns_deadline,
-        resolver.lookup(&hostname, max_resolved_addresses),
+        resolver.lookup(&hostname, config.max_resolved_addresses),
     )
     .await;
     drop(dns_permit);
@@ -1342,22 +1346,37 @@ async fn resolve_addresses(
     if addresses.is_empty() {
         return Err(Denial::DNS_EMPTY);
     }
-    if addresses.len() > max_resolved_addresses {
+    if addresses.len() > config.max_resolved_addresses {
         return Err(Denial::DNS_ANSWER_TOO_LARGE);
     }
 
     let mut seen = HashSet::with_capacity(addresses.len());
     let mut approved = Vec::with_capacity(addresses.len());
     for ip in addresses {
-        if !state.policy.allows_ip(ip, nat64_prefixes) {
+        let address = SocketAddr::new(ip, request.port);
+        if is_proxy_endpoint(address, config.bind_address) {
+            return Err(Denial::PROXY_ENDPOINT_DENIED);
+        }
+        if !state.policy.allows_ip(ip, &config.nat64_prefixes) {
             return Err(Denial::RESOLVED_ADDRESS_DENIED);
         }
-        let address = SocketAddr::new(ip, request.port);
         if seen.insert(address) {
             approved.push(address);
         }
     }
     Ok(approved)
+}
+
+fn is_proxy_endpoint(address: SocketAddr, endpoint: SocketAddr) -> bool {
+    if address.port() != endpoint.port() {
+        return false;
+    }
+    let address_ip = address.ip().to_canonical();
+    let endpoint_ip = endpoint.ip().to_canonical();
+    address_ip == endpoint_ip
+        || endpoint_ip.is_unspecified()
+            && address_ip.is_loopback()
+            && (endpoint.is_ipv6() || address.is_ipv4())
 }
 
 struct HeaderBlock {
@@ -2646,6 +2665,84 @@ mod tests {
     }
 
     #[test]
+    fn hostname_resolving_to_proxy_listener_is_rejected_before_dial() {
+        let resolver = Arc::new(FixedAnswerResolver(vec![IpAddr::V4(
+            std::net::Ipv4Addr::LOCALHOST,
+        )]));
+        let dial_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let connector = Arc::new(RejectingConnector(Arc::clone(&dial_attempts)));
+        let proxy = Proxy::start_with_test_backends(ProxyConfig::default(), resolver, connector)
+            .expect("start proxy");
+        let endpoint = proxy.endpoint().socket_addr();
+        let policy = Policy::builder()
+            .allow_host("self.test")
+            .expect("valid hostname")
+            .allow_network("127.0.0.0/8".parse().expect("loopback grant"))
+            .allow_port(endpoint.port())
+            .build()
+            .expect("valid policy");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                policy,
+            )
+            .expect("attach lease");
+        let mut client = std::net::TcpStream::connect(endpoint).expect("connect proxy listener");
+        std::io::Write::write_all(
+            &mut client,
+            format!(
+                "CONNECT self.test:{} HTTP/1.1\r\nHost: self.test\r\n\r\n",
+                endpoint.port()
+            )
+            .as_bytes(),
+        )
+        .expect("write self-directed hostname CONNECT");
+        let mut response = String::new();
+        std::io::Read::read_to_string(&mut client, &mut response)
+            .expect("read proxy endpoint denial");
+
+        assert!(response.starts_with("HTTP/1.1 403"), "{response}");
+        assert!(response.contains("proxy-endpoint-denied"), "{response}");
+        assert_eq!(dial_attempts.load(Ordering::Acquire), 0);
+        let usage = lease
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("close lease")
+            .usage();
+        assert_eq!(usage.accepted_connections, 1);
+        assert_eq!(usage.denied_connections, 1);
+        assert_eq!(usage.active_connections, 0);
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
+    }
+
+    #[test]
+    fn proxy_endpoint_matching_covers_transport_spellings_and_wildcard_loopback() {
+        let endpoint: SocketAddr = "127.0.0.1:4750".parse().expect("IPv4 endpoint");
+        assert!(is_proxy_endpoint(endpoint, endpoint));
+        assert!(is_proxy_endpoint(
+            "[::ffff:127.0.0.1]:4750".parse().expect("mapped endpoint"),
+            endpoint,
+        ));
+        assert!(is_proxy_endpoint(
+            "127.0.0.1:4750".parse().expect("IPv4 loopback"),
+            "[::]:4750".parse().expect("dual-stack wildcard"),
+        ));
+        assert!(is_proxy_endpoint(
+            "127.0.0.1:4750".parse().expect("IPv4 loopback"),
+            "0.0.0.0:4750".parse().expect("IPv4 wildcard"),
+        ));
+        assert!(!is_proxy_endpoint(
+            "93.184.216.34:4750".parse().expect("remote endpoint"),
+            "[::]:4750".parse().expect("dual-stack wildcard"),
+        ));
+        assert!(!is_proxy_endpoint(
+            "127.0.0.1:4751".parse().expect("different port"),
+            endpoint,
+        ));
+    }
+
+    #[test]
     fn explicit_hostname_denial_stops_before_dns_and_dial() {
         let (resolved_tx, resolved_rx) = mpsc::channel();
         let resolver = Arc::new(CapturingResolver(resolved_tx));
@@ -3627,16 +3724,11 @@ mod tests {
             .expect("attach old lease");
         let endpoint = lease.endpoint().socket_addr();
 
-        let close = thread::spawn(move || {
-            lease
-                .close(Instant::now() + Duration::from_secs(2))
-                .expect("close old lease")
-        });
         let (started_tx, started_rx) = mpsc::sync_channel(1);
         proxy
             .commands
             .send(Command::KeepCommandsReady {
-                until: Instant::now() + Duration::from_millis(300),
+                until: Instant::now() + Duration::from_secs(1),
                 started: Some(started_tx),
             })
             .expect("start command pressure");
@@ -3655,6 +3747,12 @@ mod tests {
                 .as_bytes(),
         )
         .expect("write old-source CONNECT");
+
+        let close = thread::spawn(move || {
+            lease
+                .close(Instant::now() + Duration::from_secs(3))
+                .expect("close old lease")
+        });
 
         let old_usage = close.join().expect("close thread").usage();
         let replacement = proxy

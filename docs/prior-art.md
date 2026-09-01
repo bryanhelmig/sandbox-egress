@@ -79,6 +79,18 @@ reviewed in the same comparison are already inside the default link-local or
 non-global IPv6 floor; importing provider domain lists or broad internal DNS
 suffixes would duplicate the resolve-and-check guarantee and was not retained.
 
+## Self-connection comparison
+
+Smokescreen enumerates local interfaces at startup and rejects a destination
+whose address is local and whose port is the proxy listener. This closes a
+recursive-proxy shape that the ordinary private-address floor cannot cover
+after a trusted policy explicitly grants a local network. Sandbox Egress adopts
+the invariant at its narrower library boundary: it freezes the actual
+post-bind listener address and rejects matching literal and DNS destinations
+before policy grants or dialing. It does not add an interface-enumeration
+dependency; wildcard and translated-address deployments must bind a concrete
+guest-facing address or enforce other local aliases in the host cage.
+
 ## Host-cage capability boundary
 
 The current Lens cage review corrected a subtle deployment assumption around
