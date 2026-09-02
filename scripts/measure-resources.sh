@@ -9,6 +9,8 @@ terminal_runs_per_batch=${5:-500}
 terminal_batches=${6:-4}
 header_connections=${7:-128}
 upstream_connections=${8:-128}
+failed_start_runs_per_batch=${9:-250}
+failed_start_batches=${10:-4}
 
 run_lane() {
   SANDBOX_EGRESS_SOAK_RUNS=$runs_per_batch \
@@ -19,6 +21,8 @@ run_lane() {
   SANDBOX_EGRESS_TERMINAL_BATCHES=$terminal_batches \
   SANDBOX_EGRESS_HEADER_CONNECTIONS=$header_connections \
   SANDBOX_EGRESS_UPSTREAM_CONNECTIONS=$upstream_connections \
+  SANDBOX_EGRESS_FAILED_START_RUNS=$failed_start_runs_per_batch \
+  SANDBOX_EGRESS_FAILED_START_BATCHES=$failed_start_batches \
     cargo test --locked --release --test resource_soak "$1" -- \
       --ignored --nocapture --exact
 }
@@ -26,6 +30,7 @@ run_lane() {
 # A fresh process gives every lane its own allocator and RSS high-water mark.
 # Keep the calls serial so opt-in measurements do not compete for host resources.
 run_lane identity_churn_has_bounded_process_resources
+run_lane failed_startup_releases_process_resources
 run_lane concurrent_management_churn_releases_process_resources
 run_lane concurrent_idle_expiry_releases_process_resources
 run_lane concurrent_partial_client_hellos_release_process_resources

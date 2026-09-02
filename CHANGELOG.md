@@ -7,6 +7,9 @@ Changelog and versions follow Semantic Versioning.
 
 - Join the owned runtime thread before returning a post-spawn proxy startup
   error, preventing failed initialization from detaching cleanup work.
+- Exercise repeated post-spawn startup failure as a ninth opt-in resource lane,
+  requiring every failed start to return at the process descriptor/thread
+  baseline.
 - Reject the IPv4 this-network and reserved classes consistently as source
   identities, listener binds, explicit resolvers, and upstream proxies.
 - Reject multicast and limited-broadcast listener configuration, and require a

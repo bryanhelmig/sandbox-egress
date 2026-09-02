@@ -336,34 +336,37 @@ accounting overhead. Macrobenchmarks later report connections/sec, throughput,
 p50/p95/p99 setup latency, peak RSS, threads, and file descriptors.
 
 The opt-in resource target first runs identity churn with the proxy still alive
-and samples each batch. A second lane synchronizes 64 host threads, holds all
-of their distinct attached leases, then releases their close calls together in
-four repeated batches. A third lane holds a configurable number of partial
-CONNECT headers before their deadline, proves every admission is active, then
+and samples each batch. A second lane repeatedly reserves a listener, requires
+proxy startup on that occupied address to fail, and proves each post-spawn
+failure returns with no runtime thread or descriptor left behind. A third lane
+synchronizes 64 host threads, holds all of their distinct attached leases, then
+releases their close calls together in four repeated batches. A fourth lane
+holds a configurable number of partial CONNECT headers before their deadline,
+proves every admission is active, then
 requires certified close to make all guest sockets terminal and recover
 descriptors and threads. Its 512-connection measurement also catches changes
-to the bounded header buffer's per-handshake reserve. A fourth lane establishes
-a configurable batch of
-silent tunnels under one idle-expiring lease. It samples their simultaneous peak,
-requires every guest and upstream socket to become terminal, and checks exact
-idle-denial counters plus recovered descriptors and threads. A fifth lane
-keeps one real lease and upstream alive, then alternates completed echo tunnels,
-upload-ceiling denials, channel-timed upstream resets after CONNECT success,
-and pre-DNS hostname denials. It waits for active ownership to return to zero
+to the bounded header buffer's per-handshake reserve. A fifth lane establishes
+a configurable batch of silent tunnels under one idle-expiring lease. It
+samples their simultaneous peak, requires every guest and upstream socket to
+become terminal, and checks exact idle-denial counters plus recovered
+descriptors and threads. A sixth lane keeps one real lease and upstream alive,
+then alternates completed echo tunnels, upload-ceiling denials, channel-timed
+upstream resets after CONNECT success, and pre-DNS hostname denials. It waits
+for active ownership to return to zero
 and samples descriptor and thread recovery after every batch and final
 shutdown. Final accepted, completed, denied, upload, and download counters must
 exactly distinguish all four paths; the reset is neither a completion nor a
-policy denial. A sixth lane holds a configurable number of TLS-inspected
+policy denial. A seventh lane holds a configurable number of TLS-inspected
 tunnels at 60,020 bytes of a legal, incomplete, multi-record `ClientHello`.
 Aggregate upload accounting proves every parser buffer is live before the peak
 sample. Successful lease close must then cancel all of them, make every guest
 and upstream socket terminal, freeze exact zero-denial final counters, and
-recover descriptors and threads. A seventh lane repeatedly drives both guest
+recover descriptors and threads. An eighth lane repeatedly drives both guest
 and upstream nonblocking writers until each independently observes a full send
 queue while neither application reads. Every certified close must terminate
 both writers, freeze positive bidirectional accounting with no completion or
 denial, and permit the same source identity to attach again. It samples
-descriptor and thread recovery after each batch and final shutdown. An eighth
+descriptor and thread recovery after each batch and final shutdown. A ninth
 lane holds a configurable batch after the approved numeric CONNECT request has
 reached an operator-controlled upstream proxy, but while that proxy has
 returned only 900 bytes of an unterminated response header. Certified close
@@ -379,14 +382,17 @@ contention. Run
 `./scripts/measure-resources.sh [lease-runs-per-batch]
 [lease-batches] [idle-connections] [TLS-connections]
 [terminal-runs-per-batch] [terminal-batches] [partial-header-connections]
-[partial-upstream-response-connections]`.
+[partial-upstream-response-connections] [failed-start-runs-per-batch]
+[failed-start-batches]`.
 Management churn remains
 adjustable with
 `SANDBOX_EGRESS_CONTROL_CONCURRENCY` and
 `SANDBOX_EGRESS_CONTROL_BATCHES`; the repeated pressure lane uses
 `SANDBOX_EGRESS_BACKPRESSURE_RUNS` and
 `SANDBOX_EGRESS_BACKPRESSURE_BATCHES`; the upstream-response lane uses
-`SANDBOX_EGRESS_UPSTREAM_CONNECTIONS`.
+`SANDBOX_EGRESS_UPSTREAM_CONNECTIONS`; the failed-start lane uses
+`SANDBOX_EGRESS_FAILED_START_RUNS` and
+`SANDBOX_EGRESS_FAILED_START_BATCHES`.
 
 The terminal-churn harness waits for each asserted protocol outcome and then
 uses abortive close on its own hostile-path client socket. Its completion and

@@ -101,6 +101,51 @@ fn identity_churn_has_bounded_process_resources() {
 
 #[test]
 #[ignore = "resource soak is opt-in; run scripts/measure-resources.sh"]
+fn failed_startup_releases_process_resources() {
+    let runs_per_batch = env_number("SANDBOX_EGRESS_FAILED_START_RUNS", 250);
+    let batches = env_number("SANDBOX_EGRESS_FAILED_START_BATCHES", 4);
+    assert!(runs_per_batch > 0 && batches > 0);
+    let process_start = Resources::sample();
+    let started = Instant::now();
+
+    for batch in 0..batches {
+        for _ in 0..runs_per_batch {
+            let reservation =
+                TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("reserve failed-start port");
+            let address = reservation.local_addr().expect("reserved address");
+            assert!(
+                Proxy::start(ProxyConfig::default().with_bind_address(address)).is_err(),
+                "startup unexpectedly acquired an occupied listener"
+            );
+            drop(reservation);
+        }
+        let current = Resources::sample();
+        eprintln!(
+            "failed_start_soak event=batch batch={} completed={} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
+            batch + 1,
+            (batch + 1).saturating_mul(runs_per_batch),
+            started.elapsed().as_millis(),
+            current.rss_kib,
+            current.descriptors,
+            current.threads,
+        );
+        assert_stable_non_memory_resources(process_start, current);
+    }
+
+    let finished = Resources::sample();
+    eprintln!(
+        "failed_start_soak event=finish completed={} elapsed_ms={} rss_kib={:?} fds={:?} threads={:?}",
+        runs_per_batch.saturating_mul(batches),
+        started.elapsed().as_millis(),
+        finished.rss_kib,
+        finished.descriptors,
+        finished.threads,
+    );
+    assert_stable_non_memory_resources(process_start, finished);
+}
+
+#[test]
+#[ignore = "resource soak is opt-in; run scripts/measure-resources.sh"]
 fn concurrent_management_churn_releases_process_resources() {
     let concurrency = env_number("SANDBOX_EGRESS_CONTROL_CONCURRENCY", 64);
     let batches = env_number("SANDBOX_EGRESS_CONTROL_BATCHES", 4);

@@ -6540,3 +6540,21 @@ The drop-probe proof, four listener lifecycle cases, and strict all-target
 Clippy pass. Whole-tree SCC 4.0.0 moves from 857/2,518 to 858/2,517: the explicit
 ownership match adds one structural point while simplifying the measured
 decision shape overall.
+
+## 2026-09-02 — exercise repeated failed startup as a resource boundary
+
+The deterministic drop probe proves ordering once; a resource lane now checks
+that the same failure boundary remains stable under repetition. Each iteration
+keeps a loopback listener occupied while `Proxy::start` attempts the same
+address, forcing an error after the owned runtime has spawned without a port
+selection race.
+
+One thousand failed starts in four batches completed in 364 milliseconds.
+Descriptors remained at nine and threads at two after every batch and at the
+finish; RSS moved from 9,424 to 9,456 KiB as an informational allocator
+high-water observation. The lane has independent count controls so increasing
+terminal connection churn does not accidentally multiply runtime creation.
+
+This adds no production path. It promotes cleanup after initialization failure
+from a one-shot semantic proof to the same reproducible process-resource
+factory used for successful proxy and lease lifecycles.
