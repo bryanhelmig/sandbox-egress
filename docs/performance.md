@@ -64,6 +64,24 @@ no lifecycle-latency improvement is claimed. The retained result is one known
 heap allocation removed per lease, direct immutable ownership, and no new
 branch or public API.
 
+A later absolute checkpoint fell below the earlier connection baseline, so a
+fresh detached `7007747` build tested whether the larger shared-state layout
+was responsible. Six alternating and reversed-order 30,000-connection pairs
+measured:
+
+```text
+command: SANDBOX_EGRESS_LOAD_CONNECTIONS=30000 \
+         SANDBOX_EGRESS_LOAD_CONCURRENCY=64 \
+         SANDBOX_EGRESS_LOAD_DESTINATIONS=16 \
+         cargo test --locked --release --test load -- --ignored --nocapture
+direct policy: 16,236 .. 19,231 connections/second, median 18,058
+inner Arc:     15,732 .. 19,050 connections/second, median 17,270
+```
+
+The ranges overlap and individual pair direction varies, so this does not
+support a speedup. It does rule out the suspected stable regression and keeps
+the mechanically simpler ownership result.
+
 ## Initial identity-churn resource baseline
 
 Recorded 2026-08-31 on the same Apple M1 with the proxy alive throughout:

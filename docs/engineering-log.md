@@ -6263,3 +6263,26 @@ This follows the same representation rule already applied to explicit scoped
 DNS servers: never silently discard interface identity that the underlying
 socket address needs. Focused public and unit tests pass. The change adds one
 production predicate and does not add a new identity variant or dependency.
+
+## 2026-09-02 — clear the direct-policy layout regression concern
+
+A fresh absolute checkpoint produced only 13.10--16.34k local setups/second,
+below an earlier 18.35k single run. Eight established tunnels also delivered
+2.65 GiB/s upload and 2.87 GiB/s download, below recent but already variable
+local results. The direct policy embedded in `LeaseState` was the only
+plausible recent hot-object layout change, so it was treated as a regression
+candidate rather than assuming host noise.
+
+The first detached build attempt was invalid: one Cargo target directory had
+been shared across path workspaces, making executable provenance ambiguous.
+Those numbers were discarded. The old `7007747` revision was rebuilt in a
+fresh isolated target, then run in six alternating and reversed-order
+30,000-connection pairs against the current tree. The direct-policy layout
+delivered 16.24--19.23k/second with an 18.06k median; the inner-`Arc` baseline
+delivered 15.73--19.05k/second with a 17.27k median. Pair direction varied and
+ranges overlap.
+
+No throughput improvement is claimed. The controlled comparison rules out a
+stable regression from direct policy ownership, so its removed allocation and
+simpler lifetime remain. The lower absolute checkpoint is retained as evidence
+of host variability, not normalized away.
