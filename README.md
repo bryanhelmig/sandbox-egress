@@ -254,7 +254,8 @@ This is trusted process configuration, not a per-lease or guest-selected
 resolver. Up to eight distinct servers are accepted. Unspecified, multicast,
 broadcast, and scoped IPv6 server addresses are rejected. A recursive server
 must be a concrete unicast endpoint, and the underlying resolver cannot
-preserve an IPv6 scope identifier.
+preserve an IPv6 scope identifier. It also cannot point back at the shared
+Sandbox Egress listener.
 
 Corporate networks can route every approved destination through one
 operator-controlled HTTP CONNECT proxy. Supply its numeric socket address in

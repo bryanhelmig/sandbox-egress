@@ -156,7 +156,8 @@ attached lease can choose a resolver. At most eight distinct servers are
 accepted. Port zero, unspecified, multicast, IPv4 limited broadcast, and
 scoped IPv6 addresses fail startup. A configured server must be a concrete
 unicast endpoint, and scoped IPv6 cannot be represented faithfully by the
-resolver backend.
+resolver backend. An explicit server may not be the shared proxy listener;
+this prevents TCP DNS fallback from becoming a recursive proxy connection.
 
 The shared resolver cache is disabled by default because its dependency bounds
 entries rather than bytes. The host may opt into at most 64 responses, each

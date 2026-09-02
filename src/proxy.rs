@@ -824,6 +824,16 @@ async fn run_proxy(
         ));
         return;
     }
+    if config
+        .dns_servers
+        .iter()
+        .any(|server| is_proxy_endpoint(*server, config.bind_address))
+    {
+        let _ = ready.send(Err(
+            "explicit DNS server must not be the Sandbox Egress listener".to_owned(),
+        ));
+        return;
+    }
     if ready.send(Ok(endpoint)).is_err() {
         return;
     }

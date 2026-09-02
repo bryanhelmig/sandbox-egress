@@ -577,6 +577,20 @@ fn upstream_proxy_cannot_reference_the_shared_listener() {
 }
 
 #[test]
+fn recursive_dns_cannot_reference_the_shared_listener() {
+    let reservation = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("reserve listener port");
+    let address = reservation.local_addr().expect("reserved listener address");
+    drop(reservation);
+
+    let result = Proxy::start(
+        ProxyConfig::default()
+            .with_bind_address(address)
+            .with_dns_server(address),
+    );
+    assert!(result.is_err(), "recursive DNS listener was accepted");
+}
+
+#[test]
 fn lease_close_observes_a_completed_proxy_shutdown() {
     let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
     let lease = attach_local(&proxy, Policy::builder().build().expect("valid policy"));

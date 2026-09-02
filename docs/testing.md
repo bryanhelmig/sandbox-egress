@@ -433,7 +433,8 @@ a UDP-truncated response over a real TCP DNS connection. More than eight
 distinct servers, port zero, unspecified, multicast, IPv4 limited-broadcast,
 and scoped IPv6 addresses fail validation. Upstream proxy configuration has
 the same concrete-unicast floor, while retaining scoped IPv6 only when its
-socket address carries a zone. An
+socket address carries a zone. Neither trusted remote service may reference
+the shared listener itself. An
 identity-reuse case gives two runs the same hostname and repeated loopback
 answer: the first policy explicitly grants loopback and reaches the connector,
 while the replacement policy does not and must deny without another connector

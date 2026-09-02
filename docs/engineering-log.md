@@ -6357,3 +6357,23 @@ The full suite passes with 142 unit, 2 CLI, 17 concurrency, 31 lifecycle, 19
 tunnelling, and 6 documentation tests; strict all-target Clippy is clean.
 Whole-tree SCC 4.0.0 moves from 834/2,448 to 846/2,488 structural/cognitive
 points, with the increase concentrated in explicit boundary tests.
+
+## 2026-09-02 — reject recursive DNS pointed at the proxy listener
+
+The next endpoint audit asked whether the existing upstream self-reference
+guard also covered explicit DNS. It did not: a red lifecycle test started the
+proxy with its recursive server equal to its concrete listener. Although DNS
+begins over UDP, configured recovery includes TCP after a failed or truncated
+exchange, so this mistake could turn resolver work into a connection back to
+the HTTP proxy rather than fail at startup.
+
+After binding determines the actual listener address, startup now applies the
+same canonical endpoint matcher to every configured DNS server. Exact concrete
+endpoints and every address sharing a wildcard listener's port fail before the
+ready certificate is returned. The remote endpoint's earlier concrete-unicast
+validation and eight-server ceiling keep this check bounded.
+
+The red lifecycle proof now passes, the entire 32-case lifecycle suite and the
+wildcard/mapped-address matcher proof pass, and strict all-target Clippy is
+clean. Whole-tree complexity moves from 846/2,488 to 847/2,490; the one new
+production branch is the early startup guard.
