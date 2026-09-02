@@ -5758,3 +5758,10 @@ unchanged. Alternating baseline/candidate denial medians ranged
 67.029--76.222 and 74.571--77.222 microseconds respectively. The noisy ranges
 overlap, so no throughput change is claimed; the retained gain is less expired
 work and less source without additional measured decision complexity.
+
+A subsequent tunnel-path trial returned early on zero-byte reads to avoid a
+saturating atomic add of zero at EOF. `connect_allowed_loopback` moved from a
+118.15 to 110.37 microsecond median, but its confidence interval was
+−7.1--+7.2% and Criterion found no change. The candidate also raised
+`src/proxy.rs` complexity from 275/923 to 276/926. It was discarded: one
+unmeasured EOF optimization did not justify another branch and early return.
