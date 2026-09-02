@@ -5809,3 +5809,7 @@ atomic transfer from a uniquely owned prebuilt sentinel, destroy-first and
 free-last release, and reconciliation before pool refill. These rules stay in
 the supervisor contract; the public library remains `Proxy / Policy / Lease`
 with no VMM, network-pool, or durable-store API.
+
+The public `SourceIp` rustdoc, README example, and security invariant now use
+the same listener-observed wording. This is documentation of the existing
+socket lookup behavior, not a public API or runtime change.

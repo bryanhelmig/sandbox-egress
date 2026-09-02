@@ -5,9 +5,11 @@ use std::net::{IpAddr, SocketAddr};
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[non_exhaustive]
 pub enum PeerIdentity {
-    /// The socket source address enforced by the guest namespace/NAT boundary.
-    /// A proxy treats an IPv4-mapped IPv6 spelling as the equivalent IPv4
-    /// address at both attachment and socket acceptance.
+    /// The source address the proxy listener observes, enforced by the trusted
+    /// namespace, routing, or NAT boundary. This may be a host-translated
+    /// address rather than the address configured inside the guest. A proxy
+    /// treats an IPv4-mapped IPv6 spelling as the equivalent IPv4 address at
+    /// both attachment and socket acceptance.
     SourceIp(IpAddr),
 }
 

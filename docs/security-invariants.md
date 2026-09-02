@@ -10,7 +10,9 @@ reach that control plane.
 
 `SourceIp` is evidence only when the host ensures the guest cannot choose or
 spoof it and cannot bypass the proxy. The supervisor must fence the old
-namespace/NAT path before calling `Lease::close`.
+namespace/NAT path before calling `Lease::close`. The attached value is the
+peer address observed by the proxy listener; when the guest-visible address is
+translated, guest configuration is not identity evidence.
 
 Attachment rejects unspecified, multicast, and IPv4 limited-broadcast source
 addresses because none can identify the peer of an accepted TCP connection.

@@ -77,7 +77,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .connection_attempt_rate(32, 8)?
         .build()?;
 
-    // The host network boundary, not the guest, establishes this identity.
+    // Attach the source address the listener observes. The host network
+    // boundary, not guest configuration, establishes this identity.
     let run_egress_ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
     let lease = proxy.attach(PeerIdentity::SourceIp(run_egress_ip), policy)?;
 
