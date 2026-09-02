@@ -85,6 +85,9 @@ pub enum PolicyError {
     /// A connection limit must fit the asynchronous runtime's semaphore.
     #[error("connection limit is too large for the runtime")]
     ConnectionLimitTooLarge,
+    /// Connection-attempt rate and burst limits must both be positive.
+    #[error("connection attempt rate and burst must be greater than zero")]
+    ZeroConnectionAttemptRate,
     /// Deadlines must be positive.
     #[error("timeouts must be greater than zero")]
     ZeroTimeout,

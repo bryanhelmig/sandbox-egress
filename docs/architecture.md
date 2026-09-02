@@ -121,9 +121,11 @@ resets it; no timer task is spawned, and the default path allocates no activity
 channel. Idle expiry drops the copy future and its owned sockets together, so
 it does not wait for either remote endpoint.
 
-## Why one package
+## Why one publishable package
 
-The library and thin executable begin in one package. Splitting crates now
+The library, thin executable, and Linux conformance example remain one
+publishable package. The example is test infrastructure, not another proxy
+implementation or public API. Splitting the implementation into crates now
 would manufacture versioning and dependency boundaries before they are known.
-Introduce a workspace only when a component has an independently useful API or
-dependency graph.
+Introduce another package only when a component has an independently useful
+API or dependency graph.

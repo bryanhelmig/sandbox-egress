@@ -14,7 +14,8 @@ contributor instead of preserving solved work as apparent backlog.
   certification, including before or after a replacement policy is attached.
   This needs the host-cage/conntrack harness because a TCP listener cannot
   authenticate the run generation of a packet arriving after identity reuse.
-- Host fencing requirements for Firecracker TAP/NAT/conntrack teardown.
+- Complete the first namespace-only host certificate with a real Firecracker
+  TAP/KVM snapshot lane and explicit NAT/conntrack-zone teardown.
 
 ## Request parsing and authority
 
@@ -45,10 +46,6 @@ contributor instead of preserving solved work as apparent backlog.
 
 ## Capacity and denial of service
 
-- Optional fail-fast connection-attempt rate and burst ceilings, both
-  process-wide and per lease, checked before task creation and attributed to
-  the current lease. Concurrency bounds do not cap rapid terminal or denied
-  connection churn; identity reuse must begin with fresh per-lease rate state.
 - Optional reserved-share or fair admission semantics between leases; the
   current contract is fail-fast attribution and recovery on retry.
 - Listener backlog saturation and general accept-loop fairness beyond the
@@ -65,7 +62,8 @@ contributor instead of preserving solved work as apparent backlog.
 
 ## Deployment and integration
 
-- Linux network namespaces, nftables, TAP devices, and Firecracker guests.
+- Extend the Linux namespace/nftables certificate to TAP devices and
+  Firecracker guests; the current lane proves the veth ownership transition.
 - A black-box host-cage conformance harness covering direct TCP/UDP, both IP
   families, unrelated loopback and host IPC, proxy-environment overrides,
   inherited sockets, resolver/upstream reachability, and premature identity
@@ -73,7 +71,8 @@ contributor instead of preserving solved work as apparent backlog.
 - DNS routing that cannot bypass the proxy boundary.
 - IPv4-only, IPv6-only, dual-stack, unusual MTU, and packet loss/delay.
 - Resolver configuration changes and absent or malformed `resolv.conf`.
-- Process signals, supervisor crashes, restart, and orphan cleanup.
+- Process signals and supervisor crashes beyond the current named-namespace
+  orphan cleanup proof, including reconciliation from a durable run journal.
 - Resource-capped standalone executable using the same library.
 - Authenticated and TLS corporate upstream proxies, explicit trust-root
   ownership, and resolution-aware host-controlled bypass rules. The current

@@ -5574,3 +5574,92 @@ the lease's final counters, and shuts down the shared proxy only after the
 whole workload. It passed without throughput collapse, capacity leakage, or
 ownership failure. This is a sustained local loopback result, not an external
 network or multi-host capacity claim.
+
+## 2026-09-02 — turn Firecracker prior art into a host contract
+
+Firecracker `4c998054`, n8n sandbox service `e7a7e728`, CubeSandbox `30e002cb`,
+OpenSandbox `1eb8fffa`, and mvm `4ebd13d5` were compared at the host-network
+ownership boundary. The common operational lesson is that the proxy lease is
+only one part of a run generation: namespace/TAP/veth, firewall, NAT/conntrack,
+VMM, cgroup, shaping, and source address need one external owner and explicit
+restart reconciliation. Firecracker's snapshot contract also makes live
+connection survival the wrong guarantee; a restore needs a fresh host path and
+lease, while guest connections reconnect.
+
+The resulting `docs/firecracker-integration.md` keeps this record outside the
+public `Proxy / Policy / Lease` API. It specifies deny-first construction and
+active readiness probes, fence-before-close teardown, no identity reuse before
+kernel cleanup, fresh snapshot generations, and separate proxy-churn versus VM
+packet/bandwidth controls. It explicitly lists the unproved TAP/KVM, IPv6,
+UDP/DNS, inherited-descriptor, and NAT-port cases.
+
+## 2026-09-02 — bound attributed connection churn before task creation
+
+Deterministic integer token buckets now optionally apply process-wide and per
+lease after source-IP attribution but before header parsing, concurrency
+reservation, or task creation. Unit cases pin full-burst, fractional-refill,
+capacity, overflow, and invalid-input behavior. Real listener cases pin exact
+one-accepted/one-denied accounting and the stable `lease-rate` and
+`global-rate` diagnostics. Close and reattach gives a new lease bucket but
+cannot reset the proxy-lifetime global bucket.
+
+The first implementation locked the lease lifecycle state even when both
+limits were disabled. It lost all three initial 30,000-connection A/B pairs and
+was removed. The retained default path branches around time and lock work; the
+listener owns the global bucket directly. Eight A/B comparisons overlap the
+detached baseline, so no default-path performance change is claimed. Enabling
+both buckets measured an 18,355 versus 18,891 connections/second median and a
+1,925 versus 1,912 microsecond p50 median. The optional cost is kept because it
+closes a named terminal-churn gap; the rejected shape and measurements remain
+in `docs/performance.md`.
+
+## 2026-09-02 — certify the host fence and policy phase transition
+
+The ordinary suite now proves an immutable phase change by allowing and
+denying complementary destinations, certifying the old lease, reattaching the
+same source identity, and repeating under the new policy with exact per-lease
+counters. The privileged Linux lane adds separate host and guest namespaces, a
+veth path, deny-first nftables rules, a blocked direct decoy, a successful
+CONNECT tunnel, fence-before-close, zero host-side proxy sockets, same-address
+reuse only on a fresh path, and named orphan cleanup. Wrapping that lane showed
+conntrack 0/0/0 in its non-NAT topology and allocated files 704/736/704; the
+zero conntrack result is a scope limit, not NAT recovery evidence.
+
+A packaging review caught that Cargo omits a nested workspace package from the
+root crate archive. The initial unpublished tool was therefore replaced by the
+single-package `examples/linux_host_proxy.rs` fixture. The verified archive now
+contains the Dockerfile, script, and source needed to reproduce the lane. This
+removes a workspace and avoids publishing instructions for an absent fixture.
+
+The exact privileged Alpine build passes the proxy-only path, fenced close,
+identity reuse, and orphan-cleanup certificate. Docker initially exhausted its
+internal storage while compiling; inspection showed four old stopped
+containers were failed Sandbox Egress factory stages, so only those and the
+current failed stage were removed. No unrelated container or image was
+deleted.
+
+## 2026-09-02 — certify the complete host-lifecycle slice
+
+The final candidate before this prose-only evidence entry passes the native
+factory and standalone hostile suite:
+199 deterministic cases, six doctests, all-target/all-feature compilation and
+Clippy, benchmark smoke, warning-denied documentation, the Linux example, a
+verified 75-file package, and dependency policy. Repeated global-bucket
+identity-reuse runs completed without a reset escape.
+
+The pinned Rust 1.88 Linux factory repeats the same code paths, including the
+example target and all eight serialized release resource lanes. Every resource
+lane finishes at four descriptors and two threads. Representative peaks are
+521 descriptors for 128 idle or partial-upstream tunnels, 69 threads for 64
+simultaneous host callers, and 15,164 KiB RSS for 64 partial 60,020-byte
+ClientHellos. The stripped unprivileged runner repeats all 199 deterministic
+cases successfully. Its image is
+`sha256:73ae963bed6ee87bc6c3616fe5a0876a17c2366edef9edb4fb7ae47cb44beb5f`
+at 41,010,366 bytes.
+
+The separately privileged Rust 1.88 Alpine certificate builds the packaged
+example and passes again at
+`sha256:761f0a0d051c0ee63d0d53f50e7eba4519b625ffc9cea27df7a5be832e76285c`.
+Its measured lane returns allocated files from 736 to the 704 baseline and
+leaves zero root-namespace conntrack, TCP, TIME_WAIT, or UDP entries. The
+privileged image is a test environment, not a production deployment artifact.

@@ -7,6 +7,7 @@ mod error;
 mod identity;
 mod policy;
 mod proxy;
+mod rate;
 mod resolver;
 mod tls;
 #[cfg(test)]

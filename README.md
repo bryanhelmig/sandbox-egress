@@ -73,6 +73,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Optional: release a tunnel that moves no bytes in either direction.
         .idle_timeout(Duration::from_secs(60))
         .max_connections(8)?
+        // Optional: bound rapid terminal connection churn as well as live work.
+        .connection_attempt_rate(32, 8)?
         .build()?;
 
     // The host network boundary, not the guest, establishes this identity.
@@ -177,7 +179,8 @@ The current vertical slice provides:
   network-specific NAT64 prefixes, so translated private and metadata IPv4
   destinations receive the same checks;
 - fail-fast global and per-lease connection admission reserved before work is
-  spawned, with refusals attributed to the contending lease;
+  spawned, plus optional token buckets for rapid connection-attempt churn,
+  with refusals attributed to the contending lease;
 - bounded request headers, backpressure, and absolute accept-to-handshake and
   DNS deadlines; waiting for DNS or dial capacity and writing the CONNECT
   success response consume those deadlines;
@@ -209,11 +212,9 @@ For clients that use ECH, callers can explicitly select
 checks only the visible outer SNI. It cannot know the encrypted inner name.
 Neither mode terminates TLS or checks the application authority inside the
 encrypted tunnel, so Sandbox Egress does not claim to eliminate every form of
-domain fronting. Plain HTTP forwarding, transparent interception,
-arbitrary resolver backends, configurable destination-range tables, and
-connection-attempt rate or burst ceilings are also not yet implemented.
-Concurrency limits bound simultaneous owned work; they do not bound rapid
-terminal requests over time. These gaps are tracked rather than hidden.
+domain fronting. Plain HTTP forwarding, transparent interception, arbitrary
+resolver backends, and configurable destination-range tables are also not yet
+implemented. These gaps are tracked rather than hidden.
 
 Global connection, resolver, and outbound-dial work are bounded independently.
 The defaults are 1,024 admitted connections, 32 concurrent DNS lookups, and
@@ -223,6 +224,7 @@ The defaults are 1,024 admitted connections, 32 concurrent DNS lookups, and
 # use sandbox_egress::ProxyConfig;
 let config = ProxyConfig::default()
     .with_max_connections(512)
+    .with_connection_attempt_rate(2_000, 250)
     .with_max_concurrent_dns(64)
     .with_max_concurrent_dials(128);
 # Ok::<(), Box<dyn std::error::Error>>(())
@@ -296,12 +298,12 @@ distinguished from a translated IPv4 address by syntax alone. The well-known
 
 For a source-IP identity, the host should use this lifecycle:
 
-1. Give the run a unique or currently unused source address.
-2. Attach its immutable policy and route its only egress path through the
-   proxy.
-3. Run the untrusted workload.
+1. Give the run a fresh host-network generation and source address.
+2. Install a deny-first namespace/TAP/firewall path and actively prove that
+   only the proxy is reachable.
+3. Attach its immutable policy, then run or resume the untrusted workload.
 4. Fence the old namespace or NAT path so it cannot create more traffic.
-5. Close the lease successfully.
+5. Close the lease successfully and remove run-owned conntrack/NAT state.
 6. Only then reuse that source address for another run.
 
 TCP does not carry a userspace run generation. The shared listener cannot tell
@@ -318,6 +320,10 @@ sets of every process sharing the guest network namespace. In particular,
 drop both `CAP_NET_ADMIN` and `CAP_NET_RAW`; a default container capability set
 may still include the latter.
 
+The [Firecracker host integration](docs/firecracker-integration.md) makes the
+generation record, fail-closed readiness, snapshot/resume, orphan
+reconciliation, VM bandwidth fairness, and kernel-capacity evidence explicit.
+
 ## Development
 
 The ordinary development loop uses familiar Cargo commands behind small
@@ -333,6 +339,7 @@ scripts:
 ./scripts/measure-load-sweep.sh repeated concurrency scaling sweep
 ./scripts/measure-throughput.sh concurrent upload/download tunnel throughput
 ./scripts/measure-throughput-sweep.sh fixed-work data-plane scaling sweep
+./scripts/measure-linux-network-state.sh CMD  Linux conntrack/socket evidence
 ./scripts/check-iana-drift.sh   opt-in authoritative registry drift signal
 cargo run --locked --bin sandbox-egress -- example.com
 ```
@@ -357,11 +364,21 @@ executables and runs every deterministic case as an unprivileged user. It
 does not ship Cargo, the compiler, source tree, or build cache. Tests remain
 local and do not call public network services.
 
+The host-boundary certificate is separate because it requires root networking
+capabilities. Run it only in a disposable privileged Linux container:
+
+```text
+docker build -f Dockerfile.host-boundary -t sandbox-egress-host-boundary:local .
+docker run --rm --privileged sandbox-egress-host-boundary:local
+```
+
 Start with [AGENTS.md](AGENTS.md). The deeper project record is split into:
 
 - [founding context](docs/founding-context.md) — product ambition and audience;
 - [design brief](docs/design-brief.md) — the original lifecycle requirements;
 - [security invariants](docs/security-invariants.md) — claims and trust boundary;
+- [Firecracker integration](docs/firecracker-integration.md) — host lifecycle,
+  snapshot, readiness, shaping, and kernel evidence;
 - [architecture](docs/architecture.md) — internal ownership and data flow;
 - [testing strategy](docs/testing.md) — conformance and resource evidence;
 - [performance evidence](docs/performance.md) — reproducible measurements;

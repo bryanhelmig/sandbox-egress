@@ -24,6 +24,13 @@ fn environment_usize(name: &str, default: usize) -> usize {
         .unwrap_or(default)
 }
 
+fn environment_u32(name: &str) -> Option<u32> {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|value| *value > 0)
+}
+
 fn percentile(sorted_samples: &[Duration], percentile: usize) -> Duration {
     sorted_samples[(sorted_samples.len() - 1) * percentile / 100]
 }
@@ -118,16 +125,28 @@ fn concurrent_local_connect_capacity() {
     let connections = environment_usize("SANDBOX_EGRESS_LOAD_CONNECTIONS", 5_000);
     let concurrency = environment_usize("SANDBOX_EGRESS_LOAD_CONCURRENCY", 64).min(connections);
     let destinations = environment_usize("SANDBOX_EGRESS_LOAD_DESTINATIONS", 16).min(connections);
+    let attempt_rate = environment_u32("SANDBOX_EGRESS_LOAD_ATTEMPTS_PER_SECOND");
+    let attempt_burst = environment_u32("SANDBOX_EGRESS_LOAD_ATTEMPT_BURST").unwrap_or_else(|| {
+        u32::try_from(connections).expect("connection count must fit rate-limit burst")
+    });
     let (upstream_ports, upstream_thread) = start_upstreams(connections, destinations);
 
-    let proxy = Proxy::start(ProxyConfig::default().with_max_connections(concurrency * 2))
-        .expect("start proxy");
+    let mut config = ProxyConfig::default().with_max_connections(concurrency * 2);
+    if let Some(rate) = attempt_rate {
+        config = config.with_connection_attempt_rate(rate, attempt_burst);
+    }
+    let proxy = Proxy::start(config).expect("start proxy");
     let mut policy_builder = Policy::builder()
         .allow_network("127.0.0.0/8".parse::<IpNet>().expect("loopback CIDR"))
         .max_connections(concurrency * 2)
         .expect("positive connection limit");
     for port in &upstream_ports {
         policy_builder = policy_builder.allow_port(*port);
+    }
+    if let Some(rate) = attempt_rate {
+        policy_builder = policy_builder
+            .connection_attempt_rate(rate, attempt_burst)
+            .expect("positive load attempt rate and burst");
     }
     let policy = policy_builder.build().expect("valid policy");
     let lease = proxy
@@ -191,7 +210,8 @@ fn concurrent_local_connect_capacity() {
     let per_second = f64::from(u32::try_from(connections).expect("connection count fits u32"))
         / elapsed.as_secs_f64();
     eprintln!(
-        "load connections={connections} concurrency={concurrency} destinations={destinations} elapsed_ms={} connections_per_second={per_second:.1} p50_us={} p95_us={} p99_us={}",
+        "load connections={connections} concurrency={concurrency} destinations={destinations} attempt_rate={} attempt_burst={attempt_burst} elapsed_ms={} connections_per_second={per_second:.1} p50_us={} p95_us={} p99_us={}",
+        attempt_rate.map_or_else(|| "disabled".to_owned(), |rate| rate.to_string()),
         elapsed.as_millis(),
         percentile(&samples, 50).as_micros(),
         percentile(&samples, 95).as_micros(),

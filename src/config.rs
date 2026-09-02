@@ -6,6 +6,7 @@ use ipnet::Ipv6Net;
 
 use crate::DiagnosticEvent;
 use crate::diagnostic::DiagnosticConfig;
+use crate::rate::RateLimit;
 
 pub(crate) const MAX_DNS_CACHE_ENTRIES: u64 = 64;
 pub(crate) const MAX_DNS_CACHE_TTL: Duration = Duration::from_secs(86_400);
@@ -17,6 +18,7 @@ pub(crate) const MAX_DNS_SERVERS: usize = 8;
 pub struct ProxyConfig {
     pub(crate) bind_address: SocketAddr,
     pub(crate) max_connections: usize,
+    pub(crate) connection_attempt_rate: Option<RateLimit>,
     pub(crate) max_concurrent_dns: usize,
     pub(crate) max_concurrent_dials: usize,
     pub(crate) dns_cache_entries: u64,
@@ -36,6 +38,12 @@ impl ProxyConfig {
     pub(crate) fn validate(&self) -> Result<(), &'static str> {
         if self.header_timeout.is_zero() {
             return Err("header timeout must be nonzero");
+        }
+        if self
+            .connection_attempt_rate
+            .is_some_and(|limit| !limit.is_valid())
+        {
+            return Err("connection attempt rate and burst must be nonzero");
         }
         let now = Instant::now();
         if now.checked_add(self.header_timeout).is_none() {
@@ -91,6 +99,19 @@ impl ProxyConfig {
     /// runtime semaphore's safe range.
     pub fn with_max_connections(mut self, max: usize) -> Self {
         self.max_connections = max.clamp(1, tokio::sync::Semaphore::MAX_PERMITS);
+        self
+    }
+
+    /// Set a process-wide token bucket for attributed inbound TCP attempts.
+    ///
+    /// The bucket starts full, refills at `rate_per_second`, and holds at most
+    /// `burst` attempts. The check happens after source-IP attribution but
+    /// before header parsing, task creation, or concurrent admission. This
+    /// bounds rapid terminal connection churn in addition to the concurrent
+    /// connection ceiling. Zero disables neither value:
+    /// [`Proxy::start`](crate::Proxy::start) rejects it.
+    pub fn with_connection_attempt_rate(mut self, rate_per_second: u32, burst: u32) -> Self {
+        self.connection_attempt_rate = Some(RateLimit::new(rate_per_second, burst));
         self
     }
 
@@ -223,6 +244,7 @@ impl Default for ProxyConfig {
         Self {
             bind_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
             max_connections: 1_024,
+            connection_attempt_rate: None,
             max_concurrent_dns: 32,
             max_concurrent_dials: 256,
             dns_cache_entries: 0,
@@ -270,6 +292,19 @@ mod tests {
             crate::Proxy::start(ProxyConfig::default().with_header_timeout(Duration::ZERO)),
             Err(crate::ProxyError::Initialization(_))
         ));
+    }
+
+    #[test]
+    fn rejects_zero_connection_attempt_rate_or_burst() {
+        for config in [
+            ProxyConfig::default().with_connection_attempt_rate(0, 1),
+            ProxyConfig::default().with_connection_attempt_rate(1, 0),
+        ] {
+            assert!(matches!(
+                crate::Proxy::start(config),
+                Err(crate::ProxyError::Initialization(_))
+            ));
+        }
     }
 
     #[test]

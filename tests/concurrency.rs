@@ -62,6 +62,66 @@ fn saturated_usage(global_limit: usize, lease_limit: usize) -> sandbox_egress::F
     usage
 }
 
+fn rate_limited_usage(
+    global: bool,
+) -> (
+    sandbox_egress::FinalUsage,
+    sandbox_egress::DiagnosticEvent,
+    u64,
+) {
+    let (diagnostic_tx, diagnostic_rx) = mpsc::sync_channel(1);
+    let config = if global {
+        ProxyConfig::default().with_connection_attempt_rate(1, 1)
+    } else {
+        ProxyConfig::default()
+    }
+    .with_diagnostic_channel(diagnostic_tx, 10);
+    let proxy = Proxy::start(config).expect("start proxy");
+    let mut policy = Policy::builder()
+        .max_connections(2)
+        .expect("positive lease limit");
+    if !global {
+        policy = policy
+            .connection_attempt_rate(1, 1)
+            .expect("positive attempt rate and burst");
+    }
+    let lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            policy.build().expect("valid policy"),
+        )
+        .expect("attach lease");
+    let lease_id = lease.id();
+    let endpoint = lease.endpoint().socket_addr();
+
+    let mut admitted = TcpStream::connect(endpoint).expect("connect admitted client");
+    admitted.write_all(b"CONNECT slow").expect("hold header");
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while lease.usage().active_connections != 1 && Instant::now() < deadline {
+        thread::yield_now();
+    }
+    assert_eq!(lease.usage().active_connections, 1);
+
+    let mut rejected = TcpStream::connect(endpoint).expect("connect rate-limited client");
+    rejected
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .expect("set rejection timeout");
+    rejected.write_all(b"CONNECT rejected").ok();
+    let mut byte = [0_u8; 1];
+    assert_terminal_read(rejected.read(&mut byte));
+    let diagnostic = diagnostic_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("rate-limit diagnostic");
+
+    let usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close rate-limited lease");
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+    (usage, diagnostic, lease_id)
+}
+
 #[test]
 fn per_lease_capacity_is_reserved_and_accounted_before_spawn() {
     let usage = saturated_usage(2, 1).usage();
@@ -76,6 +136,138 @@ fn global_capacity_is_reserved_and_accounted_before_spawn() {
     assert_eq!(usage.accepted_connections, 1);
     assert_eq!(usage.denied_connections, 1);
     assert_eq!(usage.active_connections, 0);
+}
+
+#[test]
+fn per_lease_connection_attempt_rate_is_reserved_before_spawn() {
+    let (final_usage, diagnostic, lease_id) = rate_limited_usage(false);
+    let usage = final_usage.usage();
+    assert_eq!(usage.accepted_connections, 1);
+    assert_eq!(usage.denied_connections, 1);
+    assert_eq!(usage.active_connections, 0);
+    assert_eq!(diagnostic.lease_id, lease_id);
+    assert_eq!(diagnostic.reason.as_str(), "lease-rate");
+}
+
+#[test]
+fn global_connection_attempt_rate_is_reserved_before_spawn() {
+    let (final_usage, diagnostic, lease_id) = rate_limited_usage(true);
+    let usage = final_usage.usage();
+    assert_eq!(usage.accepted_connections, 1);
+    assert_eq!(usage.denied_connections, 1);
+    assert_eq!(usage.active_connections, 0);
+    assert_eq!(diagnostic.lease_id, lease_id);
+    assert_eq!(diagnostic.reason.as_str(), "global-rate");
+}
+
+#[test]
+fn replacement_lease_starts_with_fresh_connection_attempt_burst() {
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let identity = PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    let policy = || {
+        Policy::builder()
+            .connection_attempt_rate(1, 1)
+            .expect("positive attempt rate and burst")
+            .build()
+            .expect("valid policy")
+    };
+    let old = proxy
+        .attach(identity.clone(), policy())
+        .expect("attach old lease");
+    let endpoint = old.endpoint().socket_addr();
+    let mut old_client = TcpStream::connect(endpoint).expect("connect old client");
+    old_client
+        .write_all(b"CONNECT old")
+        .expect("hold old header");
+    let old_deadline = Instant::now() + Duration::from_secs(1);
+    while old.usage().active_connections != 1 && Instant::now() < old_deadline {
+        thread::yield_now();
+    }
+    assert_eq!(old.usage().active_connections, 1);
+    old.close(Instant::now() + Duration::from_secs(1))
+        .expect("certify old lease");
+    drop(old_client);
+
+    let replacement = proxy
+        .attach(identity, policy())
+        .expect("attach replacement lease");
+    let mut replacement_client = TcpStream::connect(endpoint).expect("connect replacement client");
+    replacement_client
+        .write_all(b"CONNECT replacement")
+        .expect("hold replacement header");
+    let replacement_deadline = Instant::now() + Duration::from_secs(1);
+    while replacement.usage().active_connections != 1 && Instant::now() < replacement_deadline {
+        thread::yield_now();
+    }
+    assert_eq!(replacement.usage().active_connections, 1);
+    let usage = replacement
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("certify replacement lease")
+        .usage();
+    assert_eq!(usage.accepted_connections, 1);
+    assert_eq!(usage.denied_connections, 0);
+    drop(replacement_client);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
+fn replacement_lease_does_not_reset_global_connection_attempt_bucket() {
+    let proxy = Proxy::start(
+        ProxyConfig::default()
+            .with_connection_attempt_rate(1, 1)
+            .with_identity_reuse_quiet_period(Duration::ZERO),
+    )
+    .expect("start proxy");
+    let identity = PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    let old = proxy
+        .attach(
+            identity.clone(),
+            Policy::builder().build().expect("valid old policy"),
+        )
+        .expect("attach old lease");
+    let endpoint = old.endpoint().socket_addr();
+    let mut old_client = TcpStream::connect(endpoint).expect("connect old client");
+    old_client
+        .write_all(b"CONNECT old")
+        .expect("hold old header");
+    let admission_deadline = Instant::now() + Duration::from_secs(1);
+    while old.usage().active_connections != 1 && Instant::now() < admission_deadline {
+        thread::yield_now();
+    }
+    assert_eq!(old.usage().active_connections, 1);
+    old.close(Instant::now() + Duration::from_secs(1))
+        .expect("certify old lease");
+    drop(old_client);
+
+    let replacement = proxy
+        .attach(
+            identity,
+            Policy::builder().build().expect("valid replacement policy"),
+        )
+        .expect("attach replacement lease");
+    let mut rejected = TcpStream::connect(endpoint).expect("connect replacement client");
+    rejected
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .expect("set rejection timeout");
+    rejected.write_all(b"CONNECT replacement").ok();
+    let mut byte = [0_u8; 1];
+    assert_terminal_read(rejected.read(&mut byte));
+    let accounting_deadline = Instant::now() + Duration::from_secs(1);
+    while replacement.usage().denied_connections != 1 && Instant::now() < accounting_deadline {
+        thread::yield_now();
+    }
+    let usage = replacement
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("certify replacement lease")
+        .usage();
+    assert_eq!(usage.accepted_connections, 0);
+    assert_eq!(usage.denied_connections, 1);
+    assert_eq!(usage.active_connections, 0);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
 }
 
 #[test]

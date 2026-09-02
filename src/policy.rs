@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use ipnet::{IpNet, Ipv6Net};
 
 use crate::PolicyError;
+use crate::rate::RateLimit;
 
 /// How a visible `ClientHello` is related to CONNECT authority.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -74,6 +75,7 @@ pub struct Policy {
     pub(crate) allowed_networks: Vec<IpNet>,
     pub(crate) denied_networks: Vec<IpNet>,
     pub(crate) max_connections: usize,
+    pub(crate) connection_attempt_rate: Option<RateLimit>,
     pub(crate) dns_timeout: Duration,
     pub(crate) handshake_timeout: Duration,
     pub(crate) idle_timeout: Option<Duration>,
@@ -214,6 +216,30 @@ impl PolicyBuilder {
         Ok(self)
     }
 
+    /// Set this lease's token bucket for attributed inbound TCP attempts.
+    ///
+    /// The bucket starts full, refills at `rate_per_second`, and holds at most
+    /// `burst` attempts. The check happens after source-IP attribution but
+    /// before header parsing, task creation, or concurrent admission. This
+    /// complements the concurrent connection ceiling by bounding rapid
+    /// terminal connection churn.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when either value is zero.
+    pub fn connection_attempt_rate(
+        mut self,
+        rate_per_second: u32,
+        burst: u32,
+    ) -> Result<Self, PolicyError> {
+        let limit = RateLimit::new(rate_per_second, burst);
+        if !limit.is_valid() {
+            return Err(PolicyError::ZeroConnectionAttemptRate);
+        }
+        self.policy.connection_attempt_rate = Some(limit);
+        Ok(self)
+    }
+
     /// Set the DNS deadline.
     pub fn dns_timeout(mut self, timeout: Duration) -> Self {
         self.policy.dns_timeout = timeout;
@@ -321,6 +347,7 @@ impl Default for PolicyBuilder {
                 allowed_networks: Vec::new(),
                 denied_networks: Vec::new(),
                 max_connections: 64,
+                connection_attempt_rate: None,
                 dns_timeout: Duration::from_secs(3),
                 handshake_timeout: Duration::from_secs(10),
                 idle_timeout: None,
@@ -622,6 +649,18 @@ mod tests {
         assert_eq!(
             Policy::builder().max_connections(usize::MAX).unwrap_err(),
             PolicyError::ConnectionLimitTooLarge
+        );
+    }
+
+    #[test]
+    fn rejects_zero_connection_attempt_rate_or_burst() {
+        assert_eq!(
+            Policy::builder().connection_attempt_rate(0, 1).unwrap_err(),
+            PolicyError::ZeroConnectionAttemptRate
+        );
+        assert_eq!(
+            Policy::builder().connection_attempt_rate(1, 0).unwrap_err(),
+            PolicyError::ZeroConnectionAttemptRate
         );
     }
 

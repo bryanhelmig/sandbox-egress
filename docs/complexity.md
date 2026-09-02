@@ -84,3 +84,28 @@ is not a shipped-binary complexity score. The rise from the early checkpoint
 tracks a much larger evidence matrix as well as implementation. Future work
 should compare the touched module and its tests separately, explain new branch
 shape, and prefer deletion when equivalent invariants remain covered.
+
+## Host-lifecycle and rate-control checkpoint
+
+Recorded 2026-09-02 with SCC 4.0.0 after the connection-attempt and
+close/reattach conformance work:
+
+```text
+files: 29
+lines: 14,015
+code lines: 12,720
+structural complexity estimate: 817
+cognitive complexity estimate: 2,407
+proxy.rs: 274 structural, 921 cognitive
+policy.rs: 59 structural, 188 cognitive
+rate.rs: 4 structural, 12 cognitive
+```
+
+Against the prior checkpoint, the aggregate rises by 37 structural and 90
+cognitive points. Most of the new evidence shape is in connection-rate,
+identity-reuse, and policy-phase integration cases. The production proxy rises
+by 7/22, the policy by 1/3, and the isolated integer token bucket contributes
+4/12. The Linux fixture lives under `examples/` and is intentionally outside
+the default `src tests benches` report. A workspace-based fixture was removed
+after package verification showed that it would not be present in the root
+crate archive.

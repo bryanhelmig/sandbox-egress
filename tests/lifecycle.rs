@@ -168,6 +168,102 @@ fn connect_tunnels_and_accounts_bytes() {
 }
 
 #[test]
+fn policy_phase_change_requires_certified_close_and_reattach() {
+    let (old_port, old_echo) = start_echo();
+    let (new_port, new_echo) = start_echo();
+    let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
+    let identity = PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    let old_lease = proxy
+        .attach(identity.clone(), local_policy(old_port))
+        .expect("attach old policy phase");
+    let endpoint = old_lease.endpoint().socket_addr();
+
+    let mut denied = TcpStream::connect(endpoint).expect("connect old denied client");
+    denied
+        .write_all(
+            format!("CONNECT 127.0.0.1:{new_port} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").as_bytes(),
+        )
+        .expect("request new destination during old phase");
+    let mut denial = String::new();
+    denied.read_to_string(&mut denial).expect("read old denial");
+    assert!(denial.contains("port-denied"), "{denial}");
+
+    let mut allowed = TcpStream::connect(endpoint).expect("connect old allowed client");
+    allowed
+        .write_all(
+            format!("CONNECT 127.0.0.1:{old_port} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\nold")
+                .as_bytes(),
+        )
+        .expect("request old destination");
+    let mut response = [0_u8; 42];
+    allowed
+        .read_exact(&mut response)
+        .expect("read old response");
+    assert_eq!(&response[39..], b"old");
+    allowed
+        .shutdown(Shutdown::Write)
+        .expect("finish old upload");
+    let mut trailing = Vec::new();
+    allowed
+        .read_to_end(&mut trailing)
+        .expect("finish old tunnel");
+    old_echo.join().expect("old echo thread");
+    let old_usage = old_lease
+        .close(Instant::now() + Duration::from_secs(2))
+        .expect("certify old policy phase")
+        .usage();
+    assert_eq!(old_usage.accepted_connections, 2);
+    assert_eq!(old_usage.denied_connections, 1);
+    assert_eq!(old_usage.completed_connections, 1);
+
+    let new_lease = proxy
+        .attach(identity, local_policy(new_port))
+        .expect("attach replacement policy phase");
+    let mut stale = TcpStream::connect(endpoint).expect("connect stale-policy client");
+    stale
+        .write_all(
+            format!("CONNECT 127.0.0.1:{old_port} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").as_bytes(),
+        )
+        .expect("request old destination during new phase");
+    let mut denial = String::new();
+    stale
+        .read_to_string(&mut denial)
+        .expect("read stale denial");
+    assert!(denial.contains("port-denied"), "{denial}");
+
+    let mut replacement = TcpStream::connect(endpoint).expect("connect new allowed client");
+    replacement
+        .write_all(
+            format!("CONNECT 127.0.0.1:{new_port} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\nnew")
+                .as_bytes(),
+        )
+        .expect("request new destination");
+    let mut response = [0_u8; 42];
+    replacement
+        .read_exact(&mut response)
+        .expect("read replacement response");
+    assert_eq!(&response[39..], b"new");
+    replacement
+        .shutdown(Shutdown::Write)
+        .expect("finish replacement upload");
+    let mut trailing = Vec::new();
+    replacement
+        .read_to_end(&mut trailing)
+        .expect("finish replacement tunnel");
+    new_echo.join().expect("new echo thread");
+    let new_usage = new_lease
+        .close(Instant::now() + Duration::from_secs(2))
+        .expect("certify replacement policy phase")
+        .usage();
+    assert_eq!(new_usage.accepted_connections, 2);
+    assert_eq!(new_usage.denied_connections, 1);
+    assert_eq!(new_usage.completed_connections, 1);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(2))
+        .expect("proxy shutdown");
+}
+
+#[test]
 fn upstream_proxy_receives_only_the_approved_numeric_destination() {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind upstream proxy");
     let upstream_proxy = listener.local_addr().expect("upstream proxy address");

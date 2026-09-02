@@ -25,6 +25,7 @@ use tokio_util::task::task_tracker::TaskTrackerToken;
 use crate::connect::{ConnectRequest, HeaderBlock, parse_connect, read_bounded_header};
 use crate::diagnostic::{DenialReason, DiagnosticReporter};
 use crate::policy::canonical_hostname;
+use crate::rate::TokenBucket;
 use crate::resolver::{ResolverBackend, build_system_resolver};
 #[cfg(test)]
 use crate::resolver::{TestResolver, apply_resolver_cache_options};
@@ -410,6 +411,7 @@ struct LeaseState {
     cancel: CancellationToken,
     tracker: TaskTracker,
     permits: Arc<Semaphore>,
+    connection_attempts: Option<Mutex<TokenBucket>>,
     counters: Arc<Counters>,
     diagnostics: DiagnosticReporter,
 }
@@ -422,6 +424,7 @@ impl LeaseState {
         diagnostics: DiagnosticReporter,
     ) -> Self {
         let max_connections = policy.max_connections;
+        let connection_attempt_rate = policy.connection_attempt_rate;
         Self {
             id,
             identity,
@@ -430,6 +433,8 @@ impl LeaseState {
             cancel: CancellationToken::new(),
             tracker: TaskTracker::new(),
             permits: Arc::new(Semaphore::new(max_connections)),
+            connection_attempts: connection_attempt_rate
+                .map(|limit| Mutex::new(TokenBucket::full(limit, Instant::now()))),
             counters: Arc::new(Counters::default()),
             diagnostics,
         }
@@ -468,6 +473,29 @@ impl LeaseState {
             },
             stream,
         ))
+    }
+
+    fn allows_connection_attempt(
+        &self,
+        global: Option<&mut TokenBucket>,
+    ) -> Result<(), &'static str> {
+        let phase = self.phase.lock().expect("lease phase poisoned");
+        if *phase != Phase::Open {
+            return Err("lease-revoking");
+        }
+        let now = Instant::now();
+        if self.connection_attempts.as_ref().is_some_and(|bucket| {
+            !bucket
+                .lock()
+                .expect("lease connection-attempt bucket poisoned")
+                .try_take(now)
+        }) {
+            return Err("lease-rate");
+        }
+        if global.is_some_and(|bucket| !bucket.try_take(now)) {
+            return Err("global-rate");
+        }
+        Ok(())
     }
 
     fn begin_close(&self) {
@@ -652,6 +680,7 @@ struct ConnectionRuntime {
     resolver: Arc<ResolverBackend>,
     connector: Arc<ConnectorBackend>,
     global_permits: Arc<Semaphore>,
+    global_connection_attempts: Option<TokenBucket>,
     phase_permits: Arc<PhasePermits>,
     config: Arc<ProxyConfig>,
 }
@@ -663,7 +692,7 @@ struct PhasePermits {
 
 impl ConnectionRuntime {
     fn dispatch(
-        &self,
+        &mut self,
         stream: TcpStream,
         peer: SocketAddr,
         leases: &HashMap<PeerIdentity, Arc<LeaseState>>,
@@ -674,6 +703,13 @@ impl ConnectionRuntime {
             drop(stream);
             return;
         };
+        if (state.connection_attempts.is_some() || self.global_connection_attempts.is_some())
+            && let Err(reason) =
+                state.allows_connection_attempt(self.global_connection_attempts.as_mut())
+        {
+            state.reject_unadmitted(stream, reason);
+            return;
+        }
         let Ok(global_permit) = self.global_permits.clone().try_acquire_owned() else {
             state.reject_unadmitted(stream, "global-capacity");
             return;
@@ -711,7 +747,7 @@ impl ConnectionRuntime {
     }
 
     async fn drain_ready(
-        &self,
+        &mut self,
         listener: &TcpListener,
         leases: &HashMap<PeerIdentity, Arc<LeaseState>>,
     ) -> DrainResult {
@@ -791,8 +827,11 @@ async fn run_proxy(
     }
 
     let mut leases: HashMap<PeerIdentity, Arc<LeaseState>> = HashMap::new();
-    let connections = ConnectionRuntime {
+    let mut connections = ConnectionRuntime {
         global_permits: Arc::new(Semaphore::new(config.max_connections)),
+        global_connection_attempts: config
+            .connection_attempt_rate
+            .map(|limit| TokenBucket::full(limit, Instant::now())),
         phase_permits: Arc::new(PhasePermits {
             dns: Semaphore::new(config.max_concurrent_dns),
             dial: Semaphore::new(config.max_concurrent_dials),

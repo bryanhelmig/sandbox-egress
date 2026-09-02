@@ -1,0 +1,16 @@
+FROM rust:1.88.0-alpine
+
+ENV RUSTUP_TOOLCHAIN=1.88.0
+
+RUN apk add --no-cache iproute2 nftables netcat-openbsd musl-dev
+
+WORKDIR /workspace
+COPY . .
+
+RUN cargo build --locked --example linux_host_proxy \
+    && cp target/debug/examples/linux_host_proxy /usr/local/bin/linux_host_proxy \
+    && rm -rf target
+
+ENV SANDBOX_EGRESS_HOST_FIXTURE=/usr/local/bin/linux_host_proxy
+
+CMD ["./scripts/test-linux-host-boundary.sh"]

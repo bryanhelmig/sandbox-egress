@@ -637,3 +637,39 @@ move bytes for longer than the configured interval, proving traffic from
 either side postpones expiry, then observe closure only after traffic stops.
 The certified-close case uses a much longer idle interval and proves revocation
 preempts the waiter without misclassifying shutdown as a denial.
+
+## Connection churn and Linux host evidence
+
+Deterministic token-bucket unit cases use explicit `Instant` values: the full
+burst is available immediately, sub-token refill accumulates without floating
+point, and a long refill cannot exceed burst capacity. Real-listener cases then
+hold one partial header open and require the next immediate attempt to be
+rejected by the configured per-lease or process-wide bucket before a task is
+spawned. Certified close returns one accepted, one denied, and zero active
+connections. A separate close-and-reattach case proves the replacement lease
+receives a full fresh burst rather than inheriting rate state from the old run.
+Its process-wide counterpart proves that lease replacement does not reset the
+global bucket and therefore cannot evade the fleet-level churn control.
+
+`scripts/measure-linux-network-state.sh COMMAND ...` samples host-global
+conntrack, TCP, TIME_WAIT, UDP, and allocated-file counters around a
+deterministic command. It records baseline, high-water, and final values plus
+the configured conntrack ceiling. Recovery can be informational or required
+with an explicit slack, because a shared developer host may have unrelated
+traffic while a dedicated release worker should not.
+
+`scripts/test-linux-host-boundary.sh` is an opt-in privileged lane, kept out of
+the ordinary unprivileged factory. It creates separate host and guest network
+namespaces and a veth pair, starts the same library through the
+`linux_host_proxy` example, and installs a deny-first nftables input chain. A guest
+CONNECT must reach a controlled loopback echo service through the proxy while
+a direct host-veth decoy remains unreachable. The lane then holds a tunnel,
+fences the guest link, requires certified zero-active close and no host-side
+proxy socket, removes the old veth, and inspects the still-live old namespace
+by PID to prove its egress device is absent. Only then does it recreate the same
+source IP for a fresh successful lease. Final reconciliation deletes both
+named namespaces and proves neither survives.
+
+This is a host lifecycle certificate, not Firecracker emulation. It does not
+claim TAP/KVM restore, IPv6, UDP/DNS, inherited-descriptor, or NAT-port
+coverage; those remain named deployment tests in the hardening backlog.

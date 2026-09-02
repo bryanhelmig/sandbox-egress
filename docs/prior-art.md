@@ -1,6 +1,6 @@
 # Prior art
 
-Reviewed through 2026-09-01. Commit pins make future comparisons reproducible;
+Reviewed through 2026-09-02. Commit pins make future comparisons reproducible;
 links remain upstream-owned and are not vendored.
 
 | Project | Reviewed commit | What to learn | Gap this crate targets |
@@ -19,9 +19,19 @@ links remain upstream-owned and are not vendored.
 | [torkbot/sandbox](https://github.com/torkbot/sandbox) | `3dc0dd5c` | transparent per-flow grants bound to original destination, DNS evidence, and TLS metadata | one network service per VM; teardown is VM-owned rather than a reusable lease certificate |
 | [G3](https://github.com/bytedance/g3) | `79e99f76` | production user rate/concurrency limits, buffer controls, protocol breadth | daemon/user model rather than ephemeral certified leases |
 | [Rama](https://github.com/plabayo/rama) | `cde3aa85` | composable timeout, concurrency, and token-bucket policies | general framework rather than an opinionated sandbox boundary |
+| [Firecracker](https://github.com/firecracker-microvm/firecracker) | `4c998054` | host-owned TAP/filtering boundary, virtio-net token buckets, snapshot network limitations | VMM primitive; the integrator owns egress policy and host cleanup |
+| [n8n sandbox service](https://github.com/n8n-io/n8n-sandbox-service) | `e7a7e728` | per-slot netns/TAP/veth/NAT lifecycle for snapshot-restored VMs | product-local slot networking without a shared proxy lease certificate |
+| [CubeSandbox](https://github.com/TencentCloud/CubeSandbox) | `30e002cb` | dedicated TAP ownership, host allocator, L4/L7 split, pooled setup | sandbox platform rather than an embeddable CONNECT lease |
+| [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox) | `1eb8fffa` | deny-first subjects, generation-aware policy, atomic nft updates, restart cleanup | mutable transparent sidecar/control plane with different authority scope |
+| [mvm](https://github.com/tinylabscom/mvm) | `4ebd13d5` | mechanically enforced vsock-only single egress path and fresh restore endpoint | full signed-plan sandbox with no workload NIC, not source-IP CONNECT |
 
 Also relevant: VEY for production daemon limits, metrics, ACLs, and per-user
 policy.
+
+[SNAS](https://arxiv.org/pdf/2606.17533) is also relevant operational
+literature rather than a reusable crate. It reports bandwidth fairness,
+connection-rate limiting, conntrack pressure, source-port exhaustion, and
+telemetry-driven tuning in a production multi-layer sandbox egress design.
 
 ## Admission and shutdown comparison
 
@@ -80,6 +90,49 @@ address, then sends the other address in `X-Run-ID`. The request is denied by
 the observed peer's policy, the destination is never dialed, and the claimed
 lease records no connection. This preserves the host-authenticated identity
 boundary even when a familiar guest header is present.
+
+## Host-network generation comparison
+
+Firecracker deliberately forwards guest packets to a host TAP without applying
+destination policy. Its production guidance assigns filtering to the host, and
+its virtio-net token buckets address VM resource fairness rather than CONNECT
+authority. Its snapshot documentation also warns that packet loss is expected
+and network connection state is not guaranteed to survive restoration. Those
+facts keep TAP ownership, shaping, and snapshot recovery in the supervisor
+contract instead of pretending the proxy can infer them.
+
+The n8n Firecracker runner demonstrates a concrete slot-shaped bundle: network
+namespace, TAP, veth, routes, NAT, and guest addressing are created together.
+Its deterministic names are local to one runner process and can collide across
+multiple runners. CubeSandbox instead centralizes allocation and pools prepared
+TAP resources for latency. The common lesson is ownership, not one naming
+scheme: Sandbox Egress documents a generation-bearing host record and restart
+reconciliation, while leaving pooling and allocator implementation to the
+sandbox service.
+
+OpenSandbox's current fleet design is particularly relevant to shared egress.
+A discovered subject begins deny-first, policy pushes carry a generation, nft
+sets are swapped atomically, and process restart wipes stale rules before live
+subjects are rediscovered. Its original proposal also documented graceful
+degradation when netfilter setup failed. That historical contrast is useful:
+the Sandbox Egress host contract chooses the current fail-closed direction and
+requires readiness probes before guest launch. It does not adopt a mutable
+per-subject policy API; a phase change remains certified close followed by a
+fresh immutable attach.
+
+Mvm removes the raw-network problem entirely for production workloads: its
+guest has no NIC and all networking uses one host-owned authenticated vsock
+path, with static CI gates against another connection owner. That is a stronger
+alternative identity and transport architecture. It does not replace the
+founding source-IP boundary here, but it reinforces the rule that the sandbox
+must mechanically provide exactly one egress path rather than rely on proxy
+environment variables.
+
+These comparisons produced a separate
+[Firecracker integration contract](firecracker-integration.md), an opt-in
+privileged Linux namespace certificate, and Linux conntrack/socket measurement.
+They did not add TAP, nftables, snapshot, or VM orchestration to the public
+crate API.
 
 ## Listener failure comparison
 

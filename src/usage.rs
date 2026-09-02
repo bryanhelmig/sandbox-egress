@@ -11,7 +11,7 @@ pub struct Usage {
     pub accepted_connections: u64,
     /// Connections currently owned by this lease.
     pub active_connections: u64,
-    /// Connections refused at capacity or denied after admission.
+    /// Connections refused by rate/capacity controls or denied after admission.
     pub denied_connections: u64,
     /// Tunnels that finished normally.
     pub completed_connections: u64,

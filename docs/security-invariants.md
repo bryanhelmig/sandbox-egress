@@ -97,6 +97,20 @@ Unadmitted sockets are closed and their optional denial accounting completes
 under the same lifecycle lock used to commit final counters. A socket observed
 after the final snapshot is still refused but cannot mutate that snapshot.
 
+Optional process-wide and per-lease connection-attempt token buckets run before
+global connection capacity and task creation. The per-lease check is ordered
+under the lifecycle lock, so revoking traffic cannot consume the old lease's
+rate budget or pass into task admission. The global bucket is consulted only
+after that current lease accepts the attempt. A rate refusal creates no task,
+does not increment accepted or active counters, increments the current lease's
+denial counter exactly once, and reports the static `lease-rate` or
+`global-rate` reason. A newly attached lease always receives a full new bucket;
+source-address reuse cannot inherit the old run's timing state. These limits
+bound attributed inbound TCP churn before the request is parsed; they do not
+bound direct traffic that bypasses the host cage or the kernel's total
+conntrack/NAT capacity. The process-wide bucket lasts for the proxy lifetime;
+closing or replacing one lease does not replenish it.
+
 ## DNS and dialing
 
 Hostname policy is checked before DNS. Every resolved address is checked after

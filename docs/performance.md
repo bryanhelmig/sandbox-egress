@@ -577,3 +577,47 @@ Every pair overlaps and the medians move in both directions, so no latency
 change is claimed. The retained result is a narrower ownership boundary, one
 fewer atomic shared-owner operation per hostname lookup, and one fewer
 production line. The detached comparison worktree was removed.
+
+## Connection-attempt limiter comparison
+
+Recorded 2026-09-02 on the same Apple M1 with Rust 1.97.1. The first
+token-bucket implementation acquired the lease lifecycle mutex on every
+connection, including when rate control was disabled. Three 30,000-connection
+A/B pairs against detached `57a4e1f` put the candidate below its baseline in
+every pair: 18,329 versus 19,709, 9,784 versus 10,445, and 12,136 versus 12,355
+connections/second. That default-path implementation was rejected.
+
+The retained implementation branches around all time and lock work when both
+buckets are absent, and keeps the optional process-wide bucket on the single
+listener owner rather than behind another mutex. Eight alternating and
+reversed-order 30,000-connection comparisons measured:
+
+```text
+command: SANDBOX_EGRESS_LOAD_CONNECTIONS=30000 \
+         SANDBOX_EGRESS_LOAD_CONCURRENCY=64 \
+         SANDBOX_EGRESS_LOAD_DESTINATIONS=16 \
+         cargo test --locked --release --test load -- --ignored --nocapture
+retained default: 18,211 .. 20,292 connections/second
+detached baseline: 16,125 .. 20,641 connections/second
+retained p50: 1,761 .. 1,933 us
+baseline p50: 1,763 .. 2,021 us
+```
+
+The ranges overlap and ordering effects reversed, so no default-path speedup
+or regression is claimed. The feature remains disabled by default.
+
+Eight same-tree pairs then compared the disabled path with both global and
+per-lease buckets enabled at a nonbinding rate and 30,000-attempt burst:
+
+```text
+disabled: 15,690 .. 19,556 connections/second, median 18,891
+enabled:  16,498 .. 19,408 connections/second, median 18,355
+disabled median p50: 1,912 us
+enabled median p50:  1,925 us
+```
+
+The optional dual-bucket path is about 2.8 percent lower at the throughput
+median and 13 microseconds higher at the p50 median in this noisy local
+workload. That is recorded as the current security-control cost, not a portable
+performance promise. The harness configures both scopes explicitly and the
+connection is still denied before task creation when either bucket is empty.
