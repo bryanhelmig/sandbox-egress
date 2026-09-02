@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Require host-configured DNS servers and upstream proxies to be concrete
+  unicast endpoints; retain scoped IPv6 upstreams only with an explicit zone.
 - Reconstruct CONNECT headers and coalesced tunnel bytes identically at every
   possible transport split, including splits inside the final terminator.
 - Store each immutable policy directly in its already shared lease state,

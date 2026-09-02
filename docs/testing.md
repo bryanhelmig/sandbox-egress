@@ -430,7 +430,10 @@ Caching is disabled by default. Configuration can opt into at most 64 entries
 and a 24-hour TTL but cannot widen those ceilings. Explicit server tests use a
 nonstandard loopback port, require the hosts file to be disabled, and complete
 a UDP-truncated response over a real TCP DNS connection. More than eight
-distinct servers, port zero, and scoped IPv6 addresses fail validation. An
+distinct servers, port zero, unspecified, multicast, IPv4 limited-broadcast,
+and scoped IPv6 addresses fail validation. Upstream proxy configuration has
+the same concrete-unicast floor, while retaining scoped IPv6 only when its
+socket address carries a zone. An
 identity-reuse case gives two runs the same hostname and repeated loopback
 answer: the first policy explicitly grants loopback and reaches the connector,
 while the replacement policy does not and must deny without another connector

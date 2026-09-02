@@ -6329,3 +6329,31 @@ configuration and adds no production branch.
 
 The full hostile conformance set passes, and whole-tree complexity moves from
 832/2,446 to 834/2,448 solely in the default-contract test.
+
+## 2026-09-02 — require concrete trusted remote endpoints
+
+The configuration audit started with a red public validation test: explicit
+DNS accepted `0.0.0.0:53`, and the same address could be configured as an
+upstream proxy. Unspecified addresses name a local bind convention rather than
+a remote service; multicast and IPv4 limited broadcast are likewise not one
+operator-selected recursive server or proxy. Letting these values reach DNS or
+TCP setup makes trusted misconfiguration fail late and with platform-dependent
+semantics.
+
+`ProxyConfig` now requires every explicit DNS server and upstream proxy to be a
+concrete unicast socket with a nonzero port. DNS rejects scoped IPv6 whether or
+not a zone is present because Hickory stores only the IP and cannot preserve
+the socket scope. Upstream TCP retains its full `SocketAddr`, so scoped IPv6 is
+accepted only when a nonzero zone is present. The guest cannot influence either
+process-wide endpoint.
+
+Focused tests cover unspecified IPv4 and IPv6, IPv4 and IPv6 multicast,
+limited broadcast, scoped DNS with and without a zone, and scoped upstream TCP
+with and without a zone. The wildcard listener remains intentionally valid:
+it is a local bind instruction with separate self-proxy protections, not a
+remote service identity.
+
+The full suite passes with 142 unit, 2 CLI, 17 concurrency, 31 lifecycle, 19
+tunnelling, and 6 documentation tests; strict all-target Clippy is clean.
+Whole-tree SCC 4.0.0 moves from 834/2,448 to 846/2,488 structural/cognitive
+points, with the increase concentrated in explicit boundary tests.

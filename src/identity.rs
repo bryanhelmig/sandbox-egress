@@ -38,7 +38,7 @@ impl PeerIdentity {
     }
 }
 
-const fn is_scoped_unicast(address: std::net::Ipv6Addr) -> bool {
+pub(crate) const fn is_scoped_unicast(address: std::net::Ipv6Addr) -> bool {
     address.is_unicast_link_local() || address.segments()[0] & 0xffc0 == 0xfec0
 }
 

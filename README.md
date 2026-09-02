@@ -158,8 +158,9 @@ The current vertical slice provides:
 - a resolver cache disabled by default because the dependency bounds entries,
   not bytes; the host may explicitly enable up to 64 responses with a 24-hour
   TTL ceiling;
-- optional host-pinned recursive DNS servers with UDP plus truncated-response
-  TCP recovery, independent of host resolver and hosts-file changes;
+- optional host-pinned concrete-unicast recursive DNS servers with UDP plus
+  truncated-response TCP recovery, independent of host resolver and hosts-file
+  changes;
 - bounded DNS answer cardinality, with oversized sets rejected before dialing;
 - direct dialing of a checked `SocketAddr`, or host-configured HTTP CONNECT
   chaining using that numeric address, with no second lookup;
@@ -250,9 +251,10 @@ let config = ProxyConfig::default()
 ```
 
 This is trusted process configuration, not a per-lease or guest-selected
-resolver. Up to eight distinct servers are accepted. Scoped IPv6 server
-addresses are rejected because the underlying resolver cannot preserve their
-scope identifier.
+resolver. Up to eight distinct servers are accepted. Unspecified, multicast,
+broadcast, and scoped IPv6 server addresses are rejected. A recursive server
+must be a concrete unicast endpoint, and the underlying resolver cannot
+preserve an IPv6 scope identifier.
 
 Corporate networks can route every approved destination through one
 operator-controlled HTTP CONNECT proxy. Supply its numeric socket address in
@@ -265,6 +267,9 @@ let config = ProxyConfig::default()
     .with_upstream_proxy("10.0.0.10:3128".parse()?);
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
+
+The upstream endpoint must also be concrete unicast. A scoped IPv6 endpoint is
+accepted only when its socket address includes the required zone identifier.
 
 This first slice is intentionally narrow: plain HTTP to the upstream proxy,
 no authentication, no bypass list, and no hostname-selected CONNECT mode. The

@@ -153,8 +153,10 @@ resolver configuration or hosts file. Explicit servers use their configured
 port over UDP and retry truncated or failed UDP responses over TCP. This is
 process configuration fixed before the listener starts; neither a guest nor an
 attached lease can choose a resolver. At most eight distinct servers are
-accepted, port zero is invalid, and scoped IPv6 server addresses fail startup
-because their scope cannot be represented faithfully by the resolver backend.
+accepted. Port zero, unspecified, multicast, IPv4 limited broadcast, and
+scoped IPv6 addresses fail startup. A configured server must be a concrete
+unicast endpoint, and scoped IPv6 cannot be represented faithfully by the
+resolver backend.
 
 The shared resolver cache is disabled by default because its dependency bounds
 entries rather than bytes. The host may opt into at most 64 responses, each
@@ -279,7 +281,9 @@ deadline, tracked connection task, and lease cancellation boundary. A
 non-success or malformed response is `upstream-proxy-failed`. Any bytes read
 beyond a successful response header are preserved as the first tunnel bytes;
 they receive ordinary download accounting and policy ceilings. The configured
-upstream proxy may not be the shared Sandbox Egress listener itself.
+upstream proxy must be concrete unicast and may not be the shared Sandbox
+Egress listener itself. Scoped IPv6 is accepted only with a nonzero zone
+identifier retained in its `SocketAddr`.
 
 This route currently supports unauthenticated cleartext HTTP CONNECT only.
 Authentication, TLS to the upstream proxy, and host-controlled bypass rules

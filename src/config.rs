@@ -6,6 +6,7 @@ use ipnet::Ipv6Net;
 
 use crate::DiagnosticEvent;
 use crate::diagnostic::DiagnosticConfig;
+use crate::identity::is_scoped_unicast;
 use crate::rate::RateLimit;
 
 pub(crate) const MAX_DNS_CACHE_ENTRIES: u64 = 64;
@@ -65,14 +66,33 @@ impl ProxyConfig {
         if self.dns_servers.iter().any(|server| server.port() == 0) {
             return Err("explicit DNS server port must be nonzero");
         }
+        if self
+            .dns_servers
+            .iter()
+            .any(|server| !is_concrete_unicast(*server))
+        {
+            return Err("explicit DNS server must be a concrete unicast address");
+        }
         if self.upstream_proxy.is_some_and(|proxy| proxy.port() == 0) {
             return Err("upstream proxy port must be nonzero");
         }
+        if self
+            .upstream_proxy
+            .is_some_and(|proxy| !is_concrete_unicast(proxy))
+        {
+            return Err("upstream proxy must be a concrete unicast address");
+        }
         if self.dns_servers.iter().any(|server| match server {
             SocketAddr::V4(_) => false,
-            SocketAddr::V6(server) => server.scope_id() != 0,
+            SocketAddr::V6(server) => server.scope_id() != 0 || is_scoped_unicast(*server.ip()),
         }) {
             return Err("scoped IPv6 DNS servers are not supported");
+        }
+        if self.upstream_proxy.is_some_and(|proxy| match proxy {
+            SocketAddr::V4(_) => false,
+            SocketAddr::V6(proxy) => is_scoped_unicast(*proxy.ip()) && proxy.scope_id() == 0,
+        }) {
+            return Err("scoped IPv6 upstream proxy requires a zone ID");
         }
         Ok(())
     }
@@ -93,7 +113,8 @@ impl ProxyConfig {
     /// Destination names are still resolved and checked locally. The upstream
     /// proxy receives the approved numeric address, so it cannot perform a
     /// second destination lookup. Authentication and TLS to the upstream proxy
-    /// are not provided by this configuration.
+    /// are not provided by this configuration. Startup requires a concrete
+    /// unicast address; scoped IPv6 additionally requires a zone identifier.
     pub fn with_upstream_proxy(mut self, address: SocketAddr) -> Self {
         self.upstream_proxy = Some(address);
         self
@@ -159,7 +180,8 @@ impl ProxyConfig {
     /// guest or lease policy selector.
     ///
     /// Duplicate socket addresses are ignored. [`Proxy::start`](crate::Proxy::start)
-    /// rejects more than eight distinct servers and scoped IPv6 addresses.
+    /// rejects more than eight distinct servers, non-concrete addresses, and
+    /// scoped IPv6 addresses.
     pub fn with_dns_server(mut self, server: SocketAddr) -> Self {
         if !self.dns_servers.contains(&server) {
             self.dns_servers.push(server);
@@ -240,6 +262,15 @@ impl ProxyConfig {
             max_events_per_second: max_events_per_second.clamp(1, 10_000),
         });
         self
+    }
+}
+
+const fn is_concrete_unicast(address: SocketAddr) -> bool {
+    match address.ip() {
+        IpAddr::V4(address) => {
+            !address.is_unspecified() && !address.is_multicast() && !address.is_broadcast()
+        }
+        IpAddr::V6(address) => !address.is_unspecified() && !address.is_multicast(),
     }
 }
 
@@ -384,17 +415,39 @@ mod tests {
 
     #[test]
     fn explicit_scoped_ipv6_dns_server_is_rejected() {
-        let server = SocketAddr::V6(std::net::SocketAddrV6::new(
-            "fe80::1".parse().expect("valid link-local address"),
-            53,
-            0,
-            7,
-        ));
+        let scoped = "fe80::1".parse().expect("valid link-local address");
+        let server = SocketAddr::V6(std::net::SocketAddrV6::new(scoped, 53, 0, 7));
         assert!(
             ProxyConfig::default()
                 .with_dns_server(server)
                 .validate()
                 .is_err()
+        );
+        assert!(
+            ProxyConfig::default()
+                .with_dns_server(SocketAddr::new(scoped.into(), 53))
+                .validate()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn scoped_ipv6_upstream_proxy_requires_a_zone() {
+        let scoped = "fe80::1".parse().expect("valid link-local address");
+        let without_zone = SocketAddr::V6(std::net::SocketAddrV6::new(scoped, 3128, 0, 0));
+        let with_zone = SocketAddr::V6(std::net::SocketAddrV6::new(scoped, 3128, 0, 7));
+
+        assert!(
+            ProxyConfig::default()
+                .with_upstream_proxy(without_zone)
+                .validate()
+                .is_err()
+        );
+        assert!(
+            ProxyConfig::default()
+                .with_upstream_proxy(with_zone)
+                .validate()
+                .is_ok()
         );
     }
 
@@ -418,6 +471,33 @@ mod tests {
                 .validate()
                 .is_err()
         );
+    }
+
+    #[test]
+    fn configured_remote_services_require_concrete_unicast_addresses() {
+        for address in [
+            "0.0.0.0:53".parse().expect("unspecified IPv4"),
+            "[::]:53".parse().expect("unspecified IPv6"),
+            "224.0.0.1:53".parse().expect("multicast IPv4"),
+            "[ff02::1]:53".parse().expect("multicast IPv6"),
+            "255.255.255.255:53".parse().expect("broadcast IPv4"),
+        ] {
+            assert!(
+                ProxyConfig::default()
+                    .with_dns_server(address)
+                    .validate()
+                    .is_err(),
+                "accepted DNS server {address}"
+            );
+            assert!(
+                ProxyConfig::default()
+                    .with_upstream_proxy(SocketAddr::new(address.ip(), 3128))
+                    .validate()
+                    .is_err(),
+                "accepted upstream proxy {}",
+                address.ip()
+            );
+        }
     }
 
     #[test]
