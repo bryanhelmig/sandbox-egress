@@ -163,7 +163,33 @@ fn hosts_equivalent(left: &str, right: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    use tokio::io::{AsyncReadExt, ReadBuf};
+    use tokio::runtime::Builder as RuntimeBuilder;
+
     use super::*;
+
+    struct SegmentedReader {
+        segments: VecDeque<Vec<u8>>,
+    }
+
+    impl AsyncRead for SegmentedReader {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            _context: &mut Context<'_>,
+            buffer: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            let Some(segment) = self.segments.pop_front() else {
+                return Poll::Ready(Ok(()));
+            };
+            assert!(segment.len() <= buffer.remaining());
+            buffer.put_slice(&segment);
+            Poll::Ready(Ok(()))
+        }
+    }
 
     fn connect_with_headers(count: usize) -> Vec<u8> {
         let mut request = b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\n".to_vec();
@@ -373,5 +399,38 @@ mod tests {
             parse_connect(&connect_with_headers(MAX_CONNECT_HEADERS + 1)).unwrap_err(),
             "too-many-headers"
         );
+    }
+
+    #[test]
+    fn every_transport_split_preserves_header_and_coalesced_tunnel_bytes() {
+        let runtime = RuntimeBuilder::new_current_thread()
+            .build()
+            .expect("test runtime");
+        let header =
+            b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\nX-Test: value\r\n\r\n";
+        let tunnel = b"\x16\x03\x01coalesced-tunnel-data";
+        let mut wire = header.to_vec();
+        wire.extend_from_slice(tunnel);
+
+        for split in 1..wire.len() {
+            let mut reader = SegmentedReader {
+                segments: VecDeque::from([wire[..split].to_vec(), wire[split..].to_vec()]),
+            };
+            let block = runtime
+                .block_on(read_bounded_header::<4_096, _>(&mut reader, wire.len()))
+                .unwrap_or_else(|error| panic!("split {split} failed: {error}"));
+            assert_eq!(block.end, header.len(), "wrong end at split {split}");
+            assert_eq!(
+                &block.bytes[..block.end],
+                header,
+                "changed header at split {split}"
+            );
+
+            let mut reconstructed = block.bytes[block.end..].to_vec();
+            runtime
+                .block_on(reader.read_to_end(&mut reconstructed))
+                .unwrap_or_else(|error| panic!("read suffix at split {split}: {error}"));
+            assert_eq!(reconstructed, tunnel, "changed tunnel at split {split}");
+        }
     }
 }

@@ -94,7 +94,9 @@ rejected as `connect-content-not-allowed`, including zero length and both
 fields together. A real listener pins the 400 response, denial accounting, and
 ordering before the empty policy's port or DNS checks. Raw bytes coalesced
 after an otherwise unframed CONNECT header remain tunnel data and retain their
-separate transfer-limit coverage.
+separate transfer-limit coverage. A deterministic reconstruction matrix places
+one transport split at every byte of a complete request plus coalesced TLS-like
+suffix, then proves the header and all tunnel bytes remain exact and ordered.
 
 The connection benchmark also sends a full 1 MiB header made from repeated
 `\r\n\rX` near matches. It must remain an ordinary bounded 431 denial and makes
@@ -111,9 +113,9 @@ without the CONNECT port, and Host-less HTTP/1.0 remain accepted. A real socket
 requires `host-header-mismatch` before policy or DNS and closes with one
 accounted denial.
 
-A unit boundary case places the four-byte header terminator at every split
-around the proxy's 4 KiB read boundary and proves buffered tunnel bytes are
-preserved. The connection benchmark sends a full 1 MiB unterminated header and
+A unit boundary case places the four-byte header terminator around the proxy's
+4 KiB read boundary and proves buffered tunnel bytes are preserved. The
+connection benchmark sends a full 1 MiB unterminated header and
 observes the real 431 response, guarding the incremental scan's CPU shape as
 well as its parsing result. The scan remains a non-inlined code-generation
 boundary because whole-program LTO otherwise made its optimized loop sensitive

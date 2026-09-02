@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Reconstruct CONNECT headers and coalesced tunnel bytes identically at every
+  possible transport split, including splits inside the final terminator.
 - Keep an idle-timeout task cancellable when a long-lived immutable policy's
   once-representable duration no longer fits a later activity timestamp,
   instead of panicking on delayed clock arithmetic.

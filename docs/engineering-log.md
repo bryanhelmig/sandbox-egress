@@ -6202,3 +6202,24 @@ large but valid CONNECT header until ClientHello inspection and forwarding
 finished. It was discarded. The explicit bounded suffix copy remains because
 its shorter lifetime and clearer ownership are preferable without measured
 resource or latency benefit.
+
+## 2026-09-02 — pin every CONNECT transport split
+
+The current Lens comparison added lazy recovery when its resolver is first
+constructed from a temporarily incomplete sandbox `resolv.conf`. Sandbox
+Egress does not import that mutable state: it constructs its process-wide
+resolver before listener readiness and makes `Proxy::start` fail when the
+trusted host configuration is unusable. Retrying the complete owned boundary
+is the simpler supervisor contract.
+
+The same comparison pass found a smaller local proof gap. Existing cases
+covered read-chunk boundaries, exact header ceilings, and coalesced tunnel
+bytes, but did not reconstruct one request at every possible socket split. A
+deterministic matrix now places the split at each byte of a CONNECT request and
+TLS-like suffix. It requires the exact header end, unchanged header bytes, and
+exactly-once ordered reconstruction of bytes already consumed with the header
+plus bytes still unread from the transport.
+
+The test uses no timers, network, or generated input and adds no production
+branch or dependency. Strict all-target Clippy passes. Whole-tree complexity
+moves from 827/2,427 to 830/2,436, entirely in the test fixture and assertions.
