@@ -677,12 +677,16 @@ enum DrainResult {
 }
 
 struct ConnectionRuntime {
-    resolver: Arc<ResolverBackend>,
-    connector: Arc<ConnectorBackend>,
+    shared: Arc<ConnectionShared>,
     global_permits: Arc<Semaphore>,
     global_connection_attempts: Option<TokenBucket>,
-    phase_permits: Arc<PhasePermits>,
-    config: Arc<ProxyConfig>,
+}
+
+struct ConnectionShared {
+    resolver: ResolverBackend,
+    connector: ConnectorBackend,
+    phase_permits: PhasePermits,
+    config: ProxyConfig,
 }
 
 struct PhasePermits {
@@ -718,10 +722,7 @@ impl ConnectionRuntime {
             drop(global_permit);
             return;
         };
-        let resolver = Arc::clone(&self.resolver);
-        let phase_permits = Arc::clone(&self.phase_permits);
-        let connector = Arc::clone(&self.connector);
-        let config = Arc::clone(&self.config);
+        let shared = Arc::clone(&self.shared);
         tokio::spawn(async move {
             let mut admission = admission;
             let cancel = admission.state.cancel.clone();
@@ -732,10 +733,10 @@ impl ConnectionRuntime {
                 result = serve_connect(
                     stream,
                     &state,
-                    &resolver,
-                    &phase_permits,
-                    &connector,
-                    &config,
+                    &shared.resolver,
+                    &shared.phase_permits,
+                    &shared.connector,
+                    &shared.config,
                     accepted_at,
                 ) => Some(result),
             };
@@ -785,9 +786,9 @@ async fn run_proxy(
     connector: Option<ConnectorBackend>,
 ) {
     let resolver = match resolver {
-        Some(resolver) => Arc::new(resolver),
+        Some(resolver) => resolver,
         None => match build_system_resolver(&config) {
-            Ok(resolver) => Arc::new(ResolverBackend::System(Box::new(resolver))),
+            Ok(resolver) => ResolverBackend::System(Box::new(resolver)),
             Err(error) => {
                 let _ = ready.send(Err(format!("resolver initialization failed: {error}")));
                 return;
@@ -797,7 +798,7 @@ async fn run_proxy(
     let system_connector = config
         .upstream_proxy
         .map_or(ConnectorBackend::Direct, ConnectorBackend::Upstream);
-    let connector = Arc::new(connector.unwrap_or(system_connector));
+    let connector = connector.unwrap_or(system_connector);
     let listener = match TcpListener::bind(config.bind_address).await {
         Ok(listener) => listener,
         Err(error) => {
@@ -827,18 +828,22 @@ async fn run_proxy(
     }
 
     let mut leases: HashMap<PeerIdentity, Arc<LeaseState>> = HashMap::new();
+    let global_permits = Arc::new(Semaphore::new(config.max_connections));
+    let global_connection_attempts = config
+        .connection_attempt_rate
+        .map(|limit| TokenBucket::full(limit, Instant::now()));
     let mut connections = ConnectionRuntime {
-        global_permits: Arc::new(Semaphore::new(config.max_connections)),
-        global_connection_attempts: config
-            .connection_attempt_rate
-            .map(|limit| TokenBucket::full(limit, Instant::now())),
-        phase_permits: Arc::new(PhasePermits {
-            dns: Semaphore::new(config.max_concurrent_dns),
-            dial: Semaphore::new(config.max_concurrent_dials),
+        shared: Arc::new(ConnectionShared {
+            resolver,
+            connector,
+            phase_permits: PhasePermits {
+                dns: Semaphore::new(config.max_concurrent_dns),
+                dial: Semaphore::new(config.max_concurrent_dials),
+            },
+            config,
         }),
-        resolver,
-        connector,
-        config: Arc::new(config),
+        global_permits,
+        global_connection_attempts,
     };
 
     let mut stopping = false;
@@ -880,7 +885,7 @@ async fn run_proxy(
                         state.begin_close();
                         spawn_close_wait(
                             state,
-                            connections.config.identity_reuse_quiet_period,
+                            connections.shared.config.identity_reuse_quiet_period,
                             deadline,
                             reply,
                             Some(command_sender.clone()),
@@ -890,7 +895,7 @@ async fn run_proxy(
                         state.begin_close();
                         let command_sender = command_sender.clone();
                         let drain_sender = command_sender.clone();
-                        let quiet_period = connections.config.identity_reuse_quiet_period;
+                        let quiet_period = connections.shared.config.identity_reuse_quiet_period;
                         tokio::spawn(async move {
                             state.tracker.wait().await;
                             if quiesce_after_identity_quiet(

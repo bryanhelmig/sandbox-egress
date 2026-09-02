@@ -4,6 +4,27 @@ Performance results are evidence for regression review, not portable promises.
 Record the command, revision, machine, toolchain, and interval. Prefer
 comparisons on the same host over absolute cross-host thresholds.
 
+## Shared dispatch-state comparison
+
+Recorded 2026-09-02 on Darwin arm64, Apple M1, with Rust 1.97.1. Resolver,
+connector, phase budgets, and proxy configuration have the same process
+lifetime. Bundling them behind one immutable shared owner changes each accepted
+connection from four reference-count increments to one and changes startup
+from four ownership allocations to one.
+
+Alternating three-second Criterion runs included the direct loopback TCP
+control. The comparable warmed proxy-minus-control medians were 75.83 and
+77.42 microseconds for the detached baseline and 77.46 microseconds for the
+candidate. An earlier candidate pair moved with host load and was excluded
+rather than reported as a speedup. The retained change therefore makes no
+connection-latency claim.
+
+Both versions remain 545/1,690 structural/cognitive points across production
+source. The candidate adds five source lines but reduces the stripped release
+executable from 2,885,136 to 2,867,920 bytes on this machine. Artifact size is
+toolchain- and target-specific; the durable result is simpler shared ownership
+with three fewer atomic increments per dispatched connection.
+
 ## Initial M0 baseline
 
 Recorded 2026-08-31 on Darwin arm64, Apple M1, with Rust 1.97.1:

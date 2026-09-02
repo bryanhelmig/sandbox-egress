@@ -5925,3 +5925,20 @@ of legitimate defensive branches. Contributor guidance instead asks reviewers
 to inspect uncovered lifecycle, policy, parser, and cancellation paths. The
 first run of the committed command completed in 13 seconds and reported 96.74%
 line and 96.40% region coverage.
+
+## 2026-09-02 — unify immutable connection runtime ownership
+
+Every accepted connection previously cloned four independent `Arc` owners for
+the resolver, connector, DNS/dial semaphores, and proxy configuration. Those
+values have exactly the same process lifetime, so `ConnectionShared` now owns
+them behind one `Arc`. Dispatch performs one reference-count increment instead
+of four, and proxy startup makes one shared-state allocation instead of four.
+The global admission semaphore remains separately owned because its permit
+must move into each task.
+
+Alternating control-normalized Criterion pairs did not separate: comparable
+baseline proxy overhead was 75.83 and 77.42 microseconds versus 77.46 for the
+candidate. No latency improvement is claimed. Production complexity remains
+545/1,690 structural/cognitive points, while the stripped local release binary
+fell from 2,885,136 to 2,867,920 bytes. The change is retained as a lifetime and
+ownership simplification with fewer atomic operations, not a benchmark win.
