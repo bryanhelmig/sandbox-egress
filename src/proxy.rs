@@ -1269,14 +1269,17 @@ where
 async fn wait_for_tunnel_idle(mut activity: watch::Receiver<TokioInstant>, timeout: Duration) {
     loop {
         let observed = *activity.borrow_and_update();
-        let deadline = observed
-            .checked_add(timeout)
-            .expect("validated idle timeout deadline");
+        let Some(deadline) = observed.checked_add(timeout) else {
+            // A policy can outlive the Instant used to validate its duration.
+            // Treat a now-unrepresentable deadline as farther than the clock
+            // can express while still waking on traffic and lease cancellation.
+            if activity.changed().await.is_err() {
+                return;
+            }
+            continue;
+        };
         sleep_until(deadline).await;
-        if !activity
-            .has_changed()
-            .expect("tunnel activity sender is retained")
-        {
+        if !activity.has_changed().unwrap_or(false) {
             return;
         }
     }
@@ -4475,5 +4478,33 @@ mod tests {
             panic!("accepted terminator ending beyond the byte limit");
         };
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn unrepresentable_idle_deadline_remains_cancellable_without_panicking() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("test runtime");
+        runtime.block_on(async {
+            let (activity, observed) = watch::channel(TokioInstant::now());
+            let waiter = tokio::spawn(wait_for_tunnel_idle(observed, Duration::MAX));
+
+            tokio::task::yield_now().await;
+            assert!(!waiter.is_finished(), "idle waiter panicked on overflow");
+            activity
+                .send(TokioInstant::now())
+                .expect("advance activity timestamp");
+            tokio::task::yield_now().await;
+            assert!(!waiter.is_finished(), "idle waiter panicked after activity");
+
+            waiter.abort();
+            assert!(
+                waiter
+                    .await
+                    .expect_err("aborted idle waiter")
+                    .is_cancelled()
+            );
+        });
     }
 }

@@ -6158,3 +6158,26 @@ runs are regression evidence rather than portable capacity promises.
 Both candidates were discarded. Two workers retains the best observed balance
 between a small fixed embedding footprint and concurrent setup capacity. No
 runtime configurability, source branch, or documentation promise was added.
+
+## 2026-09-02 — keep delayed idle deadlines panic-free
+
+A panic-path audit found one deadline check whose proof expired over time.
+`Policy::build` verified that its idle duration could be added to the current
+clock, but an immutable policy can be retained before attachment. At a much
+later tunnel activity timestamp, the same addition can become unrepresentable.
+The idle waiter used `expect("validated idle timeout deadline")`, so a trusted
+extreme policy could panic a runtime task instead of remaining under lease
+ownership.
+
+A deterministic task test first reproduced the exact panic with
+`Duration::MAX`. The production loop now treats an unrepresentable idle
+deadline as farther away than the clock can express: it waits for the next
+activity notification, recomputes, and remains cancellable when the owning
+tunnel or lease ends. A closed activity channel also ends the waiter instead of
+panicking on its formerly assumed retained sender.
+
+The new boundary case proves the task stays pending across an activity update
+and then aborts cleanly. Both real idle-expiry cases remain green, including
+simultaneous bidirectional backpressure. The whole Rust tree is 827/2,427
+structural/cognitive points versus 825/2,420 before the production branch and
+proof.

@@ -399,6 +399,12 @@ shared idle clock must expire, both writers must receive a terminal socket
 error rather than their five-second failure bound, and final accounting must
 show one idle denial, no completion, and no active work.
 
+A clock-boundary unit case supplies a duration that cannot be added to the
+current activity timestamp. The waiter must stay pending rather than panic,
+wake and recompute after a new activity value, and remain abortable. This pins
+the delayed-policy arithmetic path without waiting for a real platform clock
+edge.
+
 The resolver seam is internal to tests, so production callers cannot replace
 host-authenticated policy with a guest-selected backend. Controlled resolver
 tests hold lookups pending, measure the exact concurrency ceiling, cancel both

@@ -5,6 +5,9 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Keep an idle-timeout task cancellable when a long-lived immutable policy's
+  once-representable duration no longer fits a later activity timestamp,
+  instead of panicking on delayed clock arithmetic.
 - Reject `Content-Length` and `Transfer-Encoding` on CONNECT requests before
   policy or DNS, eliminating ambiguous HTTP message framing while retaining
   ordinary coalesced tunnel bytes.

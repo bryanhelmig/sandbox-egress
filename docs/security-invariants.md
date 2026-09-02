@@ -330,6 +330,10 @@ Configuration and immutable policy construction reject durations too large for
 the platform clock to represent as deadlines. The connection path also uses
 checked deadline arithmetic, so elapsed startup time or a platform clock edge
 cannot turn a trusted configuration mistake into a panicking runtime task.
+If an idle duration validated when an immutable policy was built no longer fits
+a later activity timestamp, the idle waiter treats it as beyond the
+representable clock, continues to wake on traffic, and remains subject to lease
+cancellation.
 Every deadline-wrapped operation checks whether its absolute deadline has
 already elapsed before polling work, then uses Tokio's maintained timer while
 that work is pending. This applies to headers, DNS capacity and lookup, dial
