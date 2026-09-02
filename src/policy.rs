@@ -1,4 +1,3 @@
-use std::collections::BTreeSet;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::time::{Duration, Instant};
 
@@ -71,7 +70,7 @@ impl HostPattern {
 pub struct Policy {
     pub(crate) hosts: Vec<HostPattern>,
     pub(crate) denied_hosts: Vec<HostPattern>,
-    pub(crate) ports: BTreeSet<u16>,
+    pub(crate) ports: Vec<u16>,
     pub(crate) allowed_networks: Vec<IpNet>,
     pub(crate) denied_networks: Vec<IpNet>,
     pub(crate) max_connections: usize,
@@ -99,7 +98,7 @@ impl Policy {
     }
 
     pub(crate) fn allows_port(&self, port: u16) -> bool {
-        self.ports.contains(&port)
+        self.ports.binary_search(&port).is_ok()
     }
 
     pub(crate) fn allows_ip(&self, address: IpAddr, nat64_prefixes: &[Ipv6Net]) -> bool {
@@ -178,7 +177,7 @@ impl PolicyBuilder {
 
     /// Allow CONNECT to a destination port. No port is allowed until added.
     pub fn allow_port(mut self, port: u16) -> Self {
-        self.policy.ports.insert(port);
+        self.policy.ports.push(port);
         self
     }
 
@@ -329,6 +328,8 @@ impl PolicyBuilder {
         policy.hosts.dedup();
         policy.denied_hosts.sort_unstable();
         policy.denied_hosts.dedup();
+        policy.ports.sort_unstable();
+        policy.ports.dedup();
         policy.allowed_networks.sort_unstable();
         policy.allowed_networks.dedup();
         policy.denied_networks.sort_unstable();
@@ -343,7 +344,7 @@ impl Default for PolicyBuilder {
             policy: Policy {
                 hosts: Vec::new(),
                 denied_hosts: Vec::new(),
-                ports: BTreeSet::new(),
+                ports: Vec::new(),
                 allowed_networks: Vec::new(),
                 denied_networks: Vec::new(),
                 max_connections: 64,
@@ -533,6 +534,8 @@ mod tests {
             .expect("valid exact denial")
             .deny_host("blocked.example.com")
             .expect("valid duplicate denial")
+            .allow_port(443)
+            .allow_port(443)
             .allow_network("10.0.0.0/8".parse().expect("valid grant network"))
             .allow_network("10.0.0.0/8".parse().expect("valid duplicate grant"))
             .deny_network("192.0.2.0/24".parse().expect("valid denial network"))
@@ -542,6 +545,7 @@ mod tests {
 
         assert_eq!(policy.hosts.len(), 2);
         assert_eq!(policy.denied_hosts.len(), 1);
+        assert_eq!(policy.ports, [443]);
         assert_eq!(policy.allowed_networks.len(), 1);
         assert_eq!(policy.denied_networks.len(), 1);
     }

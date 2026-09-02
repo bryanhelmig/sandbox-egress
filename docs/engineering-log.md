@@ -5831,3 +5831,19 @@ of 1,883/2,338/3,132 microseconds. Every response was checked and final lease
 accounting was certified after all workers and upstreams joined. This is a
 post-hardening regression point, not a comparison with the longer sustained
 five-million-connection run.
+
+## 2026-09-02 — freeze ports into contiguous immutable storage
+
+The policy builder previously retained a `BTreeSet<u16>` after freeze even
+though ports never mutate at runtime. It now appends during construction, then
+sorts and deduplicates one `Vec<u16>` alongside the other immutable policy
+rules. Runtime membership uses binary search. A duplicate-port assertion pins
+the unchanged builder semantics.
+
+Two detached alternating allowed-loopback pairs measured baseline medians of
+108.01 and 113.08 microseconds against candidate medians of 109.99 and 114.97
+microseconds. The intervals overlap, so no end-to-end latency change is
+claimed; socket and scheduling work dominate one port lookup. `src/policy.rs`
+keeps exactly 59/188 structural/cognitive points and adds four test-bearing
+lines. The retained gains are contiguous ownership, no per-port tree node, and
+a simpler immutable representation.

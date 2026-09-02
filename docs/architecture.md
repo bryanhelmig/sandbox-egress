@@ -21,6 +21,9 @@ synchronous caller
 
 `Proxy` owns the runtime thread. `Proxy::attach` is a synchronous command that
 atomically installs an immutable `Policy` for an unused `PeerIdentity`.
+Policy construction canonicalizes, sorts, and deduplicates its owned rules.
+Frozen ports are a contiguous sorted vector with binary-search lookup; the
+runtime never retains builder-only tree nodes or mutable rule indexes.
 
 `LeaseState` is shared internally but not exposed. Its lifecycle lock orders
 admission against revocation. A Tokio cancellation token ends async phase work;
