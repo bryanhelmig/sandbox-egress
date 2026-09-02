@@ -9,7 +9,8 @@ pub enum PeerIdentity {
     /// namespace, routing, or NAT boundary. This may be a host-translated
     /// address rather than the address configured inside the guest. A proxy
     /// treats an IPv4-mapped IPv6 spelling as the equivalent IPv4 address at
-    /// both attachment and socket acceptance.
+    /// both attachment and socket acceptance. Scoped IPv6 unicast addresses
+    /// are rejected because this identity cannot carry their zone ID.
     SourceIp(IpAddr),
 }
 
@@ -31,10 +32,14 @@ impl PeerIdentity {
                 !address.is_unspecified() && !address.is_multicast() && !address.is_broadcast()
             }
             Self::SourceIp(IpAddr::V6(address)) => {
-                !address.is_unspecified() && !address.is_multicast()
+                !address.is_unspecified() && !address.is_multicast() && !is_scoped_unicast(*address)
             }
         }
     }
+}
+
+const fn is_scoped_unicast(address: std::net::Ipv6Addr) -> bool {
+    address.is_unicast_link_local() || address.segments()[0] & 0xffc0 == 0xfec0
 }
 
 /// The HTTP proxy endpoint to expose inside the guest.
@@ -74,6 +79,28 @@ mod tests {
         assert_eq!(
             PeerIdentity::SourceIp(IpAddr::V6(compatible)).canonical(),
             PeerIdentity::SourceIp(IpAddr::V6(compatible))
+        );
+    }
+
+    #[test]
+    fn rejects_scoped_ipv6_unicast_but_keeps_unique_local_identity() {
+        for address in [
+            "fe80::1".parse::<Ipv6Addr>().expect("first link-local"),
+            "febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff"
+                .parse::<Ipv6Addr>()
+                .expect("last link-local"),
+            "fec0::1".parse::<Ipv6Addr>().expect("first site-local"),
+            "feff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"
+                .parse::<Ipv6Addr>()
+                .expect("last site-local"),
+        ] {
+            assert!(!PeerIdentity::SourceIp(IpAddr::V6(address)).is_attachable());
+        }
+        assert!(
+            PeerIdentity::SourceIp(IpAddr::V6(
+                "fdff:ffff::1".parse().expect("unique-local address")
+            ))
+            .is_attachable()
         );
     }
 }

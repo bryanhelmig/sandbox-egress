@@ -14,8 +14,12 @@ namespace/NAT path before calling `Lease::close`. The attached value is the
 peer address observed by the proxy listener; when the guest-visible address is
 translated, guest configuration is not identity evidence.
 
-Attachment rejects unspecified, multicast, and IPv4 limited-broadcast source
-addresses because none can identify the peer of an accepted TCP connection.
+Attachment rejects unspecified, multicast, scoped IPv6 unicast, and IPv4
+limited-broadcast source addresses. IPv6 link-local and deprecated site-local
+peer identity can include a zone ID, but `SourceIp(IpAddr)` deliberately cannot
+carry that scope; accepting one could collapse the same address in two host
+zones onto one lease. The other rejected forms cannot identify an accepted TCP
+peer.
 Rejection happens before allocating the process-local lease sequence.
 IPv4-mapped IPv6 input is first canonicalized, so mapped multicast and
 broadcast addresses cannot bypass that validation.

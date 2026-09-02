@@ -6238,3 +6238,28 @@ candidate lifecycle intervals of 1.3801--1.4144 ms overlap three baseline
 intervals of 1.3443--1.4063 ms, so the change carries no latency claim. It is
 retained for the simpler ownership graph and mechanically lower allocation
 count. Whole-tree structural and cognitive complexity remain 830/2,436.
+
+## 2026-09-02 — reject scoped IPv6 identities without scope evidence
+
+The source-identity validation rejected addresses that cannot name a TCP peer,
+but it accepted scoped IPv6 unicast. A listener observes link-local peers as a
+`SocketAddrV6` whose zone ID distinguishes identical addresses on different
+links. [RFC 3879](https://www.rfc-editor.org/rfc/rfc3879.html) records the same
+ambiguity and `%zone` requirement for the now deprecated site-local range. The
+public `SourceIp(IpAddr)` identity
+deliberately has no scope field, and dispatch reduced the accepted peer to that
+same `IpAddr`. Consequently two scoped instances of the same address could
+select one lease.
+
+A public attachment test first failed by successfully installing `fe80::1`.
+Attachment now rejects all of link-local `fe80::/10` and deprecated site-local
+`fec0::/10` before lease-sequence allocation. Boundary proof covers the first
+and last address of both ranges and keeps unique-local `fc00::/7` attachable;
+global, IPv4 link-local, private, and loopback source identities remain
+unchanged. The existing mapped-IPv4 canonicalization still runs before
+validation.
+
+This follows the same representation rule already applied to explicit scoped
+DNS servers: never silently discard interface identity that the underlying
+socket address needs. Focused public and unit tests pass. The change adds one
+production predicate and does not add a new identity variant or dependency.

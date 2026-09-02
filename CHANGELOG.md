@@ -9,6 +9,8 @@ Changelog and versions follow Semantic Versioning.
   possible transport split, including splits inside the final terminator.
 - Store each immutable policy directly in its already shared lease state,
   removing a redundant allocation and reference-counted ownership layer.
+- Reject scoped IPv6 link- and deprecated site-local source identities because
+  `SourceIp(IpAddr)` cannot represent their zone and must not merge peers.
 - Keep an idle-timeout task cancellable when a long-lived immutable policy's
   once-representable duration no longer fits a later activity timestamp,
   instead of panicking on delayed clock arithmetic.
