@@ -5765,3 +5765,20 @@ saturating atomic add of zero at EOF. `connect_allowed_loopback` moved from a
 −7.1--+7.2% and Criterion found no change. The candidate also raised
 `src/proxy.rs` complexity from 275/923 to 276/926. It was discarded: one
 unmeasured EOF optimization did not justify another branch and early return.
+
+## 2026-09-02 — repeat every resource lane after denial hardening
+
+The current optimized arm64 macOS tree passes all eight serialized resource
+lanes after the response-lifetime changes. The one-process run covers 8,000
+attach/close generations; 2,000 iterations each of completed, transfer-limited,
+reset, and pre-DNS denied connections; 64 bidirectionally backpressured
+tunnels; 128 partial headers; 64 partial 60,020-byte ClientHellos; 128 partial
+upstream responses; and 128 simultaneous idle expiries.
+
+Every lane finishes at nine descriptors and two threads. Observed peaks were
+526 descriptors, 69 threads during 64 concurrent management callers, and
+23,120 KiB RSS. The 8,000-generation lane held 22,880 KiB after every batch
+and finished at 22,816 KiB; the backpressure lane finished at 22,832 KiB.
+These are process-level allocator-retention observations, not a claim that RSS
+returns to its initial value, while the live socket and worker counts do
+return to their final baselines.
