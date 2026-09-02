@@ -6286,3 +6286,22 @@ No throughput improvement is claimed. The controlled comparison rules out a
 stable regression from direct policy ownership, so its removed allocation and
 simpler lifetime remain. The lower absolute checkpoint is retained as evidence
 of host variability, not normalized away.
+
+## 2026-09-02 — reject an unnecessary quiet-period deadline branch
+
+The delayed idle-deadline fix prompted an audit of the identity-reuse wait.
+`ProxyConfig` proves its quiet duration representable at startup, while
+`quiesce_after_identity_quiet` calls Tokio `sleep(duration)` at the later close
+time. A candidate concern was that an extreme once-valid duration could become
+unrepresentable and panic cleanup after a sufficiently long proxy lifetime.
+
+A deterministic task supplied `Duration::MAX` directly, beyond the public
+constructor's accepted range. The unchanged Tokio wait remained pending,
+preserved `Phase::Revoking(0)`, and aborted cleanly; it did not panic. Unlike
+the former idle waiter, this path does not perform a fallible `checked_add`
+followed by `expect` in local code.
+
+The candidate test and proposed overflow branch were discarded. Public input
+validation, the existing close deadline wrapper, and Tokio's cancellable wait
+already preserve fail-closed ownership, so another production condition or a
+test of unreachable dependency behavior would add no useful contract.
