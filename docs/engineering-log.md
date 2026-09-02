@@ -5792,3 +5792,20 @@ one-second idle policy they measured 3,257.5 and 3,346.4 MiB/s. The enabled
 runs being faster shows ordinary local variation rather than a control-path
 speedup; no comparative claim is made. The durable performance document now
 records this post-hardening checkpoint and exact byte counters.
+
+## 2026-09-02 — distinguish guest addresses from proxy identity
+
+PandaStack `1147f535` was reviewed as a current pooled-snapshot comparison.
+Its NATID path keeps one baked guest IP/MAC/gateway inside each isolated
+namespace, then SNATs egress to the slot's unique veth address before shared
+root conntrack. That makes an important integration rule explicit:
+`PeerIdentity::SourceIp` is the address the Sandbox Egress listener actually
+observes, not an address copied from guest configuration or snapshot metadata.
+
+The same source documents three repaired allocator generations involving slot
+leaks and concurrent double-free, plus stale namespaces that could answer ARP
+after slot reuse. The host guide now calls for one authoritative slot owner,
+atomic transfer from a uniquely owned prebuilt sentinel, destroy-first and
+free-last release, and reconciliation before pool refill. These rules stay in
+the supervisor contract; the public library remains `Proxy / Policy / Lease`
+with no VMM, network-pool, or durable-store API.

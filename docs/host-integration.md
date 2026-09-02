@@ -27,6 +27,13 @@ token. A fixed slot number alone is insufficient when a crashed supervisor can
 leave its old namespace or firewall objects behind. Write the ownership record
 before enabling traffic, and remove it only after every cleanup check succeeds.
 
+The attached source IP is specifically the peer address the shared proxy
+listener observes. It need not equal the address configured inside a guest.
+Snapshot pools may safely reuse one baked guest-visible address inside isolated
+namespaces only when routing or SNAT translates it to a unique, host-owned
+source before the shared listener and conntrack boundary. Attach that observed
+translated address; never derive identity from guest configuration metadata.
+
 ## Fail-closed startup
 
 Use this order:
@@ -99,6 +106,15 @@ lease. It models the host ownership transition without coupling the crate to a
 particular sandbox or VMM. A concrete sandbox integration can wrap this same
 contract with its own launch, restore, and teardown checks.
 
+For a prebuilt network pool, "available" kernel state still needs an owner.
+Keep slot ownership in one authoritative ledger, park each prebuilt slot under
+a unique sentinel owner, and transfer it atomically to a run rather than using
+a free-then-claim window. On release, destroy the namespace/interfaces first
+and mark the slot free last. After restart, reconcile stale owners and orphaned
+kernel objects before refilling the pool. The ledger's persistence lifetime
+must match the kernel objects it describes; durable ownership that outlives a
+host reboot can resurrect claims for resources that no longer exist.
+
 ## Two rate-control planes
 
 The controls complement one another:
@@ -170,6 +186,10 @@ one namespace test.
 - [CubeSandbox's network design](https://github.com/TencentCloud/CubeSandbox/blob/master/docs/blog/posts/2026-06-23-cubesandbox-network-deep-dive.md)
   demonstrates host-owned TAP allocation, L4/L7 separation, and pooled network
   resource setup.
+- [PandaStack's NATID implementation](https://github.com/pandastack-io/pandastack-ai/blob/1147f535f303296de45d0b51fb58644dfcf79e14/agent/internal/netns/netns.go)
+  shows shared snapshot identity translated to a unique host-visible source;
+  its network and slot-store packages document pooled ownership and restart
+  reconciliation.
 - [SNAS](https://arxiv.org/pdf/2606.17533) reports production experience with
   bandwidth fairness, connection-rate controls, conntrack, and port exhaustion
   across a defense-in-depth sandbox egress system.

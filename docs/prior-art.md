@@ -24,6 +24,7 @@ links remain upstream-owned and are not vendored.
 | [CubeSandbox](https://github.com/TencentCloud/CubeSandbox) | `30e002cb` | dedicated TAP ownership, host allocator, L4/L7 split, pooled setup | sandbox platform rather than an embeddable CONNECT lease |
 | [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox) | `1eb8fffa` | deny-first subjects, generation-aware policy, atomic nft updates, restart cleanup | mutable transparent sidecar/control plane with different authority scope |
 | [mvm](https://github.com/tinylabscom/mvm) | `4ebd13d5` | mechanically enforced vsock-only single egress path and fresh restore endpoint | full signed-plan sandbox with no workload NIC, not source-IP CONNECT |
+| [PandaStack](https://github.com/pandastack-io/pandastack-ai) | `1147f535` | shared snapshot IP translation, authoritative slot ownership, destroy-first reuse, orphan reconciliation | sandbox platform whose network pool remains supervisor-owned |
 
 Also relevant: VEY for production daemon limits, metrics, ACLs, and per-user
 policy.
@@ -133,6 +134,18 @@ These comparisons produced a separate
 Linux namespace certificate, and Linux conntrack/socket measurement.
 Firecracker is one mapped consumer of that generic boundary. The work did not
 add TAP, nftables, snapshot, or VM orchestration to the public crate API.
+
+PandaStack adds a useful concrete pooled-restore case. Sandboxes from one
+snapshot intentionally retain the same guest-visible IP, MAC, and gateway
+inside separate namespaces. Egress SNAT rewrites that shared address to the
+slot's unique namespace-side veth address before traffic reaches the root
+namespace; otherwise return traffic and conntrack can collide. Its allocator
+also records one authoritative owner per slot, atomically transfers prebuilt
+slots rather than briefly freeing them, destroys kernel objects before marking
+a slot reusable, and reconciles orphan ownership and namespaces before the
+prewarmer starts. The project comments tie that shape to earlier leak,
+double-free, and stale-namespace incidents. These are supervisor lessons, not
+evidence to add pooling or durable storage to Sandbox Egress itself.
 
 ## Listener failure comparison
 
