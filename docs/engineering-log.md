@@ -5663,3 +5663,40 @@ example and passes again at
 Its measured lane returns allocated files from 736 to the 704 baseline and
 leaves zero root-namespace conntrack, TCP, TIME_WAIT, or UDP entries. The
 privileged image is a test environment, not a production deployment artifact.
+
+## 2026-09-02 — keep Firecracker as an integration, not the product
+
+The next review corrected an over-specific follow-up from the host-lifecycle
+research. Sandbox Egress is a composable outbound-network policy library. Its
+reusable boundary is a host-enforced single egress path, host-observed source
+identity, immutable policy, and lease-owned shutdown. Firecracker is an
+important consumer of that contract, but booting a VMM or proving a particular
+snapshot implementation is not a core crate release gate.
+
+The integration guide is now `docs/host-integration.md`. It states the generic
+generation, deny-first readiness, fence-before-close, restoration, shaping,
+and reconciliation rules, then maps Firecracker as one example. The active
+backlog no longer asks this crate to grow a Firecracker/KVM harness. The
+privileged namespace certificate remains because it tests the reusable host
+ownership transition without adding sandbox or VMM machinery to the library.
+
+The complexity workflow was already present. To make it harder to simplify by
+deleting evidence, its documentation now distinguishes the whole-tree report
+from the narrower crate-tree report, which still honestly includes colocated
+unit tests and test seams. The current whole tree is 29 Rust files, 14,079
+lines, 12,781 code lines, and 823/2,419 structural/cognitive points; `src`
+alone is 18 files, 8,497 lines, 7,575 code lines, and 544/1,687 points.
+
+One new lifecycle case starts revocation with an ownership-retaining expired
+close, sends another old-run connection, certifies that lease, and attaches a
+replacement. The replacement's first connection must still receive the sole
+process-wide rate burst. This proves revoking traffic is rejected and charged
+to the old lease before the global bucket is consulted. The case passed eleven
+complete focused runs.
+
+A performance candidate reused the already-captured accept timestamp for the
+optional rate buckets, avoiding a second monotonic clock read. Five baseline
+enabled-rate runs measured 17,182--21,482 connections/second with a 20,033
+median; five candidate runs measured 18,686--21,647 with a 19,558 median. The
+ranges overlap and the candidate median is 2.4% lower. The extra parameter was
+removed and no optimization claim is retained.

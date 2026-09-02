@@ -129,10 +129,10 @@ must mechanically provide exactly one egress path rather than rely on proxy
 environment variables.
 
 These comparisons produced a separate
-[Firecracker integration contract](firecracker-integration.md), an opt-in
-privileged Linux namespace certificate, and Linux conntrack/socket measurement.
-They did not add TAP, nftables, snapshot, or VM orchestration to the public
-crate API.
+[host network integration contract](host-integration.md), an opt-in privileged
+Linux namespace certificate, and Linux conntrack/socket measurement.
+Firecracker is one mapped consumer of that generic boundary. The work did not
+add TAP, nftables, snapshot, or VM orchestration to the public crate API.
 
 ## Listener failure comparison
 

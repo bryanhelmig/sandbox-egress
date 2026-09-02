@@ -1,13 +1,13 @@
-# Firecracker host integration
+# Host network integration
 
-Sandbox Egress owns the proxy lease. A Firecracker supervisor must separately
-own the kernel resources that make the lease meaningful. Treat those resources
-as one run-generation record, even if the production implementation gives that
-record a different name.
+Sandbox Egress owns the proxy lease. A sandbox supervisor must separately own
+the operating-system resources that make the lease meaningful. Treat those
+resources as one run-generation record, even if the production implementation
+gives that record a different name.
 
 This is an integration contract, not a fourth core crate object. The public
-library remains `Proxy / Policy / Lease`; it does not create microVMs, network
-namespaces, TAP devices, firewall rules, or NAT state.
+library remains `Proxy / Policy / Lease`; it does not create sandboxes, network
+namespaces, virtual interfaces, firewall rules, or NAT state.
 
 ## One host record per run generation
 
@@ -15,9 +15,10 @@ The supervisor's durable record should bind at least:
 
 - an unambiguous run ID and monotonically increasing generation;
 - the source IP passed to `Proxy::attach`;
-- the network namespace, TAP, veth, routes, and nftables rule handles;
+- the namespace or guest network, virtual interfaces, routes, and firewall rule
+  handles;
 - the NAT/conntrack zone or other state needed to find and remove old flows;
-- the Firecracker process, jail, cgroup, and virtio-net rate configuration;
+- the sandbox process or VM, cgroup, and host traffic-shaping configuration;
 - the in-process `Lease` owner or enough state to mark the identity unavailable
   after a supervisor restart.
 
@@ -31,7 +32,7 @@ before enabling traffic, and remove it only after every cleanup check succeeds.
 Use this order:
 
 1. reserve a fresh generation and source IP;
-2. create the namespace/TAP/veth path in a deny-first state;
+2. create the guest network path in a deny-first state;
 3. install routing, DNS confinement, proxy-only firewall rules, NAT/conntrack
    isolation, and VM-level bandwidth limits;
 4. actively prove that the proxy endpoint is reachable and controlled direct
@@ -50,7 +51,7 @@ pre-create or rewrite the same network path before a per-run policy exists.
 Use the reverse ownership order:
 
 1. stop the guest vCPUs or otherwise prevent new guest packets;
-2. sever or deny the old TAP/veth path;
+2. sever or deny the old guest network path;
 3. call `Lease::close` and retain the returned lease on failure;
 4. verify that no host-side proxy socket, pending host dial, or run-owned
    conntrack/NAT state remains;
@@ -65,13 +66,18 @@ TCP state because the guest cannot receive the final FIN or RST; certification
 is the absence of a host-owned path and proxy work, not a cooperative guest
 state transition.
 
-## Snapshot and resume
+## Restored and pooled sandboxes
 
-Never serialize or restore a `Lease`. Firecracker documents that network and
-vsock packet loss is expected after loading a snapshot in another process and
-that connection state is not guaranteed to survive. A restored VM therefore
-receives a fresh host generation, fresh kernel path, fresh immutable policy,
-and fresh proxy lease before it resumes.
+Never serialize or restore a `Lease`. A restored or reassigned sandbox receives
+a fresh host generation, fresh network path, fresh immutable policy, and fresh
+proxy lease before it resumes. Guest connection state must not become authority
+to reuse an old host identity.
+
+Firecracker is one important consumer of this rule: its snapshot documentation
+warns that network and vsock packet loss is expected after loading a snapshot
+in another process and does not guarantee connection survival. Other VM,
+container, and process sandboxes should follow the same fresh-lease rule unless
+their host boundary can prove a stronger generation-preserving contract.
 
 For a snapshot taken from a running VM:
 
@@ -89,9 +95,9 @@ For a snapshot taken from a running VM:
 The opt-in namespace lane below preserves a live old tunnel while fencing its
 veth, certifies zero host-side proxy work, proves the still-live old namespace
 has no egress device, and only then recreates the same source IP for a fresh
-lease. It models the host ownership transition without claiming to execute KVM
-or validate Firecracker's device restore. A real Firecracker/KVM lane remains a
-deployment-level release gate.
+lease. It models the host ownership transition without coupling the crate to a
+particular sandbox or VMM. A concrete sandbox integration can wrap this same
+contract with its own launch, restore, and teardown checks.
 
 ## Two rate-control planes
 
@@ -101,9 +107,10 @@ The controls complement one another:
   `PolicyBuilder::connection_attempt_rate` bound source-attributed inbound TCP
   churn before header parsing or task creation. Concurrent connection limits
   still bound live proxy work.
-- Firecracker virtio-net token buckets, Linux traffic control, or an equivalent
-  host mechanism bound packets and bandwidth before they can make one VM a
-  noisy neighbor. The proxy intentionally does not emulate a packet shaper.
+- Linux traffic control, VMM device limits such as Firecracker virtio-net token
+  buckets, or an equivalent host mechanism bound packets and bandwidth before
+  one sandbox can become a noisy neighbor. The proxy intentionally does not
+  emulate a packet shaper.
 
 Connection-attempt limits help reduce upstream socket and conntrack churn, but
 they do not make conntrack or ephemeral ports infinite. Capacity planning must
@@ -143,13 +150,13 @@ decoy, holds and fences a live tunnel, requires final zero-active accounting,
 reuses the source address only in a fresh namespace, and removes named orphan
 resources. It uses no public network and no randomized input generation.
 
-This first certificate is intentionally narrower than the final deployment
-matrix. It does not yet create a TAP or Firecracker process, exercise IPv6,
-prove UDP/DNS and inherited-descriptor denial, or measure NAT port recovery.
-Those items remain explicit in the hardening backlog rather than being implied
-by one namespace test.
+This certificate is intentionally narrower than a complete deployment matrix.
+It does not exercise IPv6, prove UDP/DNS and inherited-descriptor denial, or
+measure NAT port recovery. Those checks belong in the generic host-boundary
+backlog and in each concrete sandbox integration rather than being implied by
+one namespace test.
 
-## Sources behind the boundary
+## Examples behind the boundary
 
 - [Firecracker design](https://github.com/firecracker-microvm/firecracker/blob/main/docs/design.md)
   assigns host networking and traffic filtering to the integrator and exposes

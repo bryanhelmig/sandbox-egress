@@ -38,13 +38,14 @@ unneeded descriptors before guest launch, use close-on-exec where applicable,
 and constrain every intentional descriptor-passing channel. The same principle
 applies to unrelated loopback listeners and host IPC endpoints.
 
-For a Firecracker integration, the usual shape is a guest-specific TAP or
-namespace path whose firewall permits TCP only to the shared proxy listener.
-The exact kernel mechanism is deployment-specific. Whatever mechanism is
-chosen must also cover IPv4 and IPv6, reject forwarding around the listener,
-and keep the proxy's own upstream path unavailable to the guest.
-The normative generation, readiness, snapshot, reconciliation, and kernel
-capacity sequence is in the [Firecracker host integration](firecracker-integration.md).
+A common integration uses a guest-specific virtual interface or namespace path
+whose firewall permits TCP only to the shared proxy listener. The exact host
+mechanism is deployment-specific. Whatever mechanism is chosen must also cover
+IPv4 and IPv6, reject forwarding around the listener, and keep the proxy's own
+upstream path unavailable to the guest. The normative generation, readiness,
+restore, reconciliation, and kernel-capacity sequence is in the
+[host network integration contract](host-integration.md). Firecracker is one
+consumer of that contract, not a required runtime or test dependency.
 
 If `SO_MARK` distinguishes proxy-originated sockets on Linux, remove both
 `CAP_NET_ADMIN` and `CAP_NET_RAW` from every untrusted process and sidecar in
@@ -83,6 +84,6 @@ Those tests belong at the integration boundary because the library cannot
 observe a bypass that never reaches its listener. The repository ships a first
 privileged Linux namespace certificate in
 `scripts/test-linux-host-boundary.sh`. It proves proxy-only TCP routing,
-fenced close, source-IP reuse, and named-resource cleanup. TAP/KVM, IPv6, UDP,
-DNS, inherited descriptors, and NAT-port recovery remain deployment-level
-follow-up work rather than implied coverage.
+fenced close, source-IP reuse, and named-resource cleanup. IPv6, UDP, DNS,
+inherited descriptors, and NAT-port recovery remain deployment-level follow-up
+work rather than implied coverage.

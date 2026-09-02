@@ -670,6 +670,6 @@ by PID to prove its egress device is absent. Only then does it recreate the same
 source IP for a fresh successful lease. Final reconciliation deletes both
 named namespaces and proves neither survives.
 
-This is a host lifecycle certificate, not Firecracker emulation. It does not
-claim TAP/KVM restore, IPv6, UDP/DNS, inherited-descriptor, or NAT-port
-coverage; those remain named deployment tests in the hardening backlog.
+This is a generic host lifecycle certificate, not sandbox or VMM emulation. It
+does not claim IPv6, UDP/DNS, inherited-descriptor, or NAT-port coverage; those
+remain named deployment tests in the hardening backlog.

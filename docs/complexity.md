@@ -12,6 +12,21 @@ The default paths are `src`, `tests`, and `benches`; pass explicit paths to
 narrow a review. CI pins SCC 4.0.0 and prints both reports without applying an
 arbitrary project-wide threshold.
 
+Two useful review scopes are:
+
+```text
+./scripts/measure-complexity.sh                 # crate plus external evidence
+./scripts/measure-complexity.sh src             # crate tree and colocated tests
+./scripts/measure-complexity.sh src/rate.rs tests/concurrency.rs
+                                                # one change and its evidence
+```
+
+The `src` view is deliberately called the crate-tree view, not production-only
+code: Rust unit tests and test seams live beside the code they exercise, and
+`src/tls_tests.rs` plus `src/proxy/tests/` are also beneath that directory.
+Moving evidence solely to improve a headline number would make the metric less
+honest rather than the implementation simpler.
+
 SCC describes its structural complexity as a fast branch/loop approximation,
 not an AST-derived cyclomatic proof. Its cognitive mode adds nesting weight.
 Compare changes using the same tool version and language. Do not compare these
@@ -99,6 +114,16 @@ cognitive complexity estimate: 2,407
 proxy.rs: 274 structural, 921 cognitive
 policy.rs: 59 structural, 188 cognitive
 rate.rs: 4 structural, 12 cognitive
+```
+
+At the same checkpoint, the narrower crate-tree command reports:
+
+```text
+files: 18
+lines: 8,497
+code lines: 7,575
+structural complexity estimate: 544
+cognitive complexity estimate: 1,687
 ```
 
 Against the prior checkpoint, the aggregate rises by 37 structural and 90

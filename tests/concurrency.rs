@@ -271,6 +271,74 @@ fn replacement_lease_does_not_reset_global_connection_attempt_bucket() {
 }
 
 #[test]
+fn revoking_attempt_does_not_spend_the_global_connection_attempt_burst() {
+    let proxy = Proxy::start(
+        ProxyConfig::default()
+            .with_connection_attempt_rate(1, 1)
+            .with_identity_reuse_quiet_period(Duration::ZERO),
+    )
+    .expect("start proxy");
+    let identity = PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    let old = proxy
+        .attach(
+            identity.clone(),
+            Policy::builder().build().expect("valid old policy"),
+        )
+        .expect("attach old lease");
+    let endpoint = old.endpoint().socket_addr();
+
+    let old = old
+        .close(
+            Instant::now()
+                .checked_sub(Duration::from_secs(1))
+                .expect("one second before the current instant is representable"),
+        )
+        .expect_err("expired close must retain the revoking lease")
+        .into_lease();
+    let mut rejected = TcpStream::connect(endpoint).expect("connect revoking client");
+    rejected
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .expect("set revoking rejection timeout");
+    rejected.write_all(b"CONNECT old").ok();
+    let mut byte = [0_u8; 1];
+    assert_terminal_read(rejected.read(&mut byte));
+    let accounting_deadline = Instant::now() + Duration::from_secs(1);
+    while old.usage().denied_connections != 1 && Instant::now() < accounting_deadline {
+        thread::yield_now();
+    }
+    assert_eq!(old.usage().denied_connections, 1);
+    old.close(Instant::now() + Duration::from_secs(1))
+        .expect("certify old lease");
+
+    let replacement = proxy
+        .attach(
+            identity,
+            Policy::builder().build().expect("valid replacement policy"),
+        )
+        .expect("attach replacement lease");
+    let mut admitted = TcpStream::connect(endpoint).expect("connect replacement client");
+    admitted
+        .write_all(b"CONNECT replacement")
+        .expect("hold replacement header");
+    let admission_deadline = Instant::now() + Duration::from_secs(1);
+    while replacement.usage().active_connections != 1 && Instant::now() < admission_deadline {
+        thread::yield_now();
+    }
+    assert_eq!(replacement.usage().active_connections, 1);
+    let usage = replacement
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("certify replacement lease")
+        .usage();
+    assert_eq!(usage.accepted_connections, 1);
+    assert_eq!(usage.denied_connections, 0);
+    assert_eq!(usage.active_connections, 0);
+    drop(admitted);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
 fn impossible_source_identities_fail_before_consuming_a_lease_id() {
     let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
     for address in [

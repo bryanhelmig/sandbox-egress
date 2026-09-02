@@ -14,8 +14,9 @@ contributor instead of preserving solved work as apparent backlog.
   certification, including before or after a replacement policy is attached.
   This needs the host-cage/conntrack harness because a TCP listener cannot
   authenticate the run generation of a packet arriving after identity reuse.
-- Complete the first namespace-only host certificate with a real Firecracker
-  TAP/KVM snapshot lane and explicit NAT/conntrack-zone teardown.
+- Extend the generic host certificate with explicit NAT/conntrack-zone teardown
+  and delayed-packet identity-reuse evidence. Concrete VMM launch and snapshot
+  tests belong to the integrating sandbox, not this crate's core suite.
 
 ## Request parsing and authority
 
@@ -62,8 +63,9 @@ contributor instead of preserving solved work as apparent backlog.
 
 ## Deployment and integration
 
-- Extend the Linux namespace/nftables certificate to TAP devices and
-  Firecracker guests; the current lane proves the veth ownership transition.
+- Extend the Linux namespace/nftables certificate across additional generic
+  host-network shapes where they strengthen the reusable contract; keep
+  VMM-specific launch and restore machinery in the integrating sandbox.
 - A black-box host-cage conformance harness covering direct TCP/UDP, both IP
   families, unrelated loopback and host IPC, proxy-environment overrides,
   inherited sockets, resolver/upstream reachability, and premature identity

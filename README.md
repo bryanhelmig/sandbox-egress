@@ -299,8 +299,8 @@ distinguished from a translated IPv4 address by syntax alone. The well-known
 For a source-IP identity, the host should use this lifecycle:
 
 1. Give the run a fresh host-network generation and source address.
-2. Install a deny-first namespace/TAP/firewall path and actively prove that
-   only the proxy is reachable.
+2. Install a deny-first host network path and actively prove that only the
+   proxy is reachable.
 3. Attach its immutable policy, then run or resume the untrusted workload.
 4. Fence the old namespace or NAT path so it cannot create more traffic.
 5. Close the lease successfully and remove run-owned conntrack/NAT state.
@@ -320,9 +320,11 @@ sets of every process sharing the guest network namespace. In particular,
 drop both `CAP_NET_ADMIN` and `CAP_NET_RAW`; a default container capability set
 may still include the latter.
 
-The [Firecracker host integration](docs/firecracker-integration.md) makes the
-generation record, fail-closed readiness, snapshot/resume, orphan
-reconciliation, VM bandwidth fairness, and kernel-capacity evidence explicit.
+The [host network integration contract](docs/host-integration.md) makes the
+generation record, fail-closed readiness, restore/resume, orphan
+reconciliation, bandwidth fairness, and kernel-capacity evidence explicit.
+Firecracker, containers, namespaces, and process sandboxes are consumers of
+that boundary rather than concepts in the public crate API.
 
 ## Development
 
@@ -377,8 +379,8 @@ Start with [AGENTS.md](AGENTS.md). The deeper project record is split into:
 - [founding context](docs/founding-context.md) — product ambition and audience;
 - [design brief](docs/design-brief.md) — the original lifecycle requirements;
 - [security invariants](docs/security-invariants.md) — claims and trust boundary;
-- [Firecracker integration](docs/firecracker-integration.md) — host lifecycle,
-  snapshot, readiness, shaping, and kernel evidence;
+- [host network integration](docs/host-integration.md) — lifecycle, restore,
+  readiness, shaping, and kernel evidence;
 - [architecture](docs/architecture.md) — internal ownership and data flow;
 - [testing strategy](docs/testing.md) — conformance and resource evidence;
 - [performance evidence](docs/performance.md) — reproducible measurements;
