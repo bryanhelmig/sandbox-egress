@@ -6492,3 +6492,25 @@ Clippy checks pass.
 Sharing the predicate keeps whole-tree structural complexity at 857 and lowers
 the SCC 4.0.0 cognitive estimate from 2,526 to 2,518 despite the added boundary
 cases.
+
+## 2026-09-02 — repeat every resource lane after address hardening
+
+The complete locked release resource factory passes on the final address-
+validation tree. Fresh processes completed 8,000 sequential lease lifecycles,
+256 concurrent management lifecycles, 128 idle expiries, 64 simultaneous
+60,020-byte partial ClientHellos, 128 partial headers, 128 partial upstream
+responses, 64 bidirectionally backpressured tunnels, and 2,000 iterations of
+each terminal connection shape.
+
+Every lane returned from its active peak to 13 descriptors and five threads
+with the proxy alive, then nine descriptors and two threads after shutdown.
+Representative peaks were 526 descriptors for 128 two-sided idle/upstream
+fixtures, 270 for the 64-ClientHello fixture, and 69 threads while the
+management fixture intentionally owned 64 caller threads. Final RSS ranged
+from 9,024 to 18,800 KiB across fresh processes; RSS is an allocator high-water
+observation, while descriptor/thread return and exact lease accounting are
+asserted gates.
+
+No resource-control code changed as a result. This checkpoint confirms that
+the configuration and identity hardening did not perturb the owned-runtime or
+certified-close resource boundary.
