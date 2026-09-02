@@ -6424,3 +6424,23 @@ of per-authority precision.
 The focused contract test, strict all-target Clippy, and warning-free API docs
 pass. Whole-tree SCC 4.0.0 moves from 847/2,490 to 849/2,497 solely in the
 test; the production score is unchanged.
+
+## 2026-09-02 — discard relaxed usage-counter ordering
+
+The throughput pass tested `Relaxed` loads for live usage snapshots and
+`Relaxed` active-gauge updates. Cumulative byte/count updates were already
+relaxed CAS operations. Certified final snapshots have an external lifecycle
+join before they read counters, while live snapshots promise monotonic fields
+rather than a transactional view, so the candidate was plausible—but a weaker
+ordering deserves measured benefit, not merely plausibility.
+
+At 64 tunnels transferring 8 MiB each, the unchanged tree first measured
+1,639.5 MiB/s upload and 929.7 MiB/s download. The candidate measured 648.8
+and 874.1 MiB/s. After reverting, the same host measured 594.7 and 635.0
+MiB/s. That reversed comparison demonstrates severe ambient variability and
+provides no evidence that the atomic change improves the data path.
+
+The candidate is discarded. Acquire/AcqRel keeps the existing conservative
+counter synchronization story, and production source, behavior, and complexity
+remain unchanged. Future throughput claims need longer alternating trials on a
+quieter or isolated host rather than interpreting a single local pair.
