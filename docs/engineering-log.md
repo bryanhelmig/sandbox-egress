@@ -6181,3 +6181,24 @@ and then aborts cleanly. Both real idle-expiry cases remain green, including
 simultaneous bidirectional backpressure. The whole Rust tree is 827/2,427
 structural/cognitive points versus 825/2,420 before the production branch and
 proof.
+
+## 2026-09-02 — reject in-place CONNECT suffix reuse
+
+The visible-SNI path copied tunnel bytes coalesced after the CONNECT header
+into the bounded ClientHello buffer. A candidate instead moved that suffix to
+the front of the already-owned header vector and reused its allocation. All
+eight focused TLS cases passed, including exact wire forwarding and
+cancellation.
+
+The controlled resource case did not separate the variants. Three clean old
+revision processes with 256 simultaneous 60,020-byte partial ClientHellos
+peaked at 46,528, 46,528, and 46,560 KiB RSS. Three candidate processes peaked
+at 46,528, 46,512, and 46,576 KiB. Fresh Criterion runs likewise overlapped:
+the old revision measured 153.14--161.66 microseconds per visible-SNI setup and
+the candidate measured 146.43--162.23 microseconds, with no detected change.
+
+The candidate added three mutation steps and could retain the capacity of a
+large but valid CONNECT header until ClientHello inspection and forwarding
+finished. It was discarded. The explicit bounded suffix copy remains because
+its shorter lifetime and clearer ownership are preferable without measured
+resource or latency benefit.
