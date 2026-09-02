@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Document and test that hostname and port grants form independent dimensions;
+  this release does not express host-specific port associations.
 - Require host-configured DNS servers and upstream proxies to be concrete
   unicast endpoints; retain scoped IPv6 upstreams only with an explicit zone,
   and reject recursive DNS pointed back at the shared proxy listener.

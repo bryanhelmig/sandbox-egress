@@ -176,6 +176,10 @@ impl PolicyBuilder {
     }
 
     /// Allow CONNECT to a destination port. No port is allowed until added.
+    ///
+    /// Hostname and port grants are independent dimensions: every allowed
+    /// hostname can use every allowed port. This API does not express a port
+    /// grant scoped to one hostname.
     pub fn allow_port(mut self, port: u16) -> Self {
         self.policy.ports.push(port);
         self
@@ -603,6 +607,26 @@ mod tests {
             .expect("valid HTTP-only policy");
         assert!(http_only.allows_port(80));
         assert!(!http_only.allows_port(443));
+    }
+
+    #[test]
+    fn hostname_and_port_grants_form_independent_dimensions() {
+        let policy = Policy::builder()
+            .allow_host("api.example.com")
+            .expect("valid API host")
+            .allow_host("database.example.com")
+            .expect("valid database host")
+            .allow_port(443)
+            .allow_port(5432)
+            .build()
+            .expect("valid policy");
+
+        for host in ["api.example.com", "database.example.com"] {
+            assert!(policy.allows_hostname(host));
+            for port in [443, 5432] {
+                assert!(policy.allows_port(port), "{host}:{port}");
+            }
+        }
     }
 
     #[test]

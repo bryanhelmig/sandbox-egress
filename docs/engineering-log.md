@@ -6398,3 +6398,29 @@ resolver, task, and dial work, and the borrowed/owned return type would spread
 lifetime and ownership choices into policy construction for no reproduced
 end-to-end gain. Production code, tests, and complexity remain unchanged; this
 negative result narrows future performance work toward the larger boundaries.
+
+## 2026-09-02 — make the host-port product impossible to misread
+
+The current nono comparison revisited its compound `host:port` rules and the
+recent fix that makes port-scoped denial take precedence over wildcard allow.
+Sandbox Egress deliberately retained separate hostname and port dimensions,
+but its friendly README wording only said that neither dimension implicitly
+adds the other. It did not plainly state that multiple grants form a Cartesian
+product.
+
+That omission is risky for a caller intending `api.example:443` plus
+`database.example:5432`: the actual policy also permits `api.example:5432` and
+`database.example:443`. This pass does not bolt compound matching onto the
+small API. Instead, the README, API documentation, security contract, and
+prior-art decision now name the cross-product and state that the narrower
+policy cannot be represented in this release. A unit boundary pins two hosts,
+two ports, and all four resulting combinations.
+
+This is an honesty and integration-hardening change, not new enforcement.
+Production code and its complexity remain unchanged; the additional test keeps
+the deliberately simple model reviewable while preventing accidental claims
+of per-authority precision.
+
+The focused contract test, strict all-target Clippy, and warning-free API docs
+pass. Whole-tree SCC 4.0.0 moves from 847/2,490 to 849/2,497 solely in the
+test; the production score is unchanged.

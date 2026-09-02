@@ -185,8 +185,9 @@ denials. Nono also tests that a wildcard denial covers subdomains but not its
 apex, plus a richer host-and-port deny syntax. Sandbox Egress adopts the first
 two normalization proofs and wildcard boundary because they fit its canonical
 hostname contract. It does not currently adopt compound host-and-port rules:
-ports remain a separate explicit allow dimension, and one implementation alone
-does not justify complicating that model.
+ports remain a separate explicit allow dimension whose combinations with hosts
+are explicitly documented and tested. Callers needing host-specific ports must
+not approximate that narrower policy with this release.
 
 Ressrf rejects ambiguous legacy IPv4 text before resolution. Sandbox Egress
 does not need to infer an effective address from that text: a trusted host must

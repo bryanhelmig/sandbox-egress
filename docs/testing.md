@@ -260,6 +260,10 @@ and mapped-broadcast source
 identities before sequence allocation; the next valid attachment must still
 receive lease ID 1. A unit boundary pins both ends of IPv6 `fe80::/10` and
 deprecated `fec0::/10`, while keeping unique-local `fc00::/7` attachable.
+A policy boundary separately pins the deliberately independent hostname and
+port dimensions: two allowed hosts and two allowed ports make all four
+authority combinations available. This prevents documentation or future code
+from implying a host-specific port association the API cannot represent.
 A separate real-socket case attaches restrictive and permissive policies to
 two loopback source identities. A client observed as the restrictive identity
 sends the permissive address in `X-Run-ID`; it must still be denied before dial,

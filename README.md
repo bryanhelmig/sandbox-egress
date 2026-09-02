@@ -109,6 +109,12 @@ denials override both grants and the ordinary public-IP behavior. The example
 permits 443 explicitly; the thin executable makes the same HTTPS-only choice
 on behalf of its intentionally smaller command-line surface.
 
+Hostname and port grants are independent. Allowing hosts `api.example.com` and
+`database.example.com` plus ports 443 and 5432 permits all four combinations,
+not just `api:443` and `database:5432`. The current API deliberately does not
+express per-host port associations. If those cross-combinations would be an
+overgrant, do not approximate that policy with this release.
+
 Hostname rules authorize names, not arbitrary numeric authorities. An allowed
 hostname may resolve to an otherwise ordinary public address, but a direct IP
 literal requires an explicit `allow_network` grant. Both paths still honor
