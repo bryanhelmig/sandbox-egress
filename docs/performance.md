@@ -643,3 +643,20 @@ idle-tracked runs happened to be faster in this single local checkpoint, so no
 idle-tracking speedup or overhead claim is made. The useful result is a fresh,
 reproducible established-tunnel baseline whose scale is long enough to be less
 dominated by connection setup than the default 32 MiB smoke run.
+
+## Post-hardening connection-scale checkpoint
+
+Recorded 2026-09-02 on the same Apple M1 with Rust 1.97.1:
+
+```text
+command: ./scripts/measure-load.sh 100000 64 16
+connections: 100,000
+elapsed: 5,450 ms
+rate: 18,348.2 connections/second
+setup latency p50/p95/p99: 1,883/2,338/3,132 us
+```
+
+The single proxy and lease used 16 local destinations and certified exact final
+accounting after every worker and upstream joined. This is a fresh regression
+checkpoint, not a claim about external networks or a speedup over the much
+longer five-million-connection soak.

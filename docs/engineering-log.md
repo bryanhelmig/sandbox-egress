@@ -5821,3 +5821,13 @@ The host and security guides now say to retain an independent east-west
 firewall and layer higher-priority tenant/host subnet denials over narrow
 private-service grants. No destination rule was silently added to the crate;
 the supervisor remains responsible for naming its own tenant address pools.
+
+## 2026-09-02 — refresh the connection-scale checkpoint
+
+The optimized current tree completed 100,000 local CONNECT tunnels through one
+proxy and lease at concurrency 64 across 16 destinations. It ran for 5,450
+milliseconds at 18,348.2 connections/second, with p50/p95/p99 setup latencies
+of 1,883/2,338/3,132 microseconds. Every response was checked and final lease
+accounting was certified after all workers and upstreams joined. This is a
+post-hardening regression point, not a comparison with the longer sustained
+five-million-connection run.
