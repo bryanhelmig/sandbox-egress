@@ -5998,3 +5998,24 @@ equality checks for every connection, while the existing hash set keeps
 expected work linear and the separate vector preserves resolver order. The
 candidate was discarded. Production source, complexity, and allocation shape
 remain unchanged.
+
+## 2026-09-02 — retain Tokio's tunnel copy-buffer default
+
+Tokio 1.53.1's `copy_bidirectional` allocates one 8 KiB buffer for each tunnel
+direction. A controlled data-plane trial tested both sides of that default.
+Four KiB per direction saved 8 KiB for each established tunnel but every
+alternating eight-tunnel pair was slower: the candidate delivered roughly
+1.83--1.99 GiB/s while the unchanged proxy delivered 2.54--2.77 GiB/s upload,
+and 1.80--2.08 versus 2.56--2.92 GiB/s download.
+
+Sixteen KiB per direction doubled the copy-buffer footprint and also failed to
+improve throughput. After the host settled, candidate upload runs delivered
+2.89--3.20 GiB/s versus 3.22--3.27 GiB/s for the alternating default; download
+delivered 3.02--3.16 versus 3.09--3.38 GiB/s. Earlier 64-tunnel measurements
+also contained extreme scheduler outliers, including one 11-second run, so
+they are retained only as evidence that this local host is unsuitable for
+fine-grained high-concurrency comparisons.
+
+Both candidate implementations were discarded. The proxy retains Tokio's
+maintained copier and its 16 KiB aggregate buffer cost per established tunnel,
+with no new configuration surface, branch, or dependency.
