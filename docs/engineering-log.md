@@ -6106,3 +6106,30 @@ the 16,000 terminal iterations, 40,000 distinct lease lifecycles held exactly
 descriptors and recovered; and 128 live 60,020-byte partial ClientHellos peaked
 at 28,192 KiB RSS and 526 descriptors before certified close recovered to
 13 descriptors and five threads. Every process ended at nine/two.
+
+## 2026-09-02 — reject HTTP message framing on CONNECT
+
+[RFC 9110 section 9.3.6](https://www.rfc-editor.org/rfc/rfc9110.html#section-9.3.6)
+states that a CONNECT request has no content and that bytes after its header
+have version-specific interpretation. The existing parser nevertheless
+accepted both `Content-Length` and `Transfer-Encoding`, then treated bytes
+after the empty line as immediate tunnel data. A test first demonstrated that
+even `Content-Length: 0` returned an accepted `ConnectRequest`.
+
+The retained rule rejects either case-insensitive field as
+`connect-content-not-allowed`. It examines only the mature parser's existing
+fixed 64-slot header array, allocates nothing, and runs before authority policy,
+DNS, or dialing. Fixed cases cover zero and positive content lengths, chunked
+encoding, both fields together, mixed case, and coalesced bytes. A real
+listener requires the bounded 400 response and exact denial cleanup before an
+empty policy could return its later port denial. Existing real-socket cases
+continue to pass raw tunnel bytes coalesced after an otherwise unframed CONNECT
+header, including exact and excessive upload-limit boundaries.
+
+Two alternating local CONNECT benchmark pairs did not separate the additional
+bounded scan. Candidate point estimates were 121.12 and 124.06 microseconds;
+detached `2a6d5de` baseline estimates were 118.55 and 121.28 microseconds, with
+overlapping intervals and no detected change. The whole Rust tree moves from
+821/2,409 to 825/2,420 structural/cognitive points, including both parser and
+real-listener proof. The five-line production condition is retained for the
+unambiguous protocol boundary, not for a performance claim.

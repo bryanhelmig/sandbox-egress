@@ -89,6 +89,12 @@ bytes, whitespace before a field name or colon, and non-ASCII CONNECT or Host
 authority spellings. The mature request parser may identify UTF-8 in the
 request target before the authority parser rejects it; the resulting stable
 reason is `invalid-authority`, not generic malformed syntax.
+Fixed case-insensitive `Content-Length` and `Transfer-Encoding` shapes are
+rejected as `connect-content-not-allowed`, including zero length and both
+fields together. A real listener pins the 400 response, denial accounting, and
+ordering before the empty policy's port or DNS checks. Raw bytes coalesced
+after an otherwise unframed CONNECT header remain tunnel data and retain their
+separate transfer-limit coverage.
 
 The connection benchmark also sends a full 1 MiB header made from repeated
 `\r\n\rX` near matches. It must remain an ordinary bounded 431 denial and makes

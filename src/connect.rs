@@ -76,6 +76,12 @@ pub(crate) fn parse_connect(bytes: &[u8]) -> Result<ConnectRequest, &'static str
     if request.method != Some("CONNECT") {
         return Err("connect-required");
     }
+    if request.headers.iter().any(|header| {
+        header.name.eq_ignore_ascii_case("content-length")
+            || header.name.eq_ignore_ascii_case("transfer-encoding")
+    }) {
+        return Err("connect-content-not-allowed");
+    }
     let target = request.path.ok_or("missing-authority")?;
     if target.contains('@') {
         return Err("userinfo-not-allowed");
@@ -338,6 +344,22 @@ mod tests {
             assert_eq!(
                 parse_connect(request).unwrap_err(),
                 reason,
+                "unexpected result for {request:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_connect_message_framing_headers() {
+        for request in [
+            "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\nContent-Length: 0\r\n\r\n",
+            "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\nContent-Length: 1\r\n\r\nx",
+            "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
+            "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\nCoNtEnT-LeNgTh: 1\r\nTrAnSfEr-EnCoDiNg: chunked\r\n\r\n",
+        ] {
+            assert_eq!(
+                parse_connect(request.as_bytes()).unwrap_err(),
+                "connect-content-not-allowed",
                 "unexpected result for {request:?}"
             );
         }

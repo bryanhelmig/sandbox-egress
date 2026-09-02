@@ -5,6 +5,9 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Reject `Content-Length` and `Transfer-Encoding` on CONNECT requests before
+  policy or DNS, eliminating ambiguous HTTP message framing while retaining
+  ordinary coalesced tunnel bytes.
 - Reject every destination on the listener port when the proxy binds a
   wildcard address, preventing another local interface from becoming an
   unchecked nested-proxy path; concrete binds retain exact-address matching.

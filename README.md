@@ -184,8 +184,9 @@ The current vertical slice provides:
 - fail-fast global and per-lease connection admission reserved before work is
   spawned, plus optional token buckets for rapid connection-attempt churn,
   with refusals attributed to the contending lease;
-- bounded request headers, backpressure, and absolute accept-to-handshake and
-  DNS deadlines; waiting for DNS or dial capacity and writing the CONNECT
+- bounded request headers, rejection of CONNECT `Content-Length` and
+  `Transfer-Encoding` framing, backpressure, and absolute accept-to-handshake
+  and DNS deadlines; waiting for DNS or dial capacity and writing the CONNECT
   success response consume those deadlines;
 - opt-in, bounded TLS `ClientHello` parsing that requires visible SNI to equal
   the CONNECT hostname;

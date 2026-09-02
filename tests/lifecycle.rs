@@ -690,6 +690,20 @@ fn mismatched_host_header_is_denied_before_policy_and_dns() {
 }
 
 #[test]
+fn connect_message_framing_is_denied_before_policy_and_dns() {
+    for framing in ["Content-Length: 0", "Transfer-Encoding: chunked"] {
+        let request =
+            format!("CONNECT allowed.test:443 HTTP/1.1\r\nHost: allowed.test\r\n{framing}\r\n\r\n");
+        let response = header_denial(ProxyConfig::default(), request.as_bytes(), false);
+        assert!(response.starts_with("HTTP/1.1 400"), "{response}");
+        assert!(
+            response.contains("connect-content-not-allowed"),
+            "{response}"
+        );
+    }
+}
+
+#[test]
 fn early_header_eof_has_a_distinct_denial() {
     let response = header_denial(ProxyConfig::default(), b"CONNECT incomplete", true);
     assert!(response.starts_with("HTTP/1.1 400"), "{response}");
