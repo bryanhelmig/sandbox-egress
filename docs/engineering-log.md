@@ -5729,3 +5729,13 @@ The measured increase is one production branch plus its focused proof. The
 native factory and hostile suite pass all 201 deterministic cases and six
 doctests, along with Clippy, docs, benchmarks, package verification, and
 dependency policy.
+
+## 2026-09-02 — reject a denial-formatting simplification
+
+A follow-up performance cycle tried to construct the denial header and body in
+one `format!` allocation instead of building the short body first. The focused
+hostname-denial case and Clippy passed, but the same-target Criterion median
+moved from 67.401 to 80.976 microseconds, with a reported 16.5--28.2% slowdown.
+The source change was discarded. Response bytes, production complexity, and
+the data path remain unchanged; this negative result is retained so a future
+cleanup does not assume fewer visible allocations must be faster here.
