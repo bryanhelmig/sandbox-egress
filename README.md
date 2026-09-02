@@ -174,6 +174,8 @@ The current vertical slice provides:
   network grant; wildcard-bound proxies conservatively reject the listener
   port at every address, preventing another local interface from becoming a
   nested CONNECT path;
+- listener configuration limited to wildcard or unicast addresses, with an
+  explicit zone required for scoped IPv6;
 - sequential address failover with a fair share of the remaining absolute
   handshake budget per attempt, keeping one live dial per connection;
 - an independently bounded process-wide DNS concurrency budget;

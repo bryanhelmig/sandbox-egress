@@ -210,6 +210,11 @@ port and must also deny with zero connector calls. The matching unit matrix
 covers an IPv4-mapped spelling, IPv4 and dual-stack wildcard binds, both private
 and public candidate addresses, and the different-port boundary.
 
+Configuration tests keep wildcard and concrete unicast listener addresses
+valid while rejecting IPv4 and IPv6 multicast, IPv4 limited broadcast, and
+unscoped link-local IPv6. A scoped IPv6 bind carrying a zone remains valid at
+the representation layer; actual interface availability is left to the OS.
+
 Lease Drop is exercised while stack unwinding with a pending dial: cancellation
 must complete, the guest socket must become terminal, and the same identity
 must become attachable again after best-effort cleanup. Replacement attachment

@@ -6444,3 +6444,26 @@ The candidate is discarded. Acquire/AcqRel keeps the existing conservative
 counter synchronization story, and production source, behavior, and complexity
 remain unchanged. Future throughput claims need longer alternating trials on a
 quieter or isolated host rather than interpreting a single local pair.
+
+## 2026-09-02 — validate listener address semantics before binding
+
+The remote-service configuration audit exposed the inverse local case:
+`ProxyConfig` accepted multicast and IPv4 limited-broadcast listener addresses
+and deferred their meaning to platform-specific bind behavior. A red unit test
+first accepted `224.0.0.1:0`. These are not valid identities for the one shared
+TCP listener and should not look like supported configuration.
+
+Validation now accepts wildcard and concrete unicast binds, rejects IPv4 and
+IPv6 multicast plus IPv4 limited broadcast, and requires a zone identifier for
+scoped IPv6 unicast. Scoped binds with a zone pass representation validation;
+the OS still decides whether that interface exists. Port zero remains valid
+because it deliberately requests an assigned listener port.
+
+The focused matrix covers both accepted and rejected sides. This adds one
+startup-only predicate and no data-path work, dependency, public type, or
+runtime task.
+
+The full suite passes with 144 unit, 2 CLI, 17 concurrency, 32 lifecycle, 19
+tunnelling, and 6 documentation cases, followed by strict all-target Clippy.
+Whole-tree SCC 4.0.0 moves from 849/2,497 to 857/2,526, mostly in the two-sided
+configuration matrix.

@@ -199,6 +199,8 @@ shorthand, leading-zero dotted form, hexadecimal integer, and decimal integer.
 
 The listener's actual post-bind socket address, including its assigned port,
 is frozen into process configuration before any connection is dispatched. A
+configured listener must be wildcard or unicast; multicast and IPv4 limited
+broadcast are rejected, and scoped IPv6 requires a retained zone identifier. A
 matching literal or DNS result is rejected as `proxy-endpoint-denied` before an
 explicit network grant can apply. IPv4-mapped spellings are canonicalized. A
 wildcard listener cannot distinguish a remote address from another local

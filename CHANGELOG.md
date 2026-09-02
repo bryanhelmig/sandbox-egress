@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Reject multicast and limited-broadcast listener configuration, and require a
+  zone identifier for scoped IPv6 binds; wildcard listeners remain supported.
 - Document and test that hostname and port grants form independent dimensions;
   this release does not express host-specific port associations.
 - Require host-configured DNS servers and upstream proxies to be concrete

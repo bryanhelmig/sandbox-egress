@@ -37,6 +37,9 @@ pub struct ProxyConfig {
 
 impl ProxyConfig {
     pub(crate) fn validate(&self) -> Result<(), &'static str> {
+        if !is_bindable_listener(self.bind_address) {
+            return Err("listener must be a unicast or wildcard address with any required zone");
+        }
         if self.header_timeout.is_zero() {
             return Err("header timeout must be nonzero");
         }
@@ -101,7 +104,8 @@ impl ProxyConfig {
     /// A wildcard bind rejects every destination using its assigned listener
     /// port because the proxy cannot distinguish remote addresses from its
     /// other local interfaces. Bind a concrete guest-facing address when runs
-    /// must reach unrelated destinations on that port.
+    /// must reach unrelated destinations on that port. Startup rejects
+    /// multicast, limited broadcast, and scoped IPv6 without a zone.
     pub fn with_bind_address(mut self, address: SocketAddr) -> Self {
         self.bind_address = address;
         self
@@ -271,6 +275,16 @@ const fn is_concrete_unicast(address: SocketAddr) -> bool {
             !address.is_unspecified() && !address.is_multicast() && !address.is_broadcast()
         }
         IpAddr::V6(address) => !address.is_unspecified() && !address.is_multicast(),
+    }
+}
+
+const fn is_bindable_listener(address: SocketAddr) -> bool {
+    match address {
+        SocketAddr::V4(address) => !address.ip().is_multicast() && !address.ip().is_broadcast(),
+        SocketAddr::V6(address) => {
+            !address.ip().is_multicast()
+                && (!is_scoped_unicast(*address.ip()) || address.scope_id() != 0)
+        }
     }
 }
 
@@ -496,6 +510,45 @@ mod tests {
                     .is_err(),
                 "accepted upstream proxy {}",
                 address.ip()
+            );
+        }
+    }
+
+    #[test]
+    fn listener_requires_a_bindable_unicast_or_wildcard_address() {
+        for address in [
+            "224.0.0.1:0".parse().expect("multicast IPv4"),
+            "[ff02::1]:0".parse().expect("multicast IPv6"),
+            "255.255.255.255:0".parse().expect("broadcast IPv4"),
+            "[fe80::1]:0".parse().expect("unscoped link-local IPv6"),
+        ] {
+            assert!(
+                ProxyConfig::default()
+                    .with_bind_address(address)
+                    .validate()
+                    .is_err(),
+                "accepted listener {address}"
+            );
+        }
+
+        for address in [
+            "0.0.0.0:0".parse().expect("wildcard IPv4"),
+            "[::]:0".parse().expect("wildcard IPv6"),
+            "127.0.0.1:0".parse().expect("unicast IPv4"),
+            "[::1]:0".parse().expect("unicast IPv6"),
+            SocketAddr::V6(std::net::SocketAddrV6::new(
+                "fe80::1".parse().expect("link-local IPv6"),
+                0,
+                0,
+                7,
+            )),
+        ] {
+            assert!(
+                ProxyConfig::default()
+                    .with_bind_address(address)
+                    .validate()
+                    .is_ok(),
+                "rejected listener {address}"
             );
         }
     }
