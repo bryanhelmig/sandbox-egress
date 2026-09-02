@@ -28,9 +28,7 @@ impl PeerIdentity {
 
     pub(crate) const fn is_attachable(&self) -> bool {
         match self {
-            Self::SourceIp(IpAddr::V4(address)) => {
-                !address.is_unspecified() && !address.is_multicast() && !address.is_broadcast()
-            }
+            Self::SourceIp(IpAddr::V4(address)) => is_unicast_v4(*address),
             Self::SourceIp(IpAddr::V6(address)) => {
                 !address.is_unspecified() && !address.is_multicast() && !is_scoped_unicast(*address)
             }
@@ -40,6 +38,11 @@ impl PeerIdentity {
 
 pub(crate) const fn is_scoped_unicast(address: std::net::Ipv6Addr) -> bool {
     address.is_unicast_link_local() || address.segments()[0] & 0xffc0 == 0xfec0
+}
+
+pub(crate) const fn is_unicast_v4(address: std::net::Ipv4Addr) -> bool {
+    let first = address.octets()[0];
+    first != 0 && first < 224
 }
 
 /// The HTTP proxy endpoint to expose inside the guest.
@@ -102,5 +105,30 @@ mod tests {
             ))
             .is_attachable()
         );
+    }
+
+    #[test]
+    fn rejects_non_unicast_ipv4_source_classes() {
+        for address in [
+            "0.0.0.0",
+            "0.0.0.1",
+            "224.0.0.1",
+            "240.0.0.1",
+            "255.255.255.254",
+            "255.255.255.255",
+        ] {
+            assert!(
+                !PeerIdentity::SourceIp(IpAddr::V4(address.parse().expect("test IPv4")))
+                    .is_attachable(),
+                "accepted source identity {address}"
+            );
+        }
+        for address in ["10.0.0.1", "127.0.0.1", "169.254.1.1", "223.255.255.254"] {
+            assert!(
+                PeerIdentity::SourceIp(IpAddr::V4(address.parse().expect("test IPv4")))
+                    .is_attachable(),
+                "rejected source identity {address}"
+            );
+        }
     }
 }

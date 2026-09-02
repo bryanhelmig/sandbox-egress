@@ -343,12 +343,15 @@ fn impossible_source_identities_fail_before_consuming_a_lease_id() {
     let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
     for address in [
         IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 1)),
         IpAddr::V6(Ipv6Addr::UNSPECIFIED),
         IpAddr::V4(Ipv4Addr::new(224, 0, 0, 1)),
+        IpAddr::V4(Ipv4Addr::new(240, 0, 0, 1)),
         IpAddr::V6("ff02::1".parse().expect("IPv6 multicast")),
         IpAddr::V6("fe80::1".parse().expect("IPv6 link-local")),
         IpAddr::V6("fec0::1".parse().expect("IPv6 site-local")),
         IpAddr::V6(Ipv4Addr::new(224, 0, 0, 1).to_ipv6_mapped()),
+        IpAddr::V6(Ipv4Addr::new(240, 0, 0, 1).to_ipv6_mapped()),
         IpAddr::V4(Ipv4Addr::BROADCAST),
         IpAddr::V6(Ipv4Addr::BROADCAST.to_ipv6_mapped()),
     ] {

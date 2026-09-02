@@ -6,7 +6,7 @@ use ipnet::Ipv6Net;
 
 use crate::DiagnosticEvent;
 use crate::diagnostic::DiagnosticConfig;
-use crate::identity::is_scoped_unicast;
+use crate::identity::{is_scoped_unicast, is_unicast_v4};
 use crate::rate::RateLimit;
 
 pub(crate) const MAX_DNS_CACHE_ENTRIES: u64 = 64;
@@ -271,16 +271,14 @@ impl ProxyConfig {
 
 const fn is_concrete_unicast(address: SocketAddr) -> bool {
     match address.ip() {
-        IpAddr::V4(address) => {
-            !address.is_unspecified() && !address.is_multicast() && !address.is_broadcast()
-        }
+        IpAddr::V4(address) => is_unicast_v4(address),
         IpAddr::V6(address) => !address.is_unspecified() && !address.is_multicast(),
     }
 }
 
 const fn is_bindable_listener(address: SocketAddr) -> bool {
     match address {
-        SocketAddr::V4(address) => !address.ip().is_multicast() && !address.ip().is_broadcast(),
+        SocketAddr::V4(address) => address.ip().is_unspecified() || is_unicast_v4(*address.ip()),
         SocketAddr::V6(address) => {
             !address.ip().is_multicast()
                 && (!is_scoped_unicast(*address.ip()) || address.scope_id() != 0)
@@ -495,6 +493,8 @@ mod tests {
             "224.0.0.1:53".parse().expect("multicast IPv4"),
             "[ff02::1]:53".parse().expect("multicast IPv6"),
             "255.255.255.255:53".parse().expect("broadcast IPv4"),
+            "0.0.0.1:53".parse().expect("this-network IPv4"),
+            "240.0.0.1:53".parse().expect("reserved IPv4"),
         ] {
             assert!(
                 ProxyConfig::default()
@@ -520,6 +520,8 @@ mod tests {
             "224.0.0.1:0".parse().expect("multicast IPv4"),
             "[ff02::1]:0".parse().expect("multicast IPv6"),
             "255.255.255.255:0".parse().expect("broadcast IPv4"),
+            "0.0.0.1:0".parse().expect("this-network IPv4"),
+            "240.0.0.1:0".parse().expect("reserved IPv4"),
             "[fe80::1]:0".parse().expect("unscoped link-local IPv6"),
         ] {
             assert!(

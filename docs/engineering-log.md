@@ -6467,3 +6467,28 @@ The full suite passes with 144 unit, 2 CLI, 17 concurrency, 32 lifecycle, 19
 tunnelling, and 6 documentation cases, followed by strict all-target Clippy.
 Whole-tree SCC 4.0.0 moves from 849/2,497 to 857/2,526, mostly in the two-sided
 configuration matrix.
+
+## 2026-09-02 — use one IPv4 unicast boundary everywhere
+
+Reviewing the new concrete-endpoint predicate found that it still classified
+`0.0.0.1` and `240.0.0.1` as unicast. The first belongs to the IPv4
+this-network block and the second to the reserved high block; both already
+fall inside the destination-policy floor, but source identity and trusted
+configuration accepted them.
+
+One internal predicate now defines usable IPv4 unicast as first octet 1
+through 223. Source identities, remote service endpoints, and listener binds
+share it; listener wildcard `0.0.0.0` remains the one intentional exception.
+Private, loopback, link-local, and ordinary public unicast remain available
+because they are useful host-selected identities and service routes. IPv4-
+mapped IPv6 source identities are canonicalized before this same check.
+
+Unit matrices cover rejected this-network, multicast, reserved, and broadcast
+values plus accepted representatives. The public attachment proof adds native
+and mapped forms and still requires that all failures precede lease-sequence
+allocation. Focused identity, configuration, public-attachment, and strict
+Clippy checks pass.
+
+Sharing the predicate keeps whole-tree structural complexity at 857 and lowers
+the SCC 4.0.0 cognitive estimate from 2,526 to 2,518 despite the added boundary
+cases.

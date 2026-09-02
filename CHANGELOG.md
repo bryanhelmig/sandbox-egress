@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Reject the IPv4 this-network and reserved classes consistently as source
+  identities, listener binds, explicit resolvers, and upstream proxies.
 - Reject multicast and limited-broadcast listener configuration, and require a
   zone identifier for scoped IPv6 binds; wildcard listeners remain supported.
 - Document and test that hostname and port grants form independent dimensions;

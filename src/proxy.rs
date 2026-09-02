@@ -155,8 +155,8 @@ impl Proxy {
     ///
     /// # Errors
     ///
-    /// Returns [`AttachError::InvalidIdentity`] for an unspecified, multicast,
-    /// scoped IPv6 unicast, or limited-broadcast source address and
+    /// Returns [`AttachError::InvalidIdentity`] for a non-unicast IPv4,
+    /// unspecified or multicast IPv6, or scoped IPv6 unicast source address and
     /// [`AttachError::IdentityInUse`]
     /// until the previous lease has closed successfully or completed best-effort
     /// cleanup. It returns

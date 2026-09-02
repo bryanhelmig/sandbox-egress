@@ -259,9 +259,9 @@ Source-identity cases prove an IPv4 address and its mapped IPv6 transport
 spelling collide in the registry. A real dual-stack listener routes an IPv4
 client to that canonical lease, while the IPv6 CONNECT case uses an IPv6
 listener, IPv6 source identity, checked IPv6 destination, and IPv6 upstream.
-A public attachment matrix rejects IPv4 and IPv6 unspecified, multicast,
-scoped IPv6 link- and site-local unicast, limited-broadcast, mapped-multicast,
-and mapped-broadcast source
+A public attachment matrix rejects the IPv4 this-network, multicast, reserved,
+and limited-broadcast classes; IPv6 unspecified and multicast; scoped IPv6
+link- and site-local unicast; and mapped non-unicast IPv4 source
 identities before sequence allocation; the next valid attachment must still
 receive lease ID 1. A unit boundary pins both ends of IPv6 `fe80::/10` and
 deprecated `fec0::/10`, while keeping unique-local `fc00::/7` attachable.
