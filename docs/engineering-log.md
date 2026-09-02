@@ -5887,3 +5887,29 @@ The candidate also added 928 bytes to the stripped release executable. It was
 discarded because the end-to-end evidence does not justify another production
 dependency or artifact growth. The existing incremental scan, parser behavior,
 dependency graph, complexity, and deployment binary remain unchanged.
+
+## 2026-09-02 — use coverage to remove a dead parser decision
+
+The first instrumented deterministic suite established a 96.56% production
+line and 96.27% region baseline. Review followed uncovered security-relevant
+spans rather than the aggregate score. Focused cases now prove both clamps on
+the public ClientHello ceiling, DNS deadlines longer than the absolute
+handshake are rejected, incomplete CONNECT and non-HTTP/1 syntax fail closed,
+and numeric CONNECT authority cannot be paired with a hostname Host field.
+
+At the runtime boundary, a successful resolver result containing no addresses
+now has the same real-listener, zero-dial, exact-accounting proof as resolver
+I/O failure. A controlled header transport reset pins `header-read-failed`, and
+the buffered-upload seam proves an immediate upstream write error remains
+distinct while attempted bytes stay accounted. These are deterministic fixed
+cases; no randomized input generation was added.
+
+The HTTP/2 syntax case exposed an unreachable production branch. `httparse`
+rejects that version before it can return a complete request, so the later
+`unsupported-http-version` check could never execute. Removing it preserves the
+existing fail-closed `malformed-header` result and lowers `src/connect.rs` from
+44/108 to 43/106 structural/cognitive points. After replacing a test loop with
+a straight fixture helper, the whole Rust tree is 824/2,422 versus 824/2,421;
+all structural growth is avoided and the one cognitive point is test proof.
+The instrumented suite rises to 96.72% line and 96.39% region coverage, with
+`config.rs` and `connect.rs` at 100% line coverage.

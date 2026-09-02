@@ -71,7 +71,8 @@ spellings while an overlapping IPv6 catch-all grant is present.
 
 Header conformance distinguishes a byte-ceiling violation (`431
 header-too-large`), early EOF (`400 header-eof`), and the absolute slow-header
-deadline (`408 header-timeout`). A bounded async-stream test writes another
+deadline (`408 header-timeout`). A controlled transport reset remains the
+distinct `400 header-read-failed` result. A bounded async-stream test writes another
 byte every millisecond and proves that activity cannot turn the absolute
 deadline into an idle timeout; a separate real-listener test checks the exact
 408 wire response and final accounting. Each case must close with one denial
@@ -388,8 +389,10 @@ consumer remains.
 A pending resolver that exceeds its configured deadline must yield `504
 dns-timeout`, release its active work, and make zero connector calls. A
 resolver that returns an I/O error remains `502 dns-failed` and likewise never
-reaches the connector. These complement the separate `503 dns-capacity` proof
-for work that cannot acquire a resolver permit in time.
+reaches the connector. A successful lookup containing no addresses is the
+distinct `502 dns-empty` result and also makes zero connector calls. These
+complement the separate `503 dns-capacity` proof for work that cannot acquire a
+resolver permit in time.
 
 Resolver construction tests inspect Hickory's effective options and require
 the configured response-count ceiling plus the same maximum TTL for positive
@@ -587,7 +590,8 @@ timeout without relying on platform TCP buffer requests as proof of pressure.
 The uninspected path separately fills a bounded in-memory upstream to force
 backpressure before tunnelling. Its original absolute handshake deadline must
 cancel the buffered upload write and retain accounting for bytes already read
-from the guest.
+from the guest. Closing the peer instead proves an immediate upstream write
+failure has a distinct reason and retains the same attempted-byte accounting.
 
 `docker build -t sandbox-egress:dev .` runs the standard factory and a small
 Linux `/proc` resource smoke on the declared Rust 1.88 MSRV. Running the image

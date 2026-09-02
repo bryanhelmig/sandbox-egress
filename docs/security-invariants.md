@@ -130,9 +130,9 @@ cannot accidentally exercise weaker lookup semantics. A process-wide semaphore
 bounds lookups executing concurrently; waiting for a permit consumes the same
 DNS and absolute handshake deadlines. A cancelled or late resolver future
 cannot reach dialing because it lives inside the tracked connection future.
-Permit starvation, resolver failure, and deadline enforcement are distinct
-bounded denials: `503 dns-capacity`, `502 dns-failed`, and `504 dns-timeout`.
-None can start a dial.
+Permit starvation, resolver failure, an empty successful answer, and deadline
+enforcement are distinct bounded denials: `503 dns-capacity`, `502 dns-failed`,
+`502 dns-empty`, and `504 dns-timeout`. None can start a dial.
 
 Dropping a system lookup also closes Hickory's request completion channel. The
 resolver's background transport removes that active request rather than

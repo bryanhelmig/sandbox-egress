@@ -614,7 +614,15 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unrepresentable_handshake_deadline() {
+    fn rejects_invalid_handshake_deadlines() {
+        assert_eq!(
+            Policy::builder()
+                .dns_timeout(Duration::from_secs(2))
+                .handshake_timeout(Duration::from_secs(1))
+                .build()
+                .unwrap_err(),
+            PolicyError::DnsTimeoutExceedsHandshake
+        );
         assert_eq!(
             Policy::builder()
                 .dns_timeout(Duration::MAX)

@@ -2060,6 +2060,39 @@ mod tests {
         }
     }
 
+    fn assert_dns_terminal_denial(hostname: &str, resolver: Arc<dyn TestResolver>, reason: &str) {
+        let dial_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let connector = Arc::new(RejectingConnector(Arc::clone(&dial_attempts)));
+        let proxy = Proxy::start_with_test_backends(ProxyConfig::default(), resolver, connector)
+            .expect("start DNS terminal-result proxy");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                hostname_policy(hostname, 443),
+            )
+            .expect("attach DNS terminal-result lease");
+        let mut client =
+            std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+        std::io::Write::write_all(
+            &mut client,
+            format!("CONNECT {hostname}:443 HTTP/1.1\r\nHost: {hostname}\r\n\r\n").as_bytes(),
+        )
+        .expect("write CONNECT");
+
+        let mut response = String::new();
+        std::io::Read::read_to_string(&mut client, &mut response).expect("read DNS denial");
+        assert!(response.starts_with("HTTP/1.1 502"), "{response}");
+        assert!(response.contains(reason), "{response}");
+        assert_eq!(dial_attempts.load(Ordering::Acquire), 0);
+        assert_eq!(lease.usage().denied_connections, 1);
+        lease
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("close DNS terminal-result lease");
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
+    }
+
     struct ActiveDial(Arc<std::sync::atomic::AtomicUsize>);
 
     impl Drop for ActiveDial {
@@ -2559,41 +2592,13 @@ mod tests {
     }
 
     #[test]
-    fn dns_resolver_failure_remains_distinct_and_never_dials() {
-        let dial_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let connector = Arc::new(RejectingConnector(Arc::clone(&dial_attempts)));
-        let proxy = Proxy::start_with_test_backends(
-            ProxyConfig::default(),
-            Arc::new(FailingResolver),
-            connector,
-        )
-        .expect("start DNS failure proxy");
-        let lease = proxy
-            .attach(
-                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
-                hostname_policy("failed.test", 443),
-            )
-            .expect("attach DNS failure lease");
-        let mut client =
-            std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
-        std::io::Write::write_all(
-            &mut client,
-            b"CONNECT failed.test:443 HTTP/1.1\r\nHost: failed.test\r\n\r\n",
-        )
-        .expect("write CONNECT");
-
-        let mut response = String::new();
-        std::io::Read::read_to_string(&mut client, &mut response).expect("read DNS failure denial");
-        assert!(response.starts_with("HTTP/1.1 502"), "{response}");
-        assert!(response.contains("dns-failed"), "{response}");
-        assert_eq!(dial_attempts.load(Ordering::Acquire), 0);
-        assert_eq!(lease.usage().denied_connections, 1);
-        lease
-            .close(Instant::now() + Duration::from_secs(1))
-            .expect("close DNS failure lease");
-        proxy
-            .shutdown(Instant::now() + Duration::from_secs(1))
-            .expect("proxy shutdown");
+    fn dns_terminal_results_remain_distinct_and_never_dial() {
+        assert_dns_terminal_denial("failed.test", Arc::new(FailingResolver), "dns-failed");
+        assert_dns_terminal_denial(
+            "empty.test",
+            Arc::new(FixedAnswerResolver(Vec::new())),
+            "dns-empty",
+        );
     }
 
     #[test]
@@ -3752,6 +3757,18 @@ mod tests {
 
             assert_eq!(result, Err("initial-upload-timeout"));
             assert_eq!(state.counters.snapshot().uploaded_bytes, 21);
+
+            let (mut failed_upstream, failed_peer) = tokio::io::duplex(1);
+            drop(failed_peer);
+            let result = forward_uninspected_upload(
+                &mut failed_upstream,
+                &state,
+                b"x",
+                TokioInstant::now() + Duration::from_secs(1),
+            )
+            .await;
+            assert_eq!(result, Err("upstream-write-failed"));
+            assert_eq!(state.counters.snapshot().uploaded_bytes, 22);
         });
     }
 
@@ -3973,6 +3990,27 @@ mod tests {
             drop(reader);
             writer.await.expect("join trickle writer");
         });
+    }
+
+    #[test]
+    fn header_transport_failure_has_a_distinct_denial() {
+        let runtime = RuntimeBuilder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("test runtime");
+        let mut reader = BoundaryReader {
+            step: 0,
+            extra_before_error: false,
+        };
+        let Err(denial) = runtime.block_on(read_connect_header(
+            &mut reader,
+            4_096,
+            TokioInstant::now() + Duration::from_secs(1),
+        )) else {
+            panic!("transport failure must be denied");
+        };
+        assert_eq!(denial.status, 400);
+        assert_eq!(denial.reason, "header-read-failed");
     }
 
     #[test]

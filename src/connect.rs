@@ -76,9 +76,6 @@ pub(crate) fn parse_connect(bytes: &[u8]) -> Result<ConnectRequest, &'static str
     if request.method != Some("CONNECT") {
         return Err("connect-required");
     }
-    if !matches!(request.version, Some(0 | 1)) {
-        return Err("unsupported-http-version");
-    }
     let target = request.path.ok_or("missing-authority")?;
     if target.contains('@') {
         return Err("userinfo-not-allowed");
@@ -203,6 +200,10 @@ mod tests {
                 "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:8443\r\n\r\n",
                 "host-header-mismatch",
             ),
+            (
+                "CONNECT 127.0.0.1:443 HTTP/1.1\r\nHost: localhost\r\n\r\n",
+                "host-header-mismatch",
+            ),
         ] {
             assert_eq!(
                 parse_connect(request.as_bytes()).unwrap_err(),
@@ -225,10 +226,18 @@ mod tests {
     }
 
     #[test]
-    fn rejects_plain_http() {
+    fn rejects_incomplete_plain_and_non_http1_requests() {
         assert_eq!(
             parse_connect(b"GET http://example.com/ HTTP/1.1\r\n\r\n").unwrap_err(),
             "connect-required"
+        );
+        assert_eq!(
+            parse_connect(b"CONNECT example.com:443 HTTP/1.1\r\n").unwrap_err(),
+            "incomplete-header"
+        );
+        assert_eq!(
+            parse_connect(b"CONNECT example.com:443 HTTP/2.0\r\n\r\n").unwrap_err(),
+            "malformed-header"
         );
     }
 

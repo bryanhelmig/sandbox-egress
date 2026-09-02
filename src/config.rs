@@ -308,7 +308,7 @@ mod tests {
     }
 
     #[test]
-    fn resolved_address_ceiling_stays_bounded() {
+    fn parser_and_resolver_ceilings_stay_bounded() {
         assert_eq!(
             ProxyConfig::default()
                 .with_max_resolved_addresses(0)
@@ -320,6 +320,18 @@ mod tests {
                 .with_max_resolved_addresses(usize::MAX)
                 .max_resolved_addresses,
             1_024
+        );
+        assert_eq!(
+            ProxyConfig::default()
+                .with_max_client_hello_bytes(0)
+                .max_client_hello_bytes,
+            1_024
+        );
+        assert_eq!(
+            ProxyConfig::default()
+                .with_max_client_hello_bytes(usize::MAX)
+                .max_client_hello_bytes,
+            1024 * 1024
         );
     }
 
