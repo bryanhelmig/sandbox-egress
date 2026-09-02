@@ -34,6 +34,12 @@ must deny those paths and prevent guest DNS from becoming an alternate egress
 channel. The normative integration checklist is in
 [`deployment-contract.md`](deployment-contract.md).
 
+Lease identity is not destination isolation. When a trusted policy explicitly
+grants private address space, it must still deny tenant and host-control
+subnets, and the host boundary must independently block east-west paths. A
+broad private grant must not turn the root-side proxy into a route from one
+sandbox to another.
+
 TCP contains no run-generation field. Therefore a shared listener cannot, by
 itself, distinguish a deliberately delayed SYN from an old run after the same
 source address is reassigned. The implementation keeps the identity revoking

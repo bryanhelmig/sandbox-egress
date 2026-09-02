@@ -133,6 +133,18 @@ they do not make conntrack or ephemeral ports infinite. Capacity planning must
 measure the host kernel, choose per-run/fleet ceilings below its safe operating
 range, and verify recovery after a run ends.
 
+## East-west isolation is a separate boundary
+
+Source identity selects one lease; it does not make other sandbox addresses
+unreachable from the proxy process. The default policy floor rejects private
+destinations, but an explicit network grant can deliberately override that
+floor. If a run needs selected private services, pair the narrow grant with
+explicit denials for every tenant, slot, and host-control subnet; policy
+denials take priority over grants. Keep a host firewall drop between sandbox
+networks as the independent enforcement layer, because inherited sockets or a
+direct path would bypass the library entirely. Readiness and reuse checks
+should probe neighboring slot addresses as well as metadata and host services.
+
 ## Kernel evidence
 
 On Linux, wrap a deterministic load or soak command with:

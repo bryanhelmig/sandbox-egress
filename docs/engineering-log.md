@@ -5813,3 +5813,11 @@ with no VMM, network-pool, or durable-store API.
 The public `SourceIp` rustdoc, README example, and security invariant now use
 the same listener-observed wording. This is documentation of the existing
 socket lookup behavior, not a public API or runtime change.
+
+The comparison also exposed an adjacent integration ambiguity. Selecting a
+lease by source IP does not prevent the root-side proxy from reaching another
+sandbox slot when a policy deliberately grants broad private address space.
+The host and security guides now say to retain an independent east-west
+firewall and layer higher-priority tenant/host subnet denials over narrow
+private-service grants. No destination rule was silently added to the crate;
+the supervisor remains responsible for naming its own tenant address pools.
