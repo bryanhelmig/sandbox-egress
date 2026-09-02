@@ -5872,3 +5872,18 @@ ID is `sha256:b0c73f7e4aad5755fe0687868d6d59793efd022221d76e831dd88c2b4e52f61a`
 and Docker reports 41,037,511 uncompressed bytes. Those identifiers certify
 this local build only; the durable claim is the reproducible command and
 passing rootless conformance behavior.
+
+## 2026-09-02 — reject an inconclusive header-scan dependency
+
+A performance cycle replaced the standard-library four-byte CONNECT terminator
+scan with `memchr` 2.8, already present in the development graph but new to the
+production graph. The first same-target Criterion comparison moved the hostile
+1 MiB near-terminator median from 637.54 to 626.56 microseconds. Later warmed
+runs did not separate consistently: the candidate ranged from 653.94 to
+1,846.5 microseconds while the detached baseline measured 681.98 and 693.98
+microseconds under the same changing machine load.
+
+The candidate also added 928 bytes to the stripped release executable. It was
+discarded because the end-to-end evidence does not justify another production
+dependency or artifact growth. The existing incremental scan, parser behavior,
+dependency graph, complexity, and deployment binary remain unchanged.
