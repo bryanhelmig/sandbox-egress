@@ -1558,10 +1558,7 @@ fn is_proxy_endpoint(address: SocketAddr, endpoint: SocketAddr) -> bool {
     }
     let address_ip = address.ip().to_canonical();
     let endpoint_ip = endpoint.ip().to_canonical();
-    address_ip == endpoint_ip
-        || endpoint_ip.is_unspecified()
-            && address_ip.is_loopback()
-            && (endpoint.is_ipv6() || address.is_ipv4())
+    address_ip == endpoint_ip || endpoint_ip.is_unspecified()
 }
 
 async fn deny(
@@ -3151,7 +3148,60 @@ mod tests {
     }
 
     #[test]
-    fn proxy_endpoint_matching_covers_transport_spellings_and_wildcard_loopback() {
+    fn wildcard_listener_rejects_every_same_port_destination_before_dial() {
+        let resolver = Arc::new(FixedAnswerResolver(vec![
+            "93.184.216.34".parse().expect("public test address"),
+        ]));
+        let dial_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let connector = Arc::new(RejectingConnector(Arc::clone(&dial_attempts)));
+        let proxy = Proxy::start_with_test_backends(
+            ProxyConfig::default().with_bind_address("[::]:0".parse().expect("wildcard bind")),
+            resolver,
+            connector,
+        )
+        .expect("start wildcard proxy");
+        let port = proxy.endpoint().socket_addr().port();
+        let policy = Policy::builder()
+            .allow_host("same-port.test")
+            .expect("valid hostname")
+            .allow_port(port)
+            .build()
+            .expect("valid policy");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                policy,
+            )
+            .expect("attach lease");
+        let mut client = std::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port))
+            .expect("connect wildcard listener");
+        std::io::Write::write_all(
+            &mut client,
+            format!("CONNECT same-port.test:{port} HTTP/1.1\r\nHost: same-port.test\r\n\r\n")
+                .as_bytes(),
+        )
+        .expect("write same-port CONNECT");
+        let mut response = String::new();
+        std::io::Read::read_to_string(&mut client, &mut response)
+            .expect("read wildcard endpoint denial");
+
+        assert!(response.starts_with("HTTP/1.1 403"), "{response}");
+        assert!(response.contains("proxy-endpoint-denied"), "{response}");
+        assert_eq!(dial_attempts.load(Ordering::Acquire), 0);
+        let usage = lease
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("close lease")
+            .usage();
+        assert_eq!(usage.accepted_connections, 1);
+        assert_eq!(usage.denied_connections, 1);
+        assert_eq!(usage.active_connections, 0);
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
+    }
+
+    #[test]
+    fn proxy_endpoint_matching_covers_transport_spellings_and_wildcard_port() {
         let endpoint: SocketAddr = "127.0.0.1:4750".parse().expect("IPv4 endpoint");
         assert!(is_proxy_endpoint(endpoint, endpoint));
         assert!(is_proxy_endpoint(
@@ -3166,9 +3216,15 @@ mod tests {
             "127.0.0.1:4750".parse().expect("IPv4 loopback"),
             "0.0.0.0:4750".parse().expect("IPv4 wildcard"),
         ));
-        assert!(!is_proxy_endpoint(
+        assert!(is_proxy_endpoint(
             "93.184.216.34:4750".parse().expect("remote endpoint"),
             "[::]:4750".parse().expect("dual-stack wildcard"),
+        ));
+        assert!(is_proxy_endpoint(
+            "10.0.0.8:4750"
+                .parse()
+                .expect("private interface candidate"),
+            "0.0.0.0:4750".parse().expect("IPv4 wildcard"),
         ));
         assert!(!is_proxy_endpoint(
             "127.0.0.1:4751".parse().expect("different port"),

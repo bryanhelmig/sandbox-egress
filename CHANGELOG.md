@@ -5,6 +5,9 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Reject every destination on the listener port when the proxy binds a
+  wildcard address, preventing another local interface from becoming an
+  unchecked nested-proxy path; concrete binds retain exact-address matching.
 - Keep usage snapshots, diagnostic events, and TLS/ECH policy modes extensible
   without requiring avoidable downstream SemVer breaks.
 - Make an already-expired close deadline begin revocation before returning the

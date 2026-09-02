@@ -193,14 +193,14 @@ shorthand, leading-zero dotted form, hexadecimal integer, and decimal integer.
 The listener's actual post-bind socket address, including its assigned port,
 is frozen into process configuration before any connection is dispatched. A
 matching literal or DNS result is rejected as `proxy-endpoint-denied` before an
-explicit network grant can apply. IPv4-mapped spellings are canonicalized; a
-wildcard listener also rejects same-family loopback, and a dual-stack IPv6
-wildcard rejects both loopback families. This prevents a guest from nesting
-CONNECT requests through the shared listener to multiply lease admissions.
-The guard does not enumerate every host interface. A deployment that binds a
-wildcard or exposes the listener through another local address must keep that
-alias unreachable to proxy-originated dials with its host cage, or bind the
-proxy to the concrete guest-facing address.
+explicit network grant can apply. IPv4-mapped spellings are canonicalized. A
+wildcard listener cannot distinguish a remote address from another local
+interface without enumerating mutable host state, so it rejects every
+destination on its assigned listener port. This prevents a guest from nesting
+CONNECT requests through the shared listener or crossing into a lease selected
+by the proxy process's own source address. A deployment that needs an unrelated
+destination on the same port must bind the proxy to one concrete guest-facing
+address.
 
 An immutable policy may explicitly deny destination CIDRs. Denial is checked
 before both an explicit network grant and the ordinary public-address behavior,

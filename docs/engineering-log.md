@@ -6019,3 +6019,28 @@ fine-grained high-concurrency comparisons.
 Both candidate implementations were discarded. The proxy retains Tokio's
 maintained copier and its 16 KiB aggregate buffer cost per established tunnel,
 with no new configuration surface, branch, or dependency.
+
+## 2026-09-02 — close wildcard-listener aliases by port
+
+The Lens review advanced to `9f04f2e`. Its new multi-listener work treats the
+set of addresses reaching each proxy lane as an authority boundary and rejects
+unspecified extra addresses. That sharpened a documented Sandbox Egress
+residual: the self-endpoint guard recognized a wildcard listener's loopback
+aliases but allowed other addresses on the same port. If an explicit network
+grant covered another local interface, a guest could open a nested proxy path;
+the proxy process's source address could then select a different lease.
+
+A failing unit matrix first required both an ordinary public address and a
+private-interface candidate to match a wildcard listener's port. The retained
+rule is intentionally fail-closed: an unspecified bind rejects every
+destination on its assigned port. A concrete bind still rejects only its exact
+canonical endpoint. The compatibility cost is therefore limited to wildcard
+deployments that need an unrelated destination on the listener port; those
+callers can bind one concrete guest-facing address.
+
+A real dual-stack-listener case resolves an allowed hostname to an otherwise
+ordinary public address on the assigned port. It receives the stable
+`proxy-endpoint-denied` response, records one accepted and one denied
+connection, closes with zero active work, and makes zero connector calls. The
+literal and DNS paths continue to share one pre-dial helper. Production logic
+loses three conditions and adds no dependency or host-state snapshot.

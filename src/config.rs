@@ -78,6 +78,10 @@ impl ProxyConfig {
     }
 
     /// Set the listener address. Port zero asks the operating system to choose.
+    /// A wildcard bind rejects every destination using its assigned listener
+    /// port because the proxy cannot distinguish remote addresses from its
+    /// other local interfaces. Bind a concrete guest-facing address when runs
+    /// must reach unrelated destinations on that port.
     pub fn with_bind_address(mut self, address: SocketAddr) -> Self {
         self.bind_address = address;
         self

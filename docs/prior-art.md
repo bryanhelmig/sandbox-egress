@@ -6,7 +6,7 @@ links remain upstream-owned and are not vendored.
 | Project | Reviewed commit | What to learn | Gap this crate targets |
 | --- | --- | --- | --- |
 | [Stripe Smokescreen](https://github.com/stripe/smokescreen) | `d4da883a` | ACL and IP filtering, operational limits, diagnostics | Go daemon; no run lease |
-| [lens-sandbox-core](https://github.com/lensapp/lens-sandbox-core) | `2bc4ecc5` | broad Rust DNS/proxy/TLS/policy implementation and Linux cage boundary | shared mutable policy and detached connection lifecycle |
+| [lens-sandbox-core](https://github.com/lensapp/lens-sandbox-core) | `9f04f2e` | broad Rust DNS/proxy/TLS/policy implementation and Linux cage boundary | shared mutable policy and detached connection lifecycle |
 | [nono](https://github.com/nolabs-ai/nono) | `d3c6f6b0` | supervisor-side proxy, credential boundary, bounded-consumer operational lessons | guest session token and accept-loop shutdown, not certified close |
 | [motosan-sandbox](https://github.com/motosan-dev/motosan-sandbox) | `13eab245` | small per-run CONNECT proxy and hard routing | one proxy per run; spawned tunnels are not a shared lease |
 | [ressrf](https://github.com/timescale/ressrf) | `52fc89cf` | generated forbidden ranges, DNS-pinned transports, adversarial parser cases | policy/transport components rather than lease ownership |
@@ -258,14 +258,21 @@ the address floor before the approved numeric address is dialed.
 ## Self-connection comparison
 
 Smokescreen enumerates local interfaces at startup and rejects a destination
-whose address is local and whose port is the proxy listener. This closes a
+whose address is local and whose port is the proxy listener. Lens's later
+multi-listener work likewise rejects wildcard extra addresses and names which
+listener lanes may receive each address; its review treats listening reach as
+an authority property rather than a bind convenience. These close a
 recursive-proxy shape that the ordinary private-address floor cannot cover
-after a trusted policy explicitly grants a local network. Sandbox Egress adopts
-the invariant at its narrower library boundary: it freezes the actual
-post-bind listener address and rejects matching literal and DNS destinations
-before policy grants or dialing. It does not add an interface-enumeration
-dependency; wildcard and translated-address deployments must bind a concrete
-guest-facing address or enforce other local aliases in the host cage.
+after a trusted policy explicitly grants a local network.
+
+Sandbox Egress avoids importing a mutable interface-enumeration dependency. A
+concrete bind rejects its exact post-bind endpoint. A wildcard bind instead
+rejects every destination on the assigned listener port, because the library
+cannot distinguish a remote address from another local interface using its
+frozen configuration alone. This is deliberately conservative: callers that
+need an unrelated destination on that port must bind one concrete guest-facing
+address. Literal and DNS paths share the same check before policy grants or
+dialing.
 
 ## Upstream-proxy comparison
 

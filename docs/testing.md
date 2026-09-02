@@ -197,9 +197,10 @@ Two self-connection cases explicitly grant the listener's loopback network and
 assigned port. A literal real-listener request must still receive
 `proxy-endpoint-denied` with exact final accounting. A controlled hostname
 answer for the same listener must receive that denial with zero connector
-calls. A matching unit matrix covers an IPv4-mapped spelling, IPv4 wildcard
-loopback, dual-stack wildcard loopback, remote-address exclusion, and the port
-boundary.
+calls. A wildcard-listener case returns an ordinary public answer on the same
+port and must also deny with zero connector calls. The matching unit matrix
+covers an IPv4-mapped spelling, IPv4 and dual-stack wildcard binds, both private
+and public candidate addresses, and the different-port boundary.
 
 Lease Drop is exercised while stack unwinding with a pending dial: cancellation
 must complete, the guest socket must become terminal, and the same identity
