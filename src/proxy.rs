@@ -1494,7 +1494,7 @@ async fn resolve_addresses(
     handshake_deadline: TokioInstant,
 ) -> Result<Vec<SocketAddr>, Denial> {
     if let Ok(ip) = request.host.parse::<IpAddr>() {
-        let address = SocketAddr::new(ip, request.port);
+        let address = SocketAddr::new(ip.to_canonical(), request.port);
         if is_proxy_endpoint(address, config.bind_address) {
             return Err(Denial::PROXY_ENDPOINT_DENIED);
         }
@@ -1538,7 +1538,7 @@ async fn resolve_addresses(
     let mut seen = HashSet::with_capacity(addresses.len());
     let mut approved = Vec::with_capacity(addresses.len());
     for ip in addresses {
-        let address = SocketAddr::new(ip, request.port);
+        let address = SocketAddr::new(ip.to_canonical(), request.port);
         if is_proxy_endpoint(address, config.bind_address) {
             return Err(Denial::PROXY_ENDPOINT_DENIED);
         }
@@ -3422,6 +3422,53 @@ mod tests {
         std::io::Write::write_all(
             &mut client,
             b"CONNECT duplicate-answer.test:443 HTTP/1.1\r\nHost: duplicate-answer.test\r\n\r\n",
+        )
+        .expect("write CONNECT");
+        let mut response = String::new();
+        std::io::Read::read_to_string(&mut client, &mut response).expect("read dial denial");
+        assert!(response.contains("dial-failed"), "{response}");
+        assert_eq!(dial_attempts.load(Ordering::Acquire), 1);
+
+        lease
+            .close(Instant::now() + Duration::from_secs(1))
+            .expect("close lease");
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("proxy shutdown");
+    }
+
+    #[test]
+    fn equivalent_dns_address_spellings_produce_one_dial_attempt() {
+        let ipv4 = std::net::Ipv4Addr::LOCALHOST;
+        let mapped = IpAddr::V6(ipv4.to_ipv6_mapped());
+        let resolver = Arc::new(FixedAnswerResolver(vec![IpAddr::V4(ipv4), mapped]));
+        let dial_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let connector = Arc::new(RejectingConnector(Arc::clone(&dial_attempts)));
+        let proxy = Proxy::start_with_test_backends(ProxyConfig::default(), resolver, connector)
+            .expect("start proxy");
+        let policy = Policy::builder()
+            .allow_host("equivalent-answer.test")
+            .expect("valid hostname")
+            .allow_network("127.0.0.0/8".parse().expect("valid IPv4 loopback grant"))
+            .allow_network(
+                "::ffff:127.0.0.1/128"
+                    .parse()
+                    .expect("valid mapped loopback grant"),
+            )
+            .allow_port(443)
+            .build()
+            .expect("valid policy");
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                policy,
+            )
+            .expect("attach lease");
+        let mut client =
+            std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
+        std::io::Write::write_all(
+            &mut client,
+            b"CONNECT equivalent-answer.test:443 HTTP/1.1\r\nHost: equivalent-answer.test\r\n\r\n",
         )
         .expect("write CONNECT");
         let mut response = String::new();

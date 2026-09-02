@@ -407,6 +407,12 @@ answer: the first policy explicitly grants loopback and reaches the connector,
 while the replacement policy does not and must deny without another connector
 call.
 
+An address-equivalence case grants both IPv4 loopback and its IPv4-mapped IPv6
+form, then returns both for one hostname. Policy sees each original form, but
+the connector must receive only one dial attempt. This prevents equivalent
+resolver spellings from amplifying fallback dials without weakening exact
+policy evaluation.
+
 A fixed local UDP DNS server exercises the actual Hickory wire path without
 using the public network. With zero cache capacity, two identical lookups must
 produce two upstream queries. With an enabled cache and a one-second maximum

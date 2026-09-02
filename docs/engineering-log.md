@@ -5965,3 +5965,21 @@ stateful UDP transaction handling plus length-prefixed TCP fallback, while
 vendoring would fork a maintained security parser. The backlog now prefers an
 upstream decoder capacity limit or supported response ceiling and preserves
 the fixed-wire case as a regression sentinel.
+
+## 2026-09-02 — canonicalize approved transport destinations
+
+Destination policy and proxy self-address checks already understood
+IPv4-mapped IPv6, but DNS deduplication and the connector still used the
+original `SocketAddr`. A resolver answer containing both `127.0.0.1` and
+`::ffff:127.0.0.1` therefore produced two fallback attempts to the same
+effective endpoint when policy explicitly granted both forms. A new test first
+failed with both connector calls.
+
+The retained path evaluates policy against each original address, then
+canonicalizes the approved socket destination before deduplication and dialing.
+The test now observes one connector call for the two DNS answers. The same
+post-policy normalization is applied to an authorized mapped literal. No new
+production branch or dependency is added; the connection attempt bound becomes
+a bound on distinct effective socket destinations rather than wire spellings.
+After simplifying the proof onto the existing counting connector, the whole
+Rust tree remains 824/2,422 structural/cognitive points.

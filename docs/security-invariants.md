@@ -170,10 +170,13 @@ concurrency bounds simultaneous exposure, and a fixed inflated-count reply is
 kept as a fail-closed regression case, but no byte-aware decoder bound is
 claimed.
 
-Every address is policy-checked before the answer can reach the dialer. After
-that full-set validation, duplicate approved socket addresses are collapsed in
-first-seen order. Repeated records therefore consume one bounded answer slot
-each but cannot amplify sequential connection attempts.
+Every address is policy-checked in its original returned form before the answer
+can reach the dialer. After approval, IPv4-mapped IPv6 is canonicalized to its
+effective IPv4 socket address and duplicate destinations are collapsed in
+first-seen order. Repeated records and equivalent transport spellings therefore
+consume bounded answer slots but cannot amplify sequential connection attempts.
+The same post-policy canonicalization applies to an explicitly authorized IP
+literal.
 
 A hostname grant authorizes the canonical requested name and then subjects
 every answer to the destination floor. It does not authorize an equivalent
