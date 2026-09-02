@@ -1080,25 +1080,27 @@ async fn serve_connect(
     config: &ProxyConfig,
     accepted_at: TokioInstant,
 ) -> io::Result<ConnectionDisposition> {
-    let Some((handshake_deadline, header_deadline)) = connection_deadlines(
+    let Some((deadline, header_deadline)) = connection_deadlines(
         accepted_at,
         state.policy.handshake_timeout,
         config.header_timeout,
     ) else {
-        return deny(&mut client, state, 500, "invalid-handshake-deadline").await;
+        return reject_without_response(&mut client, state, "invalid-handshake-deadline").await;
     };
     let header =
         match read_connect_header(&mut client, config.max_header_bytes, header_deadline).await {
             Ok(header) => header,
-            Err(denial) => return deny(&mut client, state, denial.status, denial.reason).await,
+            Err(denial) => return deny(&mut client, state, denial, deadline).await,
         };
 
     let request = match parse_connect(&header.bytes[..header.end]) {
         Ok(request) => request,
-        Err(reason) => return deny(&mut client, state, 400, reason).await,
+        Err(reason) => {
+            return deny(&mut client, state, Denial::new(400, reason), deadline).await;
+        }
     };
     if !state.policy.allows_port(request.port) {
-        return deny(&mut client, state, 403, "port-denied").await;
+        return deny(&mut client, state, Denial::PORT_DENIED, deadline).await;
     }
     let buffered_upload = header.bytes.len() - header.end;
     if state
@@ -1107,7 +1109,7 @@ async fn serve_connect(
         .is_some_and(|limit| buffered_upload as u64 > limit)
     {
         state.counters.record_upload(buffered_upload as u64);
-        return deny(&mut client, state, 413, "upload-limit").await;
+        return deny(&mut client, state, Denial::UPLOAD_LIMIT, deadline).await;
     }
 
     let addresses = match resolve_addresses(
@@ -1116,12 +1118,12 @@ async fn serve_connect(
         resolver,
         &phase_permits.dns,
         config,
-        handshake_deadline,
+        deadline,
     )
     .await
     {
         Ok(addresses) => addresses,
-        Err(denial) => return deny(&mut client, state, denial.status, denial.reason).await,
+        Err(denial) => return deny(&mut client, state, denial, deadline).await,
     };
 
     let upstream = match dial_with_budget(
@@ -1129,27 +1131,19 @@ async fn serve_connect(
         connector,
         &phase_permits.dial,
         &state.cancel,
-        handshake_deadline,
+        deadline,
     )
     .await
     {
         Ok(upstream) => upstream,
-        Err(denial) => return deny(&mut client, state, denial.status, denial.reason).await,
+        Err(denial) => return deny(&mut client, state, denial, deadline).await,
     };
     let Some(upstream) = upstream else {
-        return deny(&mut client, state, 502, connector.failure_reason()).await;
+        let denial = Denial::new(502, connector.failure_reason());
+        return deny(&mut client, state, denial, deadline).await;
     };
 
-    establish_tunnel(
-        client,
-        upstream,
-        state,
-        &request,
-        header,
-        config,
-        handshake_deadline,
-    )
-    .await
+    establish_tunnel(client, upstream, state, &request, header, config, deadline).await
 }
 
 async fn establish_tunnel<U>(
@@ -1165,7 +1159,7 @@ where
     U: AsyncRead + AsyncWrite + Unpin,
 {
     if !write_connect_success(&mut client, handshake_deadline).await? {
-        return reject_tunnel(&mut client, state, "connect-response-timeout").await;
+        return reject_without_response(&mut client, state, "connect-response-timeout").await;
     }
     let buffered_upload = match state.policy.tls_authority {
         TlsAuthority::Disabled => match forward_uninspected_upload(
@@ -1177,7 +1171,7 @@ where
         .await
         {
             Ok(bytes) => bytes,
-            Err(reason) => return reject_tunnel(&mut client, state, reason).await,
+            Err(reason) => return reject_without_response(&mut client, state, reason).await,
         },
         TlsAuthority::RequireVisibleSni { ech } => {
             let inspection_and_forward = async {
@@ -1199,8 +1193,13 @@ where
             };
             match complete_before_deadline(handshake_deadline, inspection_and_forward).await {
                 Some(Ok(bytes)) => bytes,
-                Some(Err(reason)) => return reject_tunnel(&mut client, state, reason).await,
-                None => return reject_tunnel(&mut client, state, "client-hello-timeout").await,
+                Some(Err(reason)) => {
+                    return reject_without_response(&mut client, state, reason).await;
+                }
+                None => {
+                    return reject_without_response(&mut client, state, "client-hello-timeout")
+                        .await;
+                }
             }
         }
     };
@@ -1373,6 +1372,17 @@ where
     }
 }
 
+fn try_write_response_before_deadline(
+    response: &[u8],
+    deadline: TokioInstant,
+    write: impl FnOnce(&[u8]) -> io::Result<usize>,
+) {
+    if TokioInstant::now() >= deadline {
+        return;
+    }
+    let _ = write(response);
+}
+
 async fn inspect_tls_tunnel(
     client: &mut TcpStream,
     state: &LeaseState,
@@ -1420,7 +1430,7 @@ async fn inspect_tls_tunnel(
     Ok(hello.wire_bytes)
 }
 
-async fn reject_tunnel(
+async fn reject_without_response(
     client: &mut TcpStream,
     state: &LeaseState,
     reason: &'static str,
@@ -1446,12 +1456,14 @@ impl Denial {
     const HOST_DENIED: Self = Self::new(403, "host-denied");
     const INVALID_HOSTNAME: Self = Self::new(400, "invalid-hostname");
     const IP_LITERAL_DENIED: Self = Self::new(403, "ip-literal-denied");
+    const PORT_DENIED: Self = Self::new(403, "port-denied");
     const PROXY_ENDPOINT_DENIED: Self = Self::new(403, "proxy-endpoint-denied");
     const RESOLVED_ADDRESS_DENIED: Self = Self::new(403, "resolved-address-denied");
     const HEADER_EOF: Self = Self::new(400, "header-eof");
     const HEADER_READ_FAILED: Self = Self::new(400, "header-read-failed");
     const HEADER_TIMEOUT: Self = Self::new(408, "header-timeout");
     const HEADER_TOO_LARGE: Self = Self::new(431, "header-too-large");
+    const UPLOAD_LIMIT: Self = Self::new(413, "upload-limit");
 
     const fn new(status: u16, reason: &'static str) -> Self {
         Self { status, reason }
@@ -1561,16 +1573,19 @@ fn is_proxy_endpoint(address: SocketAddr, endpoint: SocketAddr) -> bool {
 async fn deny(
     client: &mut TcpStream,
     state: &LeaseState,
-    status: u16,
-    reason: &'static str,
+    denial: Denial,
+    handshake_deadline: TokioInstant,
 ) -> io::Result<ConnectionDisposition> {
+    let Denial { status, reason } = denial;
     state.record_denial(reason);
     let body = format!("sandbox-egress denied: {reason}\n");
     let response = format!(
         "HTTP/1.1 {status} Denied\r\ncontent-type: text/plain\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
         body.len()
     );
-    let _ = client.write_all(response.as_bytes()).await;
+    try_write_response_before_deadline(response.as_bytes(), handshake_deadline, |response| {
+        client.try_write(response)
+    });
     let _ = client.shutdown().await;
     Ok(ConnectionDisposition::Denied)
 }
@@ -3708,8 +3723,10 @@ mod tests {
 
         let mut response = String::new();
         std::io::Read::read_to_string(&mut client, &mut response).expect("read dial denial");
-        assert!(response.starts_with("HTTP/1.1 502"), "{response}");
-        assert!(response.contains("dial-failed"), "{response}");
+        assert!(
+            response.is_empty(),
+            "expired denial wrote bytes: {response}"
+        );
         assert_eq!(active.load(Ordering::Acquire), 0);
         assert_eq!(lease.usage().denied_connections, 1);
         lease
@@ -3801,8 +3818,10 @@ mod tests {
                 .expect("read deadline denial");
 
             assert_eq!(disposition, ConnectionDisposition::Denied);
-            assert!(response.starts_with("HTTP/1.1 408"), "{response}");
-            assert!(response.contains("header-timeout"), "{response}");
+            assert!(
+                response.is_empty(),
+                "expired denial wrote bytes: {response}"
+            );
             assert_eq!(state.counters.snapshot().denied_connections, 1);
         });
     }

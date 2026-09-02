@@ -137,8 +137,10 @@ fn dial_permit_deadline_has_a_distinct_denial() {
     std::io::Read::read_to_string(&mut waiting_client, &mut response)
         .expect("read dial-capacity denial");
 
-    assert!(response.starts_with("HTTP/1.1 503"), "{response}");
-    assert!(response.contains("dial-capacity"), "{response}");
+    assert!(
+        response.is_empty(),
+        "expired denial wrote bytes: {response}"
+    );
     assert!(matches!(
         entered_rx.try_recv(),
         Err(mpsc::TryRecvError::Empty)

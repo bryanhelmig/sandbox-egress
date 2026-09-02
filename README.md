@@ -194,6 +194,8 @@ The current vertical slice provides:
   direction and disabled by default;
 - opt-in structured denial events with process-wide rate limiting and
   nonblocking bounded-channel delivery;
+- deadline-bounded CONNECT success and best-effort, nonblocking denial
+  responses, so an unread diagnostic cannot retain a run's connection;
 - explicit lease and proxy shutdown deadlines.
 
 The CONNECT request-target is the authority input. HTTP/1.1 requires exactly

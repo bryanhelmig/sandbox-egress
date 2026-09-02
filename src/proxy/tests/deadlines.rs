@@ -46,3 +46,28 @@ fn blocked_connect_response_write_stops_at_deadline() {
         );
     });
 }
+
+#[test]
+fn denial_response_write_is_one_shot_and_deadline_bounded() {
+    let mut observed = Vec::new();
+    try_write_response_before_deadline(
+        b"denied",
+        TokioInstant::now() + Duration::from_secs(1),
+        |response| {
+            observed.extend_from_slice(response);
+            Ok(response.len())
+        },
+    );
+    assert_eq!(observed, b"denied");
+
+    let mut called = false;
+    try_write_response_before_deadline(
+        b"too late",
+        TokioInstant::now() - Duration::from_millis(1),
+        |_| {
+            called = true;
+            Ok(8)
+        },
+    );
+    assert!(!called, "expired denial attempted a write");
+}

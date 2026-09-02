@@ -5700,3 +5700,32 @@ enabled-rate runs measured 17,182--21,482 connections/second with a 20,033
 median; five candidate runs measured 18,686--21,647 with a 19,558 median. The
 ranges overlap and the candidate median is 2.4% lower. The extra parameter was
 removed and no optimization claim is retained.
+
+## 2026-09-02 — keep denial delivery outside the backpressure boundary
+
+A correctness review found that the required CONNECT-success response obeyed
+the absolute handshake deadline, while pre-tunnel denial responses used an
+unbounded asynchronous write. The denial body is diagnostic rather than part
+of enforcement, so the retained design records the reason, makes at most one
+nonblocking response write if the original deadline is still live, and then
+shuts down the socket. Invalid deadline construction and tunnel-phase failures
+close without attempting another response. A focused unit seam proves both the
+one-shot live case and that expired work never invokes the write.
+
+The first candidate reused the CONNECT-success timeout wrapper for denial
+writes. It was correct but moved `connect_denied_hostname` from a detached
+`c92ba1b` point estimate of 75.581 microseconds to 82.090 microseconds, about
+9% slower, and was discarded. The retained nonblocking design measured 75.346
+microseconds against that first 75.581 baseline. A second alternating pair was
+72.211 versus 72.322 microseconds. These ranges do not support a performance
+change claim; they do show that the enforcement fix need not pay the rejected
+timer cost.
+
+Passing `Denial` as one value also keeps the connection dispatcher below the
+warning-denied function-length limit. Whole-tree Rust source moves from 14,079
+to 14,129 lines and from 823/2,419 to 824/2,421 structural/cognitive points;
+the `src` tree moves from 8,497 to 8,543 lines and from 544/1,687 to 545/1,689.
+The measured increase is one production branch plus its focused proof. The
+native factory and hostile suite pass all 201 deterministic cases and six
+doctests, along with Clippy, docs, benchmarks, package verification, and
+dependency policy.

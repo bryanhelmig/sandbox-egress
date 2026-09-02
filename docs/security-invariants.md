@@ -279,6 +279,15 @@ or being mislabeled as malformed syntax. Header terminator search scans only
 new bytes plus the three-byte boundary overlap, so raising the trusted byte
 ceiling does not give a guest quadratic parser work.
 
+Pre-tunnel denial responses are diagnostic, not an enforcement dependency.
+After recording the denial, the proxy makes at most one nonblocking socket
+write when the original handshake deadline has not expired, then shuts down
+the socket. A slow or unread guest can therefore receive no response or a
+strict prefix, but cannot keep lease-owned work alive through response
+backpressure. The required CONNECT-success response is different: it must be
+written completely before tunnelling and remains bounded by the same absolute
+handshake deadline.
+
 CONNECT authority parsing requires a nonzero decimal port. Square brackets are
 accepted only around a value that parses as IPv6; bracketed DNS names, IPv4,
 IPvFuture, and scoped-zone forms fail as `invalid-ipv6-literal` rather than
