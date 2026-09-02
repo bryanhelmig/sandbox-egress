@@ -5983,3 +5983,18 @@ production branch or dependency is added; the connection attempt bound becomes
 a bound on distinct effective socket destinations rather than wire spellings.
 After simplifying the proof onto the existing counting connector, the whole
 Rust tree remains 824/2,422 structural/cognitive points.
+
+## 2026-09-02 — reject linear resolved-address deduplication
+
+A simplification trial removed the temporary `HashSet` and checked the ordered
+approved-address `Vec` directly. This would save one small allocation for the
+common one- or two-answer lookup. Alternating hostname CONNECT medians were
+161.32 and 163.91 microseconds for the detached baseline versus 159.86 for the
+candidate, with overlapping intervals. No end-to-end improvement was measured.
+
+The process ceiling can deliberately be raised from 64 to 1,024 addresses.
+Linear deduplication would make a full unique answer perform roughly 523,776
+equality checks for every connection, while the existing hash set keeps
+expected work linear and the separate vector preserves resolver order. The
+candidate was discarded. Production source, complexity, and allocation shape
+remain unchanged.
