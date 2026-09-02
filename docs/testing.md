@@ -348,7 +348,10 @@ terminal, freeze exact zero-completion and zero-denial counters, and recover
 descriptors and threads.
 
 On Linux the collectors read `/proc`; on macOS they use `ps` and `lsof`; other
-targets compile and report unsupported counters as absent. Run
+targets compile and report unsupported counters as absent. The runner starts
+each lane in a fresh process so one lane's allocator high-water mark cannot be
+misattributed to the next, while keeping the lanes serial to avoid host
+contention. Run
 `./scripts/measure-resources.sh [lease-runs-per-batch]
 [lease-batches] [idle-connections] [TLS-connections]
 [terminal-runs-per-batch] [terminal-batches] [partial-header-connections]
@@ -360,6 +363,15 @@ adjustable with
 `SANDBOX_EGRESS_BACKPRESSURE_RUNS` and
 `SANDBOX_EGRESS_BACKPRESSURE_BATCHES`; the upstream-response lane uses
 `SANDBOX_EGRESS_UPSTREAM_CONNECTIONS`.
+
+The terminal-churn harness waits for each asserted protocol outcome and then
+uses abortive close on its own hostile-path client socket. Its completion and
+upload-limit fixtures send upstream EOF first and explicitly synchronize the
+completed half-close. Together these prevent a long measurement from
+exhausting macOS's ephemeral source ports on the deliberately repeated local
+tuples. This is measurement plumbing, not proxy behavior; ordinary graceful
+half-close and reset semantics remain covered separately in the tunnel
+conformance suite.
 
 The committed tunnel conformance lane currently checks graceful half-close in
 both directions, upstream reset classification, zero and exact download

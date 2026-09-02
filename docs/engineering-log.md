@@ -6059,3 +6059,50 @@ The stripped release executable changed from 2,884,456 to 2,884,432 bytes: a
 on incidental parser behavior behind a disabled feature. The candidate was
 discarded; the manifest continues to state the intended TLS-version support
 explicitly, with no source or lockfile change.
+
+## 2026-09-02 — remove two resource-harness measurement ceilings
+
+An extended resource run exposed two harness limits rather than a proxy leak.
+All eight ignored lanes previously shared one test process, so the 128 partial
+ClientHello cases raised the allocator RSS high-water mark inherited by every
+later lane. The same run completed 40,000 attach-and-certified-close cycles
+with stable descriptors and threads, but the terminal lane reached 4,000
+iterations before macOS returned `EADDRNOTAVAIL` while opening another local
+client. Four repeated guest sockets per iteration had exhausted ephemeral
+source ports for the same client-to-proxy tuple.
+
+The resource runner now invokes every named lane serially in a fresh process,
+making their RSS samples independent without adding host contention. The
+hostile-path clients also arm zero-duration linger. Each helper still waits for
+and asserts its upload-limit, upstream-reset, or policy-denial outcome before
+the socket is dropped; abortive drop merely releases that finished test tuple.
+
+The first corrected run passed 8,000 client-side cycles before a legitimate
+outbound dial returned `502`: the separate proxy-to-upstream tuple had now
+reached its own local source-port ceiling. An attempted single-listener fix
+rotated through `127/8` aliases, but macOS did not route the whole block to its
+loopback interface; that candidate was discarded.
+
+The actual cause was fixture close order. The completion client half-closed
+first, making the proxy's outbound socket the likely active closer. The
+retained fixture sends upstream EOF first, waits for the guest to observe it,
+then synchronizes the guest half-close back to the upstream. The upload-limit
+fixture likewise sends upstream EOF before receiving the limited body. A
+64-port trial passed 16,000 iterations, but the same run with one original
+listener also passed, so sharding was discarded.
+
+The final one-listener run completed 16,000 iterations of all four terminal
+shapes in 9.62 seconds. It held 14 descriptors and six threads through seven
+batches, reached 9,520 KiB RSS, then returned to nine descriptors and two
+threads after shutdown. Exact totals were 64,000 accepted connections, 16,000
+completions, 32,000 denials, 48,000 uploaded bytes, and 16,000 downloaded
+bytes. Graceful half-close remains independently specified by the tunnel
+conformance suite. Production code and socket behavior are unchanged.
+
+The complete fresh-process command then passed all eight lanes. In addition to
+the 16,000 terminal iterations, 40,000 distinct lease lifecycles held exactly
+13 descriptors and five threads while active and returned to nine/two;
+256 idle tunnels and 256 partial upstream responses each peaked at 1,038
+descriptors and recovered; and 128 live 60,020-byte partial ClientHellos peaked
+at 28,192 KiB RSS and 526 descriptors before certified close recovered to
+13 descriptors and five threads. Every process ended at nine/two.

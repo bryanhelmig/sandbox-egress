@@ -39,6 +39,9 @@ Changelog and versions follow Semantic Versioning.
 - Give management-only and real-socket resource lanes independent run counts
   so the default local measurement does not accidentally become a same-tuple
   ephemeral-port ceiling test.
+- Isolate every resource-soak lane in a fresh process, and let the terminal
+  harness recycle its asserted client tuples without exhausting macOS source
+  ports during extended runs.
 - Measure many simultaneous near-limit partial `ClientHello` buffers, then
   require certified-close cancellation, exact accounting, terminal sockets,
   and descriptor/thread recovery.

@@ -946,7 +946,7 @@ fn terminal_connection_churn_releases_process_resources() {
     assert!(completed_tunnels < 0x00ff_ffff);
 
     let process_start = Resources::sample();
-    let (port, reset_ready_rx, reset_release_tx, upstream) =
+    let (port, complete_done_rx, reset_ready_rx, reset_release_tx, upstream) =
         start_terminal_upstream(completed_tunnels);
     let proxy = Proxy::start(ProxyConfig::default()).expect("start proxy");
     let lease = proxy
@@ -979,7 +979,11 @@ fn terminal_connection_churn_releases_process_resources() {
 
     for batch in 0..batches {
         for _ in 0..runs_per_batch {
-            complete_soak_tunnel(lease.endpoint().socket_addr(), allowed_request.as_bytes());
+            complete_soak_tunnel(
+                lease.endpoint().socket_addr(),
+                allowed_request.as_bytes(),
+                &complete_done_rx,
+            );
             limit_soak_tunnel(lease.endpoint().socket_addr(), allowed_request.as_bytes());
             reset_soak_tunnel(
                 lease.endpoint().socket_addr(),
@@ -1046,11 +1050,13 @@ fn start_terminal_upstream(
 ) -> (
     u16,
     std::sync::mpsc::Receiver<()>,
+    std::sync::mpsc::Receiver<()>,
     std::sync::mpsc::SyncSender<()>,
     thread::JoinHandle<()>,
 ) {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind soak upstream");
     let port = listener.local_addr().expect("soak upstream address").port();
+    let (complete_done_tx, complete_done_rx) = std::sync::mpsc::sync_channel(1);
     let (reset_ready_tx, reset_ready_rx) = std::sync::mpsc::sync_channel(1);
     let (reset_release_tx, reset_release_rx) = std::sync::mpsc::sync_channel(1);
     let upstream = thread::spawn(move || {
@@ -1059,9 +1065,21 @@ fn start_terminal_upstream(
             let mut marker = [0_u8; 1];
             stream.read_exact(&mut marker).expect("read soak marker");
             stream.write_all(&marker).expect("echo soak marker");
+            stream
+                .shutdown(Shutdown::Write)
+                .expect("finish soak download");
+            let mut trailing = Vec::new();
+            stream
+                .read_to_end(&mut trailing)
+                .expect("read completed upload EOF");
+            assert!(trailing.is_empty());
+            complete_done_tx.send(()).expect("report completed EOF");
             drop(stream);
 
             let (mut stream, _) = listener.accept().expect("accept limited tunnel");
+            stream
+                .shutdown(Shutdown::Write)
+                .expect("finish limited download");
             let mut limited = Vec::new();
             stream
                 .read_to_end(&mut limited)
@@ -1078,22 +1096,34 @@ fn start_terminal_upstream(
             drop(stream);
         }
     });
-    (port, reset_ready_rx, reset_release_tx, upstream)
+    (
+        port,
+        complete_done_rx,
+        reset_ready_rx,
+        reset_release_tx,
+        upstream,
+    )
 }
 
-fn complete_soak_tunnel(endpoint: std::net::SocketAddr, request: &[u8]) {
+fn complete_soak_tunnel(
+    endpoint: std::net::SocketAddr,
+    request: &[u8],
+    done: &std::sync::mpsc::Receiver<()>,
+) {
     let mut client = open_soak_tunnel(endpoint, request);
     client.write_all(b"x").expect("write soak marker");
-    client
-        .shutdown(Shutdown::Write)
-        .expect("finish soak upload");
     let mut echoed = Vec::new();
     client.read_to_end(&mut echoed).expect("read soak echo");
     assert_eq!(echoed, b"x");
+    client
+        .shutdown(Shutdown::Write)
+        .expect("finish soak upload");
+    done.recv().expect("upstream observed completed EOF");
 }
 
 fn limit_soak_tunnel(endpoint: std::net::SocketAddr, request: &[u8]) {
     let mut client = open_soak_tunnel(endpoint, request);
+    arm_abortive_drop(&client);
     client.write_all(b"xy").expect("write limited marker");
     client
         .shutdown(Shutdown::Write)
@@ -1110,6 +1140,7 @@ fn reset_soak_tunnel(
     release: &std::sync::mpsc::SyncSender<()>,
 ) {
     let mut client = open_soak_tunnel(endpoint, request);
+    arm_abortive_drop(&client);
     ready.recv().expect("observe reset accept");
     release.send(()).expect("release upstream reset");
     client
@@ -1142,6 +1173,7 @@ fn open_soak_tunnel(endpoint: std::net::SocketAddr, request: &[u8]) -> TcpStream
 
 fn deny_soak_tunnel(endpoint: std::net::SocketAddr, request: &[u8]) {
     let mut client = TcpStream::connect(endpoint).expect("connect denial proxy");
+    arm_abortive_drop(&client);
     client.write_all(request).expect("write denied CONNECT");
     let mut response = String::new();
     client
@@ -1149,6 +1181,16 @@ fn deny_soak_tunnel(endpoint: std::net::SocketAddr, request: &[u8]) {
         .expect("read soak denial");
     assert!(response.starts_with("HTTP/1.1 403"), "{response}");
     assert!(response.contains("host-denied"), "{response}");
+}
+
+fn arm_abortive_drop(stream: &TcpStream) {
+    // The terminal-churn lane waits for each asserted protocol outcome before
+    // dropping the client. Avoid retaining thousands of identical local test
+    // tuples in TIME_WAIT after that point; graceful half-close is exercised
+    // independently by the committed tunnel conformance suite.
+    SockRef::from(stream)
+        .set_linger(Some(Duration::ZERO))
+        .expect("arm soak client tuple release");
 }
 
 fn wait_for_no_active_connections(lease: &sandbox_egress::Lease) {
