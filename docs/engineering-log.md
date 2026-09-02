@@ -6514,3 +6514,29 @@ asserted gates.
 No resource-control code changed as a result. This checkpoint confirms that
 the configuration and identity hardening did not perturb the owned-runtime or
 certified-close resource boundary.
+
+## 2026-09-02 — join the owned runtime on failed startup
+
+Smokescreen's recent default-timeout fix did not transfer: Sandbox Egress has
+one `Default` path, setters preserve unrelated fields, and zero deadlines fail
+validation. Its interface-enumeration self-connection change was likewise
+already represented by the crate's frozen concrete/wildcard endpoint rule.
+
+The review instead found an ownership gap in `Proxy::start`. After spawning the
+runtime, an initialization error arrived through the ready channel and the `?`
+path dropped its `JoinHandle`. Rust safely detaches that thread, but the method
+could return while runtime-owned resolver and listener state were still being
+dropped. Tight repeated failed starts therefore had no synchronous resource-
+cleanup boundary.
+
+A red deterministic test installs a runtime-owned resolver whose destructor
+waits 100 milliseconds, then triggers the post-bind recursive-proxy error. It
+proved `Proxy::start` returned before the resolver disappeared. Startup now
+matches the ready result explicitly and joins the runtime on both a reported
+initialization error and ready-channel disconnection. Successful startup keeps
+the same handle in `Proxy`.
+
+The drop-probe proof, four listener lifecycle cases, and strict all-target
+Clippy pass. Whole-tree SCC 4.0.0 moves from 857/2,518 to 858/2,517: the explicit
+ownership match adds one structural point while simplifying the measured
+decision shape overall.

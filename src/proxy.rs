@@ -104,10 +104,17 @@ impl Proxy {
             })
             .map_err(|error| ProxyError::Initialization(error.to_string()))?;
 
-        let endpoint = ready_rx
-            .recv()
-            .map_err(|_| ProxyError::RuntimeStopped)?
-            .map_err(ProxyError::Initialization)?;
+        let endpoint = match ready_rx.recv() {
+            Ok(Ok(endpoint)) => endpoint,
+            Ok(Err(reason)) => {
+                let _ = thread.join();
+                return Err(ProxyError::Initialization(reason));
+            }
+            Err(_) => {
+                let _ = thread.join();
+                return Err(ProxyError::RuntimeStopped);
+            }
+        };
         Ok(Self {
             endpoint,
             commands,
@@ -1818,6 +1825,15 @@ mod tests {
 
     struct FixedAnswerResolver(Vec<IpAddr>);
 
+    struct StartupDropProbe(Arc<std::sync::atomic::AtomicBool>);
+
+    impl Drop for StartupDropProbe {
+        fn drop(&mut self) {
+            std::thread::sleep(Duration::from_millis(100));
+            self.0.store(true, Ordering::Release);
+        }
+    }
+
     struct FailingResolver;
 
     struct CapturingResolver(mpsc::Sender<String>);
@@ -2040,6 +2056,15 @@ mod tests {
             _hostname: &'a str,
         ) -> Pin<Box<dyn Future<Output = io::Result<Vec<IpAddr>>> + Send + 'a>> {
             Box::pin(async move { Ok(self.0.clone()) })
+        }
+    }
+
+    impl TestResolver for StartupDropProbe {
+        fn lookup<'a>(
+            &'a self,
+            _hostname: &'a str,
+        ) -> Pin<Box<dyn Future<Output = io::Result<Vec<IpAddr>>> + Send + 'a>> {
+            Box::pin(async { Ok(Vec::new()) })
         }
     }
 
@@ -3244,6 +3269,28 @@ mod tests {
             "127.0.0.1:4751".parse().expect("different port"),
             endpoint,
         ));
+    }
+
+    #[test]
+    fn failed_startup_joins_the_owned_runtime_thread() {
+        let reservation = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .expect("reserve listener");
+        let address = reservation.local_addr().expect("reserved address");
+        drop(reservation);
+        let dropped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let result = Proxy::start_with_test_resolver(
+            ProxyConfig::default()
+                .with_bind_address(address)
+                .with_upstream_proxy(address),
+            Arc::new(StartupDropProbe(Arc::clone(&dropped))),
+        );
+
+        assert!(result.is_err(), "self-referencing startup succeeded");
+        assert!(
+            dropped.load(Ordering::Acquire),
+            "startup returned before its runtime-owned resolver was dropped"
+        );
     }
 
     #[test]

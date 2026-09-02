@@ -21,6 +21,9 @@ synchronous caller
 
 `Proxy` owns the runtime thread. `Proxy::attach` is a synchronous command that
 atomically installs an immutable `Policy` for an unused `PeerIdentity`.
+`Proxy::start` does not detach that ownership on failure: if the spawned
+runtime reports a resolver, bind, or post-bind validation error, the caller
+gets the error only after the runtime thread has exited and been joined.
 Policy construction canonicalizes, sorts, and deduplicates its owned rules.
 Frozen ports are a contiguous sorted vector with binary-search lookup; the
 runtime never retains builder-only tree nodes or mutable rule indexes.

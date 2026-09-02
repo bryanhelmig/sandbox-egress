@@ -245,6 +245,11 @@ still destroy the dial; best-effort proxy drop must join the owned runtime in
 the test boundary, and lease drop must release the final strong lease-state
 reference.
 
+A startup drop probe deliberately spends 100 milliseconds releasing a
+runtime-owned test resolver after a post-bind self-reference error. The
+synchronous `Proxy::start` failure may return only after that probe is dropped,
+proving the failed initialization path joins rather than detaches its thread.
+
 The Docker factory is multi-stage. Rust 1.88 first warms every locked build and
 test dependency, then performs the complete check and resource lane with Cargo
 offline. A checked collector reads Cargo's JSON artifact records, requires

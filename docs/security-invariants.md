@@ -79,6 +79,11 @@ that already-certified final snapshot locally. Send or reply disconnection is
 rechecked against closed state, but a deadline timeout still retains ownership;
 the shutdown race cannot silently turn uncommitted cleanup into success.
 
+Failed startup also remains an ownership boundary. Once the runtime thread is
+spawned, a resolver, bind, or post-bind validation error is returned only after
+that thread is joined; repeated failed starts cannot intentionally detach
+still-dropping runtime resources behind an error value.
+
 Once proxy-wide shutdown begins, the ordinary listener branch is disabled and
 every new attachment returns `ProxyStopping`. A drain barrier may accept a
 queued socket only to refuse it under revocation. A deadline failure returns
