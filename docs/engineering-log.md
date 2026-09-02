@@ -6223,3 +6223,18 @@ plus bytes still unread from the transport.
 The test uses no timers, network, or generated input and adds no production
 branch or dependency. Strict all-target Clippy passes. Whole-tree complexity
 moves from 827/2,427 to 830/2,436, entirely in the test fixture and assertions.
+
+## 2026-09-02 — store policy in its shared lease state
+
+An ownership audit found every `Policy` wrapped in an `Arc` inside an already
+reference-counted `LeaseState`. No code cloned or retained the inner owner:
+connection tasks retain the state, and the state owns exactly one immutable
+policy for its lifetime. The redundant `Arc` was replaced with the value.
+
+This removes one allocation and one reference-count header per attachment,
+keeps the policy adjacent to the rest of its lease state, and changes no public
+API or lifecycle synchronization. All 138 library tests pass. Three fresh
+candidate lifecycle intervals of 1.3801--1.4144 ms overlap three baseline
+intervals of 1.3443--1.4063 ms, so the change carries no latency claim. It is
+retained for the simpler ownership graph and mechanically lower allocation
+count. Whole-tree structural and cognitive complexity remain 830/2,436.

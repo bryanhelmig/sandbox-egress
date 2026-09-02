@@ -7,6 +7,8 @@ Changelog and versions follow Semantic Versioning.
 
 - Reconstruct CONNECT headers and coalesced tunnel bytes identically at every
   possible transport split, including splits inside the final terminator.
+- Store each immutable policy directly in its already shared lease state,
+  removing a redundant allocation and reference-counted ownership layer.
 - Keep an idle-timeout task cancellable when a long-lived immutable policy's
   once-representable duration no longer fits a later activity timestamp,
   instead of panicking on delayed clock arithmetic.

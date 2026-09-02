@@ -406,7 +406,7 @@ enum Phase {
 struct LeaseState {
     id: u64,
     identity: PeerIdentity,
-    policy: Arc<Policy>,
+    policy: Policy,
     phase: Mutex<Phase>,
     cancel: CancellationToken,
     tracker: TaskTracker,
@@ -428,7 +428,7 @@ impl LeaseState {
         Self {
             id,
             identity,
-            policy: Arc::new(policy),
+            policy,
             phase: Mutex::new(Phase::Open),
             cancel: CancellationToken::new(),
             tracker: TaskTracker::new(),

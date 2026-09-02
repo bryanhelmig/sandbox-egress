@@ -41,6 +41,29 @@ lease. It includes management-channel round trips and the default 25 ms
 identity-reuse quiet period is disabled by the benchmark. It does not measure
 CONNECT parsing, DNS, dialing, tunnel throughput, or resource ceilings.
 
+## Direct lease-policy ownership
+
+Recorded 2026-09-02 on the same Apple M1 with Rust 1.97.1. `LeaseState` is
+already the shared owner captured by each admitted task. Its immutable policy
+had no independent owner, so storing that policy behind a second `Arc` added
+one allocation and reference-count header to every attachment without adding
+a lifetime boundary.
+
+Three baseline and three candidate Criterion processes measured the complete
+synchronous attach and certified-close path:
+
+```text
+command: cargo bench --locked --bench lifecycle -- \
+         attach_close_empty_lease --noplot
+baseline intervals:  1.3443 .. 1.4063 ms
+candidate intervals: 1.3801 .. 1.4144 ms
+```
+
+The intervals overlap and Criterion did not consistently detect a change, so
+no lifecycle-latency improvement is claimed. The retained result is one known
+heap allocation removed per lease, direct immutable ownership, and no new
+branch or public API.
+
 ## Initial identity-churn resource baseline
 
 Recorded 2026-08-31 on the same Apple M1 with the proxy alive throughout:
