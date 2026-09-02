@@ -6558,3 +6558,17 @@ terminal connection churn does not accidentally multiply runtime creation.
 This adds no production path. It promotes cleanup after initialization failure
 from a one-shot semantic proof to the same reproducible process-resource
 factory used for successful proxy and lease lifecycles.
+
+## 2026-09-02 — reject upstream CONNECT response framing trial discarded
+
+A candidate reused the guest CONNECT framing check to reject
+`Content-Length` or `Transfer-Encoding` on a successful response from an
+operator-configured upstream proxy. The parser test was red before the change
+and green after it, but protocol comparison invalidated the premise.
+
+RFC 9110 Section 9.3.6 says the server must not emit either field on a 2xx
+CONNECT response, but also says the client must ignore either field when it is
+received. Rejecting the response would therefore turn a harmless upstream
+server defect into an availability failure and make this CONNECT client less
+conformant. The candidate and its test were removed. Existing behavior ignores
+the fields and treats bytes after the response header as tunnel bytes.
