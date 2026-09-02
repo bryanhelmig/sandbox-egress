@@ -13,6 +13,9 @@ Public APIs need rustdoc examples and documented errors. New dependencies need
 a short rationale in the change description and must pass the license/advisory
 checks when those tools are installed.
 
+`./scripts/measure-coverage.sh` is an optional review tool for changes around
+security or lifecycle boundaries. Inspect the uncovered code; do not optimize
+for the aggregate percentage.
+
 Bug reports involving a possible bypass should follow `SECURITY.md`, not a
 public issue.
-

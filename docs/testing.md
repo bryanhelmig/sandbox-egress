@@ -593,6 +593,20 @@ cancel the buffered upload write and retain accounting for bytes already read
 from the guest. Closing the peer instead proves an immediate upstream write
 failure has a distinct reason and retains the same attempted-byte accounting.
 
+## Coverage review
+
+`./scripts/measure-coverage.sh` runs the full deterministic suite under LLVM
+source coverage. It requires the exact `cargo-llvm-cov` version printed by the
+script plus the Rust `llvm-tools-preview` component. Keeping it outside
+`check.sh` avoids making instrumentation overhead part of the ordinary edit
+loop.
+
+Coverage is a map for review rather than a pass/fail percentage. Uncovered
+parser, resolver, accounting, cancellation, and shutdown spans deserve
+inspection; platform errors and defensive fallbacks may remain impractical to
+force deterministically. Tests added solely to move the total are not evidence
+of a stronger boundary.
+
 `docker build -t sandbox-egress:dev .` runs the standard factory and a small
 Linux `/proc` resource smoke on the declared Rust 1.88 MSRV. Running the image
 executes the serialized hostile conformance lane, including the thin wrapper's

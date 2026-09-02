@@ -340,6 +340,7 @@ scripts:
 ./scripts/bench.sh              Criterion performance baseline
 ./scripts/measure-resources.sh  lease, control, idle, TLS, pressure, terminal soak
 ./scripts/measure-complexity.sh source size and complexity trend report
+./scripts/measure-coverage.sh   optional uncovered-code review report
 ./scripts/measure-load.sh       concurrent CONNECT capacity and tail latency
 ./scripts/measure-load-sweep.sh repeated concurrency scaling sweep
 ./scripts/measure-throughput.sh concurrent upload/download tunnel throughput
@@ -353,6 +354,11 @@ The factory and tests never use the public network. The IANA drift command is
 an explicit maintainer research step: it downloads the two authoritative CSVs
 and fails when either differs from the last reviewed SHA-256 pin. A changed pin
 requires a policy review; the script never rewrites the deny table.
+
+Coverage is a review aid, not a release threshold. The optional command pins
+its instrumenter version and is most useful for finding unexamined lifecycle
+and denial paths; a higher aggregate percentage alone does not justify adding
+tests or production branches.
 
 To reproduce the MSRV factory in a clean Linux environment:
 

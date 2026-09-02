@@ -5913,3 +5913,15 @@ a straight fixture helper, the whole Rust tree is 824/2,422 versus 824/2,421;
 all structural growth is avoided and the one cognitive point is test proof.
 The instrumented suite rises to 96.72% line and 96.39% region coverage, with
 `config.rs` and `connect.rs` at 100% line coverage.
+
+## 2026-09-02 — make coverage review reproducible but optional
+
+The useful part of the coverage pass was the uncovered-code inventory, not the
+percentage. `scripts/measure-coverage.sh` now pins `cargo-llvm-cov` 0.9.0 and
+runs the deterministic workspace suite with locked dependencies. It remains
+outside the default factory and CI gates: instrumentation slows the ordinary
+loop, and a percentage threshold would reward low-value test growth or removal
+of legitimate defensive branches. Contributor guidance instead asks reviewers
+to inspect uncovered lifecycle, policy, parser, and cancellation paths. The
+first run of the committed command completed in 13 seconds and reported 96.74%
+line and 96.40% region coverage.
