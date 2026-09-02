@@ -5847,3 +5847,28 @@ claimed; socket and scheduling work dominate one port lookup. `src/policy.rs`
 keeps exactly 59/188 structural/cognitive points and adds four test-bearing
 lines. The retained gains are contiguous ownership, no per-port tree node, and
 a simpler immutable representation.
+
+## 2026-09-02 — certify the post-hardening Linux artifact
+
+A cold pinned Rust 1.88 Linux build passed the complete offline factory after
+the denial-lifetime and immutable-port changes. It ran 200 deterministic cases,
+six documentation examples, formatting, warning-denied Clippy and rustdoc,
+benchmark smoke, package assembly and verification, and all eight serialized
+release resource lanes. Dependency policy remained in its intentionally
+separate native/CI `cargo-deny` 0.20.2 lane; the container printed the expected
+skip instead of downloading or compiling that maintenance tool.
+
+Every Linux resource lane returned to four descriptors and two threads after
+its proxy process ended. The largest descriptor peak was 521 during the
+128-connection idle-expiry and partial-upstream-response lanes. The deliberate
+64-caller synchronous-management lane peaked at 69 threads and returned to five
+while its proxy remained live. The partial 60,020-byte ClientHello lane had the
+largest observed RSS at 15,212 KiB and returned from 265 descriptors to eight
+while the proxy remained live.
+
+The stripped final image then repeated all 200 deterministic cases as
+UID/GID 65534 without Cargo, a compiler, source, or build cache. Its local image
+ID is `sha256:b0c73f7e4aad5755fe0687868d6d59793efd022221d76e831dd88c2b4e52f61a`
+and Docker reports 41,037,511 uncompressed bytes. Those identifiers certify
+this local build only; the durable claim is the reproducible command and
+passing rootless conformance behavior.
