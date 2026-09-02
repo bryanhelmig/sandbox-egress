@@ -33,8 +33,10 @@ contributor instead of preserving solved work as apparent backlog.
   response are already pinned on the real wire path.
 - A byte-aware upstream DNS decoder/cache bound. Current defaults disable
   caching, cap opt-in storage at 64 responses, and limit 32 concurrent lookups,
-  but Hickory still allocates its decode vectors from wire section counts before
-  Sandbox Egress can enforce its returned-address ceiling.
+  but Hickory 0.26.1 and reviewed main `8c7b8780` still reserve decode vectors
+  from wire section counts before Sandbox Egress can enforce its
+  returned-address ceiling. Prefer an upstream capacity bound or supported
+  transport response ceiling over a crate-local UDP/TCP framing fork.
 
 ## TLS and application authority
 

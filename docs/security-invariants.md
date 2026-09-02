@@ -163,8 +163,12 @@ DNS address cardinality is process-configured and has a hard upper bound. The
 system resolver collects at most one entry beyond that ceiling, solely to
 detect overflow. An oversized answer is rejected as a whole before address
 policy or dialing; response ordering cannot select a truncated subset for the
-dialer. This bounds the proxy's collected address vector and dial attempts; the
-resolver still necessarily parses the DNS message it receives.
+dialer. This bounds the proxy's collected address vector and dial attempts, not
+the resolver decoder's temporary capacity: Hickory 0.26.1 reserves record
+vectors from wire section counts before parsing. Process-wide lookup
+concurrency bounds simultaneous exposure, and a fixed inflated-count reply is
+kept as a fail-closed regression case, but no byte-aware decoder bound is
+claimed.
 
 Every address is policy-checked before the answer can reach the dialer. After
 that full-set validation, duplicate approved socket addresses are collapsed in

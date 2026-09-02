@@ -25,6 +25,7 @@ links remain upstream-owned and are not vendored.
 | [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox) | `1eb8fffa` | deny-first subjects, generation-aware policy, atomic nft updates, restart cleanup | mutable transparent sidecar/control plane with different authority scope |
 | [mvm](https://github.com/tinylabscom/mvm) | `4ebd13d5` | mechanically enforced vsock-only single egress path and fresh restore endpoint | full signed-plan sandbox with no workload NIC, not source-IP CONNECT |
 | [PandaStack](https://github.com/pandastack-io/pandastack-ai) | `1147f535` | shared snapshot IP translation, authoritative slot ownership, destroy-first reuse, orphan reconciliation | sandbox platform whose network pool remains supervisor-owned |
+| [Hickory DNS](https://github.com/hickory-dns/hickory-dns) | `8c7b8780` (main), `0.26.1` (dependency) | maintained async resolver, system configuration, cache and transport behavior | decoded record vectors reserve from wire section counts before caller result limits |
 
 Also relevant: VEY for production daemon limits, metrics, ACLs, and per-user
 policy.
@@ -199,6 +200,37 @@ An earlier nono review advanced from `8f15fc86` to `7989b578`. That intervening
 change only expanded environment variables in credential local-socket paths;
 it did not alter the proxy or the comparison above. The later table pin
 `d3c6f6b0` is the revision used for the current accept-loop comparison.
+
+## Resolver decoder boundary
+
+Sandbox Egress uses Hickory 0.26.1 instead of implementing DNS parsing and
+transport. That release includes fixes for two 2026 security reports, including
+bounded name-compression work. The resolver gives this crate maintained system
+configuration, UDP-to-TCP fallback, caching, cancellation, and lookup APIs.
+The dependency choice is still a boundary to inspect rather than an assurance
+that every resource dimension is caller-configurable.
+
+At both release 0.26.1 and reviewed main commit `8c7b8780`, Hickory's
+[`Message::read_records`](https://github.com/hickory-dns/hickory-dns/blob/v0.26.1/crates/proto/src/op/message.rs#L422-L432)
+reserves each record vector from the untrusted 16-bit wire count before parsing
+records. Sandbox Egress's returned-address ceiling runs after that decode. The
+resolver has no supported response-byte or decode-allocation option; its EDNS
+payload setting describes queries and cannot bound TCP replies.
+
+A fixed local UDP reply with 65,535 advertised answers and no records remains
+fail-closed with zero dialing. Five fresh debug test processes completed in
+30--50 milliseconds and reported 12,337,152--12,386,304 bytes maximum RSS; an
+adjacent ordinary malformed reply reported 12,288,000 bytes. Those numbers do
+not establish dangerous RSS amplification, but they also do not certify a
+byte-aware decoder bound. The existing lookup semaphore limits simultaneous
+exposure to the host-configured maximum, 32 by default.
+
+A crate-local transport wrapper would need to implement both UDP transaction
+handling and length-prefixed TCP fallback before passing messages to Hickory.
+Vendoring the decoder would create a security-patch fork. Neither is retained
+for this measured residual. The backlog instead calls for an upstream decoder
+capacity bound or supported transport response ceiling, with the fixed-wire
+conformance case kept as a regression sentinel.
 
 ## Provider control-plane comparison
 

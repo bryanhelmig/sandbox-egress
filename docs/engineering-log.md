@@ -5942,3 +5942,26 @@ candidate. No latency improvement is claimed. Production complexity remains
 545/1,690 structural/cognitive points, while the stripped local release binary
 fell from 2,885,136 to 2,867,920 bytes. The change is retained as a lifetime and
 ownership simplification with fewer atomic operations, not a benchmark win.
+
+## 2026-09-02 — audit the maintained DNS decoder boundary
+
+Hickory 0.26.1 and current main `8c7b8780` were compared at the wire decoder.
+Both reserve query and record vectors directly from untrusted 16-bit section
+counts before parsing. Sandbox Egress's address-cardinality check necessarily
+runs later, and Hickory exposes query EDNS sizing but no response-byte or decode
+allocation ceiling. The existing inflated-count wire case proves fail-closed
+behavior and zero connector calls, not byte-aware decoding.
+
+Five fresh debug test processes handling the fixed 65,535-answer/no-record
+reply completed in 30--50 milliseconds and reported 12,337,152--12,386,304
+bytes maximum RSS. An adjacent ordinary malformed reply reported 12,288,000
+bytes. This does not demonstrate an immediate RSS problem; it precisely scopes
+the residual. Lookup concurrency is bounded at 32 by default, cache storage is
+disabled by default, and the returned-address and dial-attempt vectors remain
+bounded.
+
+No production wrapper was retained. Interposing before Hickory would require
+stateful UDP transaction handling plus length-prefixed TCP fallback, while
+vendoring would fork a maintained security parser. The backlog now prefers an
+upstream decoder capacity limit or supported response ceiling and preserves
+the fixed-wire case as a regression sentinel.
