@@ -5739,3 +5739,22 @@ moved from 67.401 to 80.976 microseconds, with a reported 16.5--28.2% slowdown.
 The source change was discarded. Response bytes, production complexity, and
 the data path remain unchanged; this negative result is retained so a future
 cleanup does not assume fewer visible allocations must be faster here.
+
+## 2026-09-02 — skip all expired diagnostic construction, then inline it
+
+The first bounded-denial implementation constructed its two small response
+strings before checking whether the handshake deadline had already expired.
+The retained version moves both allocation and the single nonblocking write
+behind that check; denial accounting still happens first and shutdown still
+happens afterward. The already-committed real-socket deadline cases prove zero
+wire bytes after expiry, while ordinary listener cases prove live diagnostic
+responses, so a synthetic closure-only unit case was removed.
+
+An initial helper for the synchronous check raised whole-tree SCC complexity
+from 824/2,421 to 827/2,427 despite reducing lines. Inlining its single branch
+restored 824/2,421 and reduced whole-tree Rust source from 14,129 to 14,093
+lines; `src` falls from 8,543 to 8,507 lines with its 545/1,689 complexity
+unchanged. Alternating baseline/candidate denial medians ranged
+67.029--76.222 and 74.571--77.222 microseconds respectively. The noisy ranges
+overlap, so no throughput change is claimed; the retained gain is less expired
+work and less source without additional measured decision complexity.

@@ -1372,17 +1372,6 @@ where
     }
 }
 
-fn try_write_response_before_deadline(
-    response: &[u8],
-    deadline: TokioInstant,
-    write: impl FnOnce(&[u8]) -> io::Result<usize>,
-) {
-    if TokioInstant::now() >= deadline {
-        return;
-    }
-    let _ = write(response);
-}
-
 async fn inspect_tls_tunnel(
     client: &mut TcpStream,
     state: &LeaseState,
@@ -1578,14 +1567,14 @@ async fn deny(
 ) -> io::Result<ConnectionDisposition> {
     let Denial { status, reason } = denial;
     state.record_denial(reason);
-    let body = format!("sandbox-egress denied: {reason}\n");
-    let response = format!(
-        "HTTP/1.1 {status} Denied\r\ncontent-type: text/plain\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-        body.len()
-    );
-    try_write_response_before_deadline(response.as_bytes(), handshake_deadline, |response| {
-        client.try_write(response)
-    });
+    if TokioInstant::now() < handshake_deadline {
+        let body = format!("sandbox-egress denied: {reason}\n");
+        let response = format!(
+            "HTTP/1.1 {status} Denied\r\ncontent-type: text/plain\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        let _ = client.try_write(response.as_bytes());
+    }
     let _ = client.shutdown().await;
     Ok(ConnectionDisposition::Denied)
 }

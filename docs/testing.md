@@ -530,10 +530,11 @@ must return at the handshake deadline with only a strict prefix observable.
 This pins the response write as part of the handshake rather than an unbounded
 gap between dialing and ClientHello or tunnel work.
 
-The denial-response seam separately proves one-shot delivery before the
-deadline and proves that an expired deadline does not invoke the write at all.
-Denial delivery is intentionally best-effort: accounting and socket shutdown
-do not wait for a guest to read the diagnostic body.
+Real-socket denial cases separately prove ordinary one-shot diagnostic
+delivery and zero response bytes once the absolute deadline expires. Denial
+delivery is intentionally best-effort: response construction and delivery are
+skipped after expiry, while accounting and socket shutdown do not wait for a
+guest to read the diagnostic body.
 
 The TLS conformance module uses Rustls to accept incrementally fragmented
 ClientHello records, plus a focused extension walk only after syntactic
