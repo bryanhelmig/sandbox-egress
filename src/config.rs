@@ -247,7 +247,7 @@ impl Default for ProxyConfig {
     fn default() -> Self {
         Self {
             bind_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
-            max_connections: 1_024,
+            max_connections: 256,
             connection_attempt_rate: None,
             max_concurrent_dns: 32,
             max_concurrent_dials: 256,
@@ -345,6 +345,11 @@ mod tests {
         assert_eq!(defaults.max_concurrent_dns, 32);
         assert_eq!(defaults.dns_cache_entries, 0);
         assert_eq!(defaults.dns_cache_max_ttl, Duration::ZERO);
+    }
+
+    #[test]
+    fn default_global_connection_capacity_is_conservative() {
+        assert_eq!(ProxyConfig::default().max_connections, 256);
     }
 
     #[test]

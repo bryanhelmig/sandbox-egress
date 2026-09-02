@@ -223,7 +223,7 @@ resolver backends, and configurable destination-range tables are also not yet
 implemented. These gaps are tracked rather than hidden.
 
 Global connection, resolver, and outbound-dial work are bounded independently.
-The defaults are 1,024 admitted connections, 32 concurrent DNS lookups, and
+The defaults are 256 admitted connections, 32 concurrent DNS lookups, and
 256 concurrent dials; a host can narrow or widen each ceiling before startup:
 
 ```rust,no_run

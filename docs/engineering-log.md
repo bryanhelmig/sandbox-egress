@@ -6305,3 +6305,27 @@ The candidate test and proposed overflow branch were discarded. Public input
 validation, the existing close deadline wrapper, and Tokio's cancellable wait
 already preserve fail-closed ownership, so another production condition or a
 test of unreachable dependency behavior would add no useful contract.
+
+## 2026-09-02 — narrow default global connection admission
+
+The capacity-default comparison found both Lens and nono independently use 256
+concurrent proxy connections, while Sandbox Egress allowed 1,024 process-wide
+by default. Smokescreen defaults its newer tunnel limiter to unlimited. The
+explicit bound here was already safer, but it was optimistic for an embeddable
+component: an established CONNECT normally owns a guest and upstream socket,
+and inspected handshakes also retain bounded parser state.
+
+The hostile resource curve measured 256 simultaneous 60,020-byte partial
+ClientHellos at roughly 47 MiB process RSS and 1,038 descriptors in the
+single-process fixture, which includes both proxy and test-peer socket ends.
+Extrapolating that fixture is not a production memory formula, but it makes the
+fourfold default exposure difficult to justify without deployment evidence.
+
+A red default-contract test first observed 1,024. The process-wide default is
+now 256; each policy remains 64, and `with_max_connections` still permits a
+trusted host to select a measured larger value. DNS and dial phase ceilings
+remain 32 and 256. This changes no admission algorithm, public type, or explicit
+configuration and adds no production branch.
+
+The full hostile conformance set passes, and whole-tree complexity moves from
+832/2,446 to 834/2,448 solely in the default-contract test.

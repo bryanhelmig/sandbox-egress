@@ -11,6 +11,8 @@ Changelog and versions follow Semantic Versioning.
   removing a redundant allocation and reference-counted ownership layer.
 - Reject scoped IPv6 link- and deprecated site-local source identities because
   `SourceIp(IpAddr)` cannot represent their zone and must not merge peers.
+- Lower default process-wide connection admission from 1,024 to 256, retaining
+  explicit host configuration for deployments with measured higher capacity.
 - Keep an idle-timeout task cancellable when a long-lived immutable policy's
   once-representable duration no longer fits a later activity timestamp,
   instead of panicking on delayed clock arithmetic.
