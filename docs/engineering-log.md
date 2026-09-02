@@ -6044,3 +6044,18 @@ ordinary public address on the assigned port. It receives the stable
 connection, closes with zero active work, and makes zero connector calls. The
 literal and DNS paths continue to share one pre-dial helper. Production logic
 loses three conditions and adds no dependency or host-state snapshot.
+
+## 2026-09-02 — retain explicit Rustls TLS 1.2 support
+
+The production dependency graph already disables Hickory and Rustls defaults
+and enables only the features used by the crate. A detached trial removed
+Rustls's `tls12` feature on the theory that the server `Acceptor` might retain
+enough syntax support for ClientHello-only inspection. All 20 focused TLS
+cases passed, including the fixed OpenSSL and Apple SecureTransport fixtures,
+fragmentation, ECH, cancellation, and constrained forwarding.
+
+The stripped release executable changed from 2,884,456 to 2,884,432 bytes: a
+24-byte reduction. That does not justify making TLS 1.2 compatibility depend
+on incidental parser behavior behind a disabled feature. The candidate was
+discarded; the manifest continues to state the intended TLS-version support
+explicitly, with no source or lockfile change.
