@@ -621,3 +621,25 @@ median and 13 microseconds higher at the p50 median in this noisy local
 workload. That is recorded as the current security-control cost, not a portable
 performance promise. The harness configures both scopes explicitly and the
 connection is still denied before task creation when either bucket is empty.
+
+## Post-hardening tunnel-throughput checkpoint
+
+Recorded 2026-09-02 on the same Apple M1 with Rust 1.97.1 after the denial
+response lifetime work. Eight concurrent loopback tunnels each transferred 256
+MiB, for 2 GiB of exact accounted payload per direction:
+
+```text
+command: ./scripts/measure-throughput.sh 256 8 both 0
+upload:   3,229.9 MiB/s, 634 ms
+download: 3,083.3 MiB/s, 664 ms
+
+command: ./scripts/measure-throughput.sh 256 8 both 1000
+upload:   3,257.5 MiB/s, 628 ms
+download: 3,346.4 MiB/s, 611 ms
+```
+
+Both modes completed with exact 2,147,483,648-byte directional counters. The
+idle-tracked runs happened to be faster in this single local checkpoint, so no
+idle-tracking speedup or overhead claim is made. The useful result is a fresh,
+reproducible established-tunnel baseline whose scale is long enough to be less
+dominated by connection setup than the default 32 MiB smoke run.

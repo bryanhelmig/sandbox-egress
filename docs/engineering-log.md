@@ -5782,3 +5782,13 @@ and finished at 22,816 KiB; the backpressure lane finished at 22,832 KiB.
 These are process-level allocator-retention observations, not a claim that RSS
 returns to its initial value, while the live socket and worker counts do
 return to their final baselines.
+
+## 2026-09-02 — refresh the established-tunnel throughput checkpoint
+
+Eight concurrent loopback tunnels transferred 256 MiB each in both directions
+on the optimized arm64 macOS build. Without optional idle tracking, exact 2 GiB
+transfers measured 3,229.9 MiB/s upload and 3,083.3 MiB/s download. With a
+one-second idle policy they measured 3,257.5 and 3,346.4 MiB/s. The enabled
+runs being faster shows ordinary local variation rather than a control-path
+speedup; no comparative claim is made. The durable performance document now
+records this post-hardening checkpoint and exact byte counters.
