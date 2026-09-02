@@ -6133,3 +6133,28 @@ overlapping intervals and no detected change. The whole Rust tree moves from
 821/2,409 to 825/2,420 structural/cognitive points, including both parser and
 real-listener proof. The five-line production condition is retained for the
 unambiguous protocol boundary, not for a performance claim.
+
+## 2026-09-02 — retain two owned runtime workers
+
+The official IANA IPv4 and IPv6 special-purpose registry downloads still match
+the reviewed SHA-256 pins (`e3e39e76...128d73` and
+`775feea0...ce2139`). No destination-floor update was indicated.
+
+The sustained local setup sweep then tested whether the owned runtime's fixed
+two workers were either wasteful or an avoidable throughput ceiling. With two
+workers and 5,000 connections, single-caller setup delivered 6.83--6.85k/s;
+8 callers delivered 18.77--20.02k/s; 32 delivered 17.12--21.16k/s; and 64
+delivered 21.43--22.09k/s. Throughput fell and tail variance grew at 128 and
+256 callers.
+
+A four-worker candidate did not improve that useful range. Its three 64-caller
+runs delivered 17.57, 19.97, and 20.95k/s, while high-concurrency scheduler
+outliers remained. A one-worker candidate saved one persistent thread but its
+64-caller runs delivered 15.81, 15.97, and 21.59k/s with materially worse p95
+latency. A restored two-worker confirmation at 10,000 connections remained
+noisy (15.86--20.72k/s at 64 callers), which reinforces that these localhost
+runs are regression evidence rather than portable capacity promises.
+
+Both candidates were discarded. Two workers retains the best observed balance
+between a small fixed embedding footprint and concurrent setup capacity. No
+runtime configurability, source branch, or documentation promise was added.
