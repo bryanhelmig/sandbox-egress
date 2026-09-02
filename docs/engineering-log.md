@@ -6377,3 +6377,24 @@ The red lifecycle proof now passes, the entire 32-case lifecycle suite and the
 wildcard/mapped-address matcher proof pass, and strict all-target Clippy is
 clean. Whole-tree complexity moves from 846/2,488 to 847/2,490; the one new
 production branch is the early startup guard.
+
+## 2026-09-02 — discard borrowed hostname canonicalization
+
+The allocation pass tested returning a borrowed canonical hostname whenever a
+CONNECT authority was already lowercase ASCII without a trailing dot. Policy
+construction converted that value to owned storage, while ordinary runtime
+hostname and visible-SNI checks could avoid a short `String` allocation. The
+candidate added a `Cow` return type but no new dependency or policy behavior.
+
+An 80-sample, five-second Criterion checkpoint measured the unchanged hostname
+path at 144.54--155.48 microseconds. The candidate measured 152.33--162.29
+microseconds and Criterion reported a regression (`p=0.01`). Reverting the
+candidate then measured 154.31--163.81 microseconds with no detected change,
+showing meaningful host variation across the short sequence rather than a
+credible allocation win.
+
+The candidate is discarded. The second allocation is tiny beside socket,
+resolver, task, and dial work, and the borrowed/owned return type would spread
+lifetime and ownership choices into policy construction for no reproduced
+end-to-end gain. Production code, tests, and complexity remain unchanged; this
+negative result narrows future performance work toward the larger boundaries.
