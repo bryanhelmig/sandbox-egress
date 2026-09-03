@@ -6682,3 +6682,18 @@ actively rejects across six bounded attempts as `dns-failed`. The combined
 pair passed 25 fresh proxy/runtime processes before the cases were split for
 independent naming. The split unit count is 148. No production branch,
 dependency, or public API was added.
+
+## 2026-09-02 — keep wildcard endpoint topology host-owned
+
+The interface audit found an ambiguity in the founding `lease.endpoint()`
+flow: a wildcard bind necessarily reports `0.0.0.0` or `::`, but neither value
+identifies the address reachable from a guest. One shared listener may also
+serve guest networks whose host gateways differ, so a single configured
+advertised address would be a misleading new authority.
+
+The API remains unchanged. Concrete binds preserve the direct endpoint flow;
+wildcard integrations combine the assigned listener port with the reachable
+host address they already own beside namespace, route, and firewall setup.
+Public API docs, README, deployment contract, and simplicity review now state
+that boundary. This retains wildcard capability without making the proxy infer
+network topology or adding per-lease routing state.

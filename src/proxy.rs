@@ -154,6 +154,9 @@ impl Proxy {
     }
 
     /// Return the listener endpoint shared by all leases.
+    ///
+    /// A wildcard bind reports its wildcard IP; the host integration chooses
+    /// the reachable address it advertises to each guest.
     pub const fn endpoint(&self) -> Endpoint {
         self.endpoint
     }
@@ -278,7 +281,10 @@ impl Lease {
         self.id
     }
 
-    /// Return the proxy URL for this run.
+    /// Return the shared proxy listener endpoint for this run.
+    ///
+    /// A wildcard bind reports its wildcard IP; the host integration chooses
+    /// the reachable address it advertises to each guest.
     pub const fn endpoint(&self) -> Endpoint {
         self.endpoint
     }

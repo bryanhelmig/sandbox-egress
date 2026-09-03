@@ -102,6 +102,12 @@ The management API is synchronous. The proxy owns one Tokio runtime; embedding
 it does not require converting an existing supervisor to async or creating a
 runtime per sandbox run.
 
+`lease.endpoint()` reports the address actually bound by the shared listener.
+With a concrete bind, that can be exposed directly as in the example. With a
+wildcard bind, it contains `0.0.0.0` or `::`; the host must combine its assigned
+port with the reachable proxy address for each guest network. The library does
+not guess routing topology or add a second advertised-address authority.
+
 `Policy::builder()` is deny-by-default across every rule dimension. Adding a
 hostname does not add a port, and adding port 80 does not silently retain port
 443. Explicit hostname denials override exact and wildcard grants; network

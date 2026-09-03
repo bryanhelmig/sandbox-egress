@@ -45,7 +45,11 @@ pub(crate) const fn is_unicast_v4(address: std::net::Ipv4Addr) -> bool {
     first != 0 && first < 224
 }
 
-/// The HTTP proxy endpoint to expose inside the guest.
+/// The shared HTTP proxy listener endpoint.
+///
+/// A wildcard listener retains its wildcard IP here because the library cannot
+/// infer which host address each guest can reach. Integrations using wildcard
+/// binds must advertise a reachable address with this endpoint's assigned port.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Endpoint(SocketAddr);
 

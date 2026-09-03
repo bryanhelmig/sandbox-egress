@@ -32,6 +32,13 @@ program may ignore or replace them. The host boundary must still prevent every
 route except the intended proxy endpoint and any deliberately isolated local
 services.
 
+`Lease::endpoint()` is the listener endpoint, not a routing oracle. A concrete
+bind can normally be advertised directly. A wildcard bind reports the assigned
+port with its wildcard IP; the host substitutes the address reachable from
+each guest network. This mapping belongs beside namespace, route, and firewall
+configuration because one wildcard listener may serve guests with different
+gateway views.
+
 An already-connected descriptor is especially important: it creates no new
 connection for the proxy to accept, attribute, count, or revoke. Close
 unneeded descriptors before guest launch, use close-on-exec where applicable,

@@ -105,7 +105,9 @@ impl ProxyConfig {
     /// port because the proxy cannot distinguish remote addresses from its
     /// other local interfaces. Bind a concrete guest-facing address when runs
     /// must reach unrelated destinations on that port. Startup rejects
-    /// multicast, limited broadcast, and scoped IPv6 without a zone.
+    /// multicast, limited broadcast, and scoped IPv6 without a zone. A
+    /// wildcard remains visible in [`Endpoint`](crate::Endpoint); the host must
+    /// advertise an address reachable from each guest with the assigned port.
     pub fn with_bind_address(mut self, address: SocketAddr) -> Self {
         self.bind_address = address;
         self

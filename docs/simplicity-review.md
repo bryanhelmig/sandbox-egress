@@ -83,6 +83,11 @@ Some surface area looks unusual because the underlying guarantee is unusual:
   powerful, but required for sandboxes deliberately allowed to reach private
   services. Denials still win, and deployments must keep tenant/control ranges
   outside broad grants.
+- A wildcard listener has no single guest-reachable advertised address.
+  `Lease::endpoint` reports its assigned port with the wildcard IP, and the
+  host maps that port to each guest's reachable gateway. Adding a second global
+  address would be wrong for multi-network hosts; inferring topology is outside
+  the listener's authority.
 - The trusted management command queue is unbounded so `Drop` can always enqueue
   cleanup without blocking or silently losing it. Guest traffic cannot reach
   that queue; bounding host call concurrency remains an integrator duty.
