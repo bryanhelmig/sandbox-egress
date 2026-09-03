@@ -6820,3 +6820,21 @@ baseline. The reverse-order control measured the restored branch at
 1.3894--1.4054 milliseconds against the simplified 1.3891--1.4080-millisecond
 baseline and detected no change. The deletion is retained for simpler state
 logic, with no performance claim.
+
+## 2026-09-02 — prune stale factory guidance
+
+A final reader-facing audit found two promises that had survived the work they
+described. The performance guide still called live-connection, slow-peer,
+counter, cleanup, and throughput harnesses the "next" measurements even though
+all now exist. The prior-art guide still called the generic Linux host-boundary
+certificate future work even though the privileged proxy-only, fenced-close,
+identity-reuse, and orphan-cleanup lanes now pass. Both passages now describe
+the current evidence and leave broader bypass cases at the host integration
+boundary.
+
+The post-simplification coverage factory passes 148 unit and 69 integration
+cases at 95.33 percent line, 94.48 percent region, and 94.43 percent function
+coverage. Warning-denied rustdoc also passes with private items included. The
+final SCC 4.0.0 measurement is 31 Rust files, 14,900 total lines, 13,515 code
+lines, 866 structural points, and 2,451 cognitive points. This documentation
+cleanup removes four net lines and changes no code, capability, or public API.

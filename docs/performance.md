@@ -375,12 +375,6 @@ cost updates one shared activity value after each successful nonempty read; it
 is retained in exchange for bounded silent tunnel lifetime. These are local
 regression measurements, not portable bandwidth promises.
 
-## Required next measurements
-
-The next resource harnesses add live connections, slow peers, admitted/denied
-counters, cleanup state, and bulk tunnel throughput. See
-[`testing.md`](testing.md) and [`roadmap.md`](roadmap.md).
-
 ## Rejected shared-config handoff
 
 Recorded 2026-09-01 on the same Apple M1. A prospective change wrapped the

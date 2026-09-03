@@ -385,8 +385,10 @@ its proxy-mode conformance covers direct TCP and UDP, unrelated loopback,
 host IPC, environment overrides, and inherited-socket bypasses. Those are
 properties of RunSeal's process-and-network cage, not behaviors a listener-only
 crate can implement or certify. Sandbox Egress now records the same cases as a
-host integration contract and future Linux/Firecracker harness, without
-claiming that `Lease::close` can revoke traffic it never accepted.
+host integration contract. Its generic Linux host-boundary certificate covers
+the proxy-only TCP path, fenced close, identity reuse, and orphan cleanup;
+broader bypass cases remain integration work rather than claims that
+`Lease::close` can revoke traffic it never accepted.
 
 ## Protocol references
 
