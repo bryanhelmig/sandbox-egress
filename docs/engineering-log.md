@@ -6934,3 +6934,38 @@ The summary still names every material capability class and security boundary;
 the detailed proofs remain in the conformance suites, design documents, Git
 history, and this append-only log. This removes 180 documentation lines and no
 code, public API, test, or capability.
+
+## 2026-09-02 — reprove resources and performance after simplification
+
+The exact simplified commit passed the complete native factory: format,
+warning-denied check and Clippy, 148 library tests, two CLI cases, 17
+concurrency cases, 32 lifecycle cases, 19 tunnelling cases, six doctests, both
+Criterion smoke binaries, warning-denied documentation, a rebuild from the
+79-file 318.7 KiB compressed crate archive, and the locked offline dependency
+audit.
+
+All nine release resource lanes then passed in fresh processes. The suite
+completed 8,000 identity cycles, 1,000 alternating failed starts, 256
+concurrent-management cycles, 128 idle tunnels, 64 partial 60,020-byte
+ClientHellos, 128 partial headers, 128 partial upstream responses, 64
+bidirectionally backpressured tunnels, and 2,000 each of completed,
+transfer-limited, reset, and pre-DNS-denied connections. Every process returned
+to nine descriptors and two threads after proxy shutdown.
+
+A fresh three-run 5,000-connection sweep observed 15,850--18,754 connections
+per second at concurrency 8, 15,505--23,773 at 64, and 13,736--20,050 at 256.
+The concurrency-256 p99 varied from 71.9 to 131.5 milliseconds, reaffirming
+that this host has a noisy high-concurrency knee and that the default ceiling
+should not be raised from one favorable run. Exact 2 GiB transfers across
+eight tunnels measured 3,171.9--3,320.8 MiB/s upload and
+3,382.6--3,431.5 MiB/s download, with exact directional accounting.
+
+No production change separates these measurements from the earlier samples,
+so the higher byte-throughput observations are not claimed as an improvement.
+They establish that the final documentation and state-logic simplifications
+preserve the measured envelope. The review also rejected a generic
+owner-carrying shutdown error: it would save a few duplicated formatting lines
+while obscuring that failed lease and proxy shutdown return different concrete
+owners. Likewise, host-specific port contracts, transparent interception,
+application HTTP policy, credential injection, and host network lifecycle each
+add an authority or owner and remain deliberately outside this crate.
