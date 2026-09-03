@@ -7,7 +7,7 @@ cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo test --locked --all-targets --all-features
 cargo test --locked --doc --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps --all-features
-cargo package --locked --allow-dirty >/dev/null
+cargo package --locked --offline --allow-dirty >/dev/null
 
 if cargo deny --version >/dev/null 2>&1; then
   cargo deny check

@@ -6855,3 +6855,18 @@ would not shrink the public API, runtime ownership model, or normal resolver
 behavior. The current eight direct runtime dependencies and feature selection
 therefore stay unchanged; this is a possible upstream-footprint question, not
 a crate-level simplification opportunity.
+
+## 2026-09-02 — make package verification explicitly offline
+
+The final native factory passed, but `cargo package` still refreshed the
+crates.io index before verifying the archive. Its dependency graph was locked
+and already fetched, so this was ambient Cargo behavior rather than a required
+input. The factory now invokes package verification with `--offline`; README
+wording states the precise precondition that locked dependencies must already
+be present.
+
+An explicit offline archive listing and full offline package verification pass
+for all 79 files, producing a 321.6 KiB compressed crate and compiling the
+unpacked artifact. This changes no packaged file set, production code,
+dependency, or public API, while making the documented hermetic boundary
+enforceable instead of conventional.
