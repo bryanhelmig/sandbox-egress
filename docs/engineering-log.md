@@ -7066,4 +7066,6 @@ Removing that one derive leaves successful `Lease::close` as the only public
 constructor. `Usage` remains defaultable for ordinary live snapshots, and
 `FinalUsage` remains copyable after certification. This is a one-line API
 tightening before the first public release, with no new type, branch, or
-runtime cost.
+runtime cost. The complete native factory and a fresh offline execution of all
+219 deterministic tests, benchmark smokes, and six doctests from the unpacked
+79-file Cargo archive pass with the tightened surface.
