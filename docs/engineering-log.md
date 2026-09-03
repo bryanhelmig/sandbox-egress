@@ -6897,3 +6897,21 @@ warning-denied documentation, offline package verification, and all nine
 release resource lanes. Its unprivileged final image reran all 218 counted
 tests successfully. The package-target improvement is checked again below on
 the rebuilt cached layer before it is retained.
+
+## 2026-09-02 — close the optimized simplification gates
+
+The package-target change passed a second Rust 1.88 Docker build with the warm
+dependency layer and reduced peak storage. Offline archive verification still
+compiled the unpacked crate, the nine Linux resource processes returned to
+four descriptors and two threads except for a permissible transient third
+sampler thread after failed starts, and the build completed without another
+storage failure. The final unprivileged image had already rerun the complete
+148/2/17/32/19 deterministic matrix.
+
+The native optimized all-target build separately passes the same 218 tests and
+both Criterion smoke binaries. Fifty fresh optimized processes repeated the
+quiet-close arrival race, and 100 repeated simultaneous attachment; every run
+preserved ownership. The authoritative IANA IPv4 and IPv6 special-purpose CSVs
+also retain their reviewed hashes. These gates validate the simplified state
+logic and factory behavior without adding a fuzzing workflow or changing the
+production data path.
