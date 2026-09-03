@@ -40,7 +40,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps --all-features
-      - run: cargo package --locked
+      - run: cargo package --locked --target-dir target
 
   dependency-policy:
     runs-on: ubuntu-latest
