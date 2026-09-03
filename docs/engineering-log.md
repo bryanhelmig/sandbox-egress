@@ -6872,3 +6872,28 @@ checks with `--locked --offline`, so the normal factory now enforces that mode
 when the tool and its advisory data are present. This changes no packaged file
 set, production code, dependency, or public API, while making the documented
 hermetic boundary enforceable instead of conventional.
+
+## 2026-09-02 — reuse the factory target during archive verification
+
+A clean Rust 1.88 Docker rebuild first exhausted the Docker VM while
+`cargo package` compiled the unpacked archive's complete dependency graph into
+its default nested target directory. All deterministic cases had passed before
+that environmental failure, and the still-running failed build container held
+1.68 GiB. Removing that container and a bounded set of explicitly identified,
+untagged Sandbox Egress build images recovered the space; no unrelated or
+irreplaceable image was pruned.
+
+Cargo's supported `--target-dir` option lets archive verification reuse the
+factory's existing locked dependency artifacts while still compiling the
+unpacked crate. The normal check now passes its current target directory to
+`cargo package`. A local verification produced the same 79-file archive,
+compiled the unpacked source, created no nested target directory, and avoided
+recompiling dependencies. This reduces peak factory storage without skipping
+package verification or changing production output.
+
+After the targeted cleanup, a from-base Rust 1.88 Docker build passed the full
+148/2/17/32/19 deterministic matrix, six doctests, benchmark smokes,
+warning-denied documentation, offline package verification, and all nine
+release resource lanes. Its unprivileged final image reran all 218 counted
+tests successfully. The package-target improvement is checked again below on
+the rebuilt cached layer before it is retained.
