@@ -7040,3 +7040,16 @@ This is a release-boundary check rather than a new permanent test lane: it
 proves that no deterministic test, example, or documented integration depends
 on an unshipped repository file. It changes no source, public API, package
 contents, or performance path.
+
+## 2026-09-02 — reject a control-only benchmark alarm
+
+A final lifecycle sample measured attach plus certified close at 1.394 ms with
+no detected change, and the shared configuration clone at about 9.9 ns within
+the configured noise threshold. Criterion nevertheless reported a 6.3 percent
+regression in the deliberately expensive full-configuration clone control.
+
+An immediate complete repeat measured the control at 63.3 ns with no detected
+change, the shared clone at 9.93 ns with no detected change, and attach plus
+close at 1.40 ms with no detected change. No production code separated the
+samples. The isolated alert is therefore retained as host variance, not a
+reason to tune the proxy or weaken the shared immutable configuration shape.
