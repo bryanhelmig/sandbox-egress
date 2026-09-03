@@ -32,17 +32,21 @@
 - [ ] Application-authority research and tests without overstating what is
   enforceable without TLS termination.
 
-## M3 — protocol and integration breadth
+## M3 — upstream composition
 
 - [x] Host-configured, unauthenticated HTTP CONNECT chaining with locally
   validated numeric targets and lease-owned cancellation.
-- Plain HTTP absolute-form forwarding.
-- Authenticated or TLS upstream proxies and host-controlled bypass rules.
-- Optional transparent ingress adapter.
-- Host-authenticated identities beyond source IP.
-- Arbitrary resolver backends and configurable destination-range tables;
-  explicit recursive server addresses are implemented.
-- Thin production daemon configuration and metrics export.
+- [ ] Prove the library boundary in at least one external sandbox integration.
+- [ ] Exercise the same implementation through a resource-capped executable.
+
+## Deferred breadth, not `0.1` commitments
+
+Plain HTTP forwarding, authenticated or TLS upstream proxies, transparent
+interception, identities beyond source IP, arbitrary resolver backends,
+configurable destination-range tables, and production metrics may be useful in
+some deployments. They do not become core roadmap commitments without passing
+the feature bar in [the simplicity review](simplicity-review.md). Prefer a
+consumer-owned adapter when it can compose with the current library boundary.
 
 ## Release gates
 

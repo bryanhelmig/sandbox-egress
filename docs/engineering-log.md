@@ -6654,3 +6654,17 @@ The candidate was removed. Startup and command processing intentionally remain
 together in the one task that owns listener ordering; splitting code is useful
 when it separates a review responsibility, not when it only moves branches and
 adds plumbing.
+
+## 2026-09-02 — narrow the roadmap to the actual core
+
+The step-back review found that the README and roadmap still described plain
+HTTP, transparent interception, arbitrary resolver backends, new identity
+mechanisms, and configurable address tables as an undifferentiated future
+protocol milestone. None is implemented, and each would add a new authority or
+integration boundary rather than simplify the founding three-object model.
+
+They now remain explicit research or adapter candidates instead of implied
+`0.1` commitments. The active milestone retains the implemented numeric
+upstream composition and asks for an external integration proof plus the same
+library exercised behind a resource-capped executable. No implemented feature,
+test, or security claim was removed.
