@@ -5,6 +5,9 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Add a durable simplicity review that audits every core capability and direct
+  dependency, records the deliberately excluded product surface, and sets a
+  high bar for future API growth.
 - Move the proxy's large unit/conformance body into its existing test-module
   tree and isolate routing proofs, leaving the security-critical runtime file
   and lifecycle proof root focused on one responsibility each.

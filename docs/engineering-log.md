@@ -6618,3 +6618,18 @@ the root falls from 2,840 to 1,608 lines and routing is 1,234 lines. All 147
 tests and Clippy pass again. Aggregate SCC remains exactly 865 structural and
 2,449 cognitive, confirming that this follow-up isolates responsibility rather
 than deleting evidence or gaming the score.
+
+## 2026-09-02 — step back from feature accumulation
+
+The public API and eight direct runtime dependencies were mapped back to the
+founding requirements and repeated peer-system evidence. No current capability
+cleared the removal bar: each participates in identity, destination selection,
+bounded hostile work, certified teardown, or the one-library deployment shape.
+Removing a mature parser or feature-gating every optional phase would reduce a
+superficial count while adding security-sensitive source or build variants.
+
+The resulting `docs/simplicity-review.md` records the irreducible three-object
+kernel, why the awkward close/error ownership shape is load-bearing, which
+capabilities remain justified, and which tempting product features stay
+outside. It also makes future additions answer concrete authority, lifecycle,
+evidence, and deletion questions before implementation.

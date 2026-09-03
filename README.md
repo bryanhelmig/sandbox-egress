@@ -413,6 +413,7 @@ Start with [AGENTS.md](AGENTS.md). The deeper project record is split into:
 - [testing strategy](docs/testing.md) — conformance and resource evidence;
 - [performance evidence](docs/performance.md) — reproducible measurements;
 - [complexity evidence](docs/complexity.md) — source and decision-shape trends;
+- [simplicity review](docs/simplicity-review.md) — what belongs in the core;
 - [engineering log](docs/engineering-log.md) — experiments and negative results;
 - [hardening backlog](docs/hardening-backlog.md) — attack and measurement matrix;
 - [prior art](docs/prior-art.md) — reviewed projects and pinned revisions;
