@@ -99,6 +99,26 @@ fn identity_churn_has_bounded_process_resources() {
     assert_stable_non_memory_resources(process_start, finished);
 }
 
+fn assert_startup_fails(after_bind: bool) {
+    let reservation =
+        TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("reserve failed-start port");
+    let address = reservation.local_addr().expect("reserved address");
+    let config = ProxyConfig::default().with_bind_address(address);
+    if after_bind {
+        drop(reservation);
+        assert!(
+            Proxy::start(config.with_upstream_proxy(address)).is_err(),
+            "startup accepted its post-bind listener as upstream"
+        );
+    } else {
+        assert!(
+            Proxy::start(config).is_err(),
+            "startup unexpectedly acquired an occupied listener"
+        );
+        drop(reservation);
+    }
+}
+
 #[test]
 #[ignore = "resource soak is opt-in; run scripts/measure-resources.sh"]
 fn failed_startup_releases_process_resources() {
@@ -109,15 +129,8 @@ fn failed_startup_releases_process_resources() {
     let started = Instant::now();
 
     for batch in 0..batches {
-        for _ in 0..runs_per_batch {
-            let reservation =
-                TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("reserve failed-start port");
-            let address = reservation.local_addr().expect("reserved address");
-            assert!(
-                Proxy::start(ProxyConfig::default().with_bind_address(address)).is_err(),
-                "startup unexpectedly acquired an occupied listener"
-            );
-            drop(reservation);
+        for run in 0..runs_per_batch {
+            assert_startup_fails(run % 2 != 0);
         }
         let current = Resources::sample();
         eprintln!(

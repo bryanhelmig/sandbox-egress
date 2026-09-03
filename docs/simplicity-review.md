@@ -136,11 +136,12 @@ already forced through its listener, and it certifies only work it owns.
 
 The security-critical production proxy is 1,556 code lines (1,727 including
 comments and blanks) after moving 2,847 lines of white-box machinery into child
-test modules. The complete Rust factory is 14,890 lines across 31 files,
+test modules. The complete Rust factory is 14,903 lines across 31 files,
 including integration tests, benchmarks, resource soaks, and fixed protocol
-fixtures. Its aggregate SCC estimate remains 865 structural and 2,449 cognitive
-points after the routing split and DNS question-association proof; no test or
-branch was deleted to improve the headline.
+fixtures. Its aggregate SCC estimate is 868 structural and 2,457 cognitive
+points after extending the failed-start resource lane across pre- and post-bind
+errors; the production proxy remains 187/612. No test or branch was deleted to
+improve the headline.
 
 The attach/close benchmark remains in its prior interval with no detected
 change. The reorganization is absent from normal builds because it moves only

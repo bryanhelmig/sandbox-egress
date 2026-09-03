@@ -6768,3 +6768,17 @@ certificate successfully: proxy-only routing, fenced lease close, source-IP
 identity reuse, and named namespace/nftables orphan cleanup all passed. This is
 the compositional layer a VMM supervisor must provide; it does not launch or
 test Firecracker itself.
+
+## 2026-09-02 — cover both failed-start phases in one resource lane
+
+The failed-start soak previously repeated only an occupied listener bind. The
+earlier ownership defect occurred after a successful bind, when self-reference
+validation reported an error through the readiness channel. The same lane now
+alternates those two phases, so half of its 1,000 default starts bind and then
+reject their own address as the configured upstream proxy.
+
+All four 250-start batches and the final sample held nine descriptors and two
+threads, completing in 365 milliseconds. Extracting the two failure shapes
+from the nested measurement loop preserved 868 aggregate structural points and
+reduced the candidate's aggregate cognitive estimate from 2,461 to 2,457.
+Production source and public API are unchanged.

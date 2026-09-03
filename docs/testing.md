@@ -251,6 +251,9 @@ A startup drop probe deliberately spends 100 milliseconds releasing a
 runtime-owned test resolver after a post-bind self-reference error. The
 synchronous `Proxy::start` failure may return only after that probe is dropped,
 proving the failed initialization path joins rather than detaches its thread.
+The failed-start resource lane alternates an occupied-address bind failure with
+that post-bind self-reference shape, checking both phases repeatedly without a
+second soak process or production seam.
 
 The Docker factory is multi-stage. Rust 1.88 first warms every locked build and
 test dependency, then performs the complete check and resource lane with Cargo
