@@ -10,6 +10,9 @@ Changelog and versions follow Semantic Versioning.
 - Exercise repeated post-spawn startup failure as a ninth opt-in resource lane,
   requiring every failed start to return at the process descriptor/thread
   baseline.
+- Apply the IPv4 unicast boundary to IPv4-mapped IPv6 listener, resolver, and
+  upstream-proxy configuration instead of letting mapped forbidden classes
+  pass as native IPv6.
 - Reject the IPv4 this-network and reserved classes consistently as source
   identities, listener binds, explicit resolvers, and upstream proxies.
 - Reject multicast and limited-broadcast listener configuration, and require a

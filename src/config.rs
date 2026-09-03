@@ -272,18 +272,28 @@ impl ProxyConfig {
 const fn is_concrete_unicast(address: SocketAddr) -> bool {
     match address.ip() {
         IpAddr::V4(address) => is_unicast_v4(address),
-        IpAddr::V6(address) => !address.is_unspecified() && !address.is_multicast(),
+        IpAddr::V6(address) => match address.to_ipv4_mapped() {
+            Some(address) => is_unicast_v4(address),
+            None => !address.is_unspecified() && !address.is_multicast(),
+        },
     }
 }
 
 const fn is_bindable_listener(address: SocketAddr) -> bool {
     match address {
-        SocketAddr::V4(address) => address.ip().is_unspecified() || is_unicast_v4(*address.ip()),
-        SocketAddr::V6(address) => {
-            !address.ip().is_multicast()
-                && (!is_scoped_unicast(*address.ip()) || address.scope_id() != 0)
-        }
+        SocketAddr::V4(address) => is_bindable_v4(*address.ip()),
+        SocketAddr::V6(address) => match address.ip().to_ipv4_mapped() {
+            Some(address) => is_bindable_v4(address),
+            None => {
+                !address.ip().is_multicast()
+                    && (!is_scoped_unicast(*address.ip()) || address.scope_id() != 0)
+            }
+        },
     }
+}
+
+const fn is_bindable_v4(address: Ipv4Addr) -> bool {
+    address.is_unspecified() || is_unicast_v4(address)
 }
 
 impl Default for ProxyConfig {
@@ -515,6 +525,53 @@ mod tests {
     }
 
     #[test]
+    fn mapped_remote_services_follow_the_ipv4_unicast_boundary() {
+        for address in [
+            Ipv4Addr::UNSPECIFIED,
+            Ipv4Addr::new(0, 0, 0, 1),
+            Ipv4Addr::new(224, 0, 0, 1),
+            Ipv4Addr::new(240, 0, 0, 1),
+            Ipv4Addr::BROADCAST,
+        ] {
+            let mapped = SocketAddr::new(IpAddr::V6(address.to_ipv6_mapped()), 53);
+            assert!(
+                ProxyConfig::default()
+                    .with_dns_server(mapped)
+                    .validate()
+                    .is_err(),
+                "accepted mapped DNS server {mapped}"
+            );
+            assert!(
+                ProxyConfig::default()
+                    .with_upstream_proxy(SocketAddr::new(mapped.ip(), 3128))
+                    .validate()
+                    .is_err(),
+                "accepted mapped upstream proxy {}",
+                mapped.ip()
+            );
+        }
+
+        for address in [Ipv4Addr::LOCALHOST, Ipv4Addr::new(192, 0, 2, 1)] {
+            let mapped = SocketAddr::new(IpAddr::V6(address.to_ipv6_mapped()), 53);
+            assert!(
+                ProxyConfig::default()
+                    .with_dns_server(mapped)
+                    .validate()
+                    .is_ok(),
+                "rejected mapped DNS server {mapped}"
+            );
+            assert!(
+                ProxyConfig::default()
+                    .with_upstream_proxy(SocketAddr::new(mapped.ip(), 3128))
+                    .validate()
+                    .is_ok(),
+                "rejected mapped upstream proxy {}",
+                mapped.ip()
+            );
+        }
+    }
+
+    #[test]
     fn listener_requires_a_bindable_unicast_or_wildcard_address() {
         for address in [
             "224.0.0.1:0".parse().expect("multicast IPv4"),
@@ -523,6 +580,10 @@ mod tests {
             "0.0.0.1:0".parse().expect("this-network IPv4"),
             "240.0.0.1:0".parse().expect("reserved IPv4"),
             "[fe80::1]:0".parse().expect("unscoped link-local IPv6"),
+            SocketAddr::new(IpAddr::V6(Ipv4Addr::new(0, 0, 0, 1).to_ipv6_mapped()), 0),
+            SocketAddr::new(IpAddr::V6(Ipv4Addr::new(224, 0, 0, 1).to_ipv6_mapped()), 0),
+            SocketAddr::new(IpAddr::V6(Ipv4Addr::new(240, 0, 0, 1).to_ipv6_mapped()), 0),
+            SocketAddr::new(IpAddr::V6(Ipv4Addr::BROADCAST.to_ipv6_mapped()), 0),
         ] {
             assert!(
                 ProxyConfig::default()
@@ -538,6 +599,8 @@ mod tests {
             "[::]:0".parse().expect("wildcard IPv6"),
             "127.0.0.1:0".parse().expect("unicast IPv4"),
             "[::1]:0".parse().expect("unicast IPv6"),
+            SocketAddr::new(IpAddr::V6(Ipv4Addr::UNSPECIFIED.to_ipv6_mapped()), 0),
+            SocketAddr::new(IpAddr::V6(Ipv4Addr::LOCALHOST.to_ipv6_mapped()), 0),
             SocketAddr::V6(std::net::SocketAddrV6::new(
                 "fe80::1".parse().expect("link-local IPv6"),
                 0,

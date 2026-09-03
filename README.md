@@ -260,7 +260,8 @@ let config = ProxyConfig::default()
 
 This is trusted process configuration, not a per-lease or guest-selected
 resolver. Up to eight distinct servers are accepted. Unspecified, multicast,
-broadcast, and scoped IPv6 server addresses are rejected. A recursive server
+broadcast, and scoped IPv6 server addresses are rejected, including forbidden
+IPv4 classes written as IPv4-mapped IPv6. A recursive server
 must be a concrete unicast endpoint, and the underlying resolver cannot
 preserve an IPv6 scope identifier. It also cannot point back at the shared
 Sandbox Egress listener.
@@ -277,8 +278,9 @@ let config = ProxyConfig::default()
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-The upstream endpoint must also be concrete unicast. A scoped IPv6 endpoint is
-accepted only when its socket address includes the required zone identifier.
+The upstream endpoint must also be concrete unicast. IPv4-mapped endpoints use
+the same class boundary as native IPv4. A scoped IPv6 endpoint is accepted only
+when its socket address includes the required zone identifier.
 
 This first slice is intentionally narrow: plain HTTP to the upstream proxy,
 no authentication, no bypass list, and no hostname-selected CONNECT mode. The

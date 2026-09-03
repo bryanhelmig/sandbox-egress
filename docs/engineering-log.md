@@ -6572,3 +6572,23 @@ received. Rejecting the response would therefore turn a harmless upstream
 server defect into an availability failure and make this CONNECT client less
 conformant. The candidate and its test were removed. Existing behavior ignores
 the fields and treats bytes after the response header as tunnel bytes.
+
+## 2026-09-02 — close the mapped service-endpoint validation alias
+
+The shared IPv4 predicate covered native listener, DNS, and upstream-proxy
+addresses, but each configuration validator classified an IPv4-mapped IPv6
+socket by its outer IPv6 prefix. Mapped unspecified, multicast, reserved, and
+broadcast endpoints therefore passed representation validation even though the
+equivalent native IPv4 endpoints failed.
+
+Red configuration matrices reproduced the gap for remote services and
+listeners. Mapped addresses now enter the same IPv4 predicate. Mapped wildcard
+remains a valid listener wildcard; mapped loopback and documentation-prefix
+unicast remain valid service endpoints. Mapped multicast, reserved, and
+broadcast fail consistently. This is startup-only validation with no
+connection-path branch.
+
+The complete 147-test unit suite, 32-case lifecycle suite, and strict
+all-target Clippy pass. Whole-tree SCC 4.0.0 reports 865 structural and 2,539
+cognitive complexity points; the added cost is almost entirely the explicit
+two-sided configuration matrix.
