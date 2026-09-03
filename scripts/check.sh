@@ -10,7 +10,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps --all-features
 cargo package --locked --offline --allow-dirty >/dev/null
 
 if cargo deny --version >/dev/null 2>&1; then
-  cargo deny check
+  cargo deny --locked --offline check
 else
   echo "note: cargo-deny is not installed; dependency policy check skipped" >&2
 fi

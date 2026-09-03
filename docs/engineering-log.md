@@ -6867,6 +6867,8 @@ be present.
 
 An explicit offline archive listing and full offline package verification pass
 for all 79 files, producing a 321.6 KiB compressed crate and compiling the
-unpacked artifact. This changes no packaged file set, production code,
-dependency, or public API, while making the documented hermetic boundary
-enforceable instead of conventional.
+unpacked artifact. Cargo-deny also passes its advisory, ban, license, and source
+checks with `--locked --offline`, so the normal factory now enforces that mode
+when the tool and its advisory data are present. This changes no packaged file
+set, production code, dependency, or public API, while making the documented
+hermetic boundary enforceable instead of conventional.
