@@ -6969,3 +6969,26 @@ while obscuring that failed lease and proxy shutdown return different concrete
 owners. Likewise, host-specific port contracts, transparent interception,
 application HTTP policy, credential injection, and host network lifecycle each
 add an authority or owner and remain deliberately outside this crate.
+
+## 2026-09-02 — compose the TLS and upload ceilings
+
+A missing-lines review ignored unreachable runtime-construction failures and
+formatting implementations, but found one security-relevant composite branch:
+TLS inspection narrows its parser byte ceiling to the lease's upload ceiling
+and maps that exhaustion to `upload-limit`. No existing test directly proved
+the reason, exact accounting, or zero forwarding at that intersection.
+
+The new deterministic case gives a valid ClientHello an upload allowance one
+byte shorter than its wire image. It observes the CONNECT success, sends the
+hello, and proves that the proxy reads and accounts exactly the permitted
+prefix, emits `upload-limit`, forwards zero bytes to the already-connected
+upstream, records one denial and no completion, certifies close, and shuts down
+cleanly. The complete coverage matrix now has 149 unit cases and 70 integration
+cases. Line coverage rises from 95.33 to 95.50 percent, regions from 94.48 to
+94.71 percent, and functions from 94.43 to 94.96 percent.
+
+This adds 63 test-only lines and no production branch, dependency, or public
+API. The whole Rust tree is now 14,963 lines and 13,575 code lines; structural
+and cognitive estimates remain exactly 866 and 2,451, and the production proxy
+remains 1,553 code lines at 185/606. The proof is retained because it closes a
+policy interaction, not because it improves the coverage percentage.

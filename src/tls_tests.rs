@@ -255,6 +255,69 @@ fn mismatched_tls_sni_is_never_forwarded_upstream() {
 }
 
 #[test]
+fn upload_limit_bounds_client_hello_inspection_before_forwarding() {
+    let hello = client_hello(Some("allowed.test"), false);
+    let upload_limit = hello.len() - 1;
+    let (port, observed_rx, target) = start_tls_denial_observer();
+    let (diagnostic_tx, diagnostic_rx) = mpsc::sync_channel(1);
+    let proxy = Proxy::start_with_test_resolver(
+        ProxyConfig::default()
+            .with_identity_reuse_quiet_period(Duration::ZERO)
+            .with_diagnostic_channel(diagnostic_tx, 10),
+        Arc::new(StaticResolver(IpAddr::V4(Ipv4Addr::LOCALHOST))),
+    )
+    .expect("start upload-limited TLS proxy");
+    let policy = Policy::builder()
+        .allow_host("allowed.test")
+        .expect("valid test hostname")
+        .allow_network("127.0.0.0/8".parse().expect("valid loopback test network"))
+        .allow_port(port)
+        .max_upload_bytes(upload_limit as u64)
+        .require_tls_sni()
+        .build()
+        .expect("valid upload-limited TLS policy");
+    let lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            policy,
+        )
+        .expect("attach upload-limited TLS lease");
+
+    let mut client = open_tls_tunnel(&lease, "allowed.test", port);
+    std::io::Write::write_all(&mut client, &hello).expect("write oversized ClientHello");
+    assert_tunnel_closed(&mut client);
+    assert_eq!(
+        observed_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("observe upload-limited target"),
+        0
+    );
+    target.join().expect("upload-limited target");
+    assert_eq!(
+        diagnostic_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("upload-limit diagnostic")
+            .reason
+            .as_str(),
+        "upload-limit"
+    );
+
+    let final_usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .expect("close upload-limited TLS lease")
+        .usage();
+    assert_eq!(final_usage.accepted_connections, 1);
+    assert_eq!(final_usage.active_connections, 0);
+    assert_eq!(final_usage.denied_connections, 1);
+    assert_eq!(final_usage.completed_connections, 0);
+    assert_eq!(final_usage.uploaded_bytes, upload_limit as u64);
+    assert_eq!(final_usage.downloaded_bytes, 0);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .expect("proxy shutdown");
+}
+
+#[test]
 fn multiple_tls_sni_names_are_never_forwarded_upstream() {
     let hello = client_hello_with_server_names(&["allowed.test", "other.test"]);
     let (port, observed_rx, target) = start_tls_denial_observer();
