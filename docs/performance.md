@@ -753,3 +753,22 @@ download: 3,517.4 MiB/s, 582 ms
 The attach/close Criterion interval was 1.3799--1.3965 milliseconds and
 reported no detected change. Together these are regression checks, not a claim
 that source organization improves runtime performance.
+
+## Denial-response allocation trial
+
+Recorded 2026-09-02 on the same Apple M1. A candidate replaced the denial
+path's separately formatted body and response with one formatted response.
+Criterion measured the complete loopback denied-CONNECT exchange:
+
+```text
+command: cargo bench --locked --bench connections \
+         connect_denied_hostname -- --save-baseline denial-two-allocation
+initial baseline: 66.538 .. 75.238 us
+one-allocation candidate: 73.385 .. 80.777 us
+restored baseline control: 79.118 .. 84.516 us
+```
+
+The restored identical code measured slower than both prior intervals, so host
+drift invalidates the apparent candidate regression. The trial is
+inconclusive. The candidate was not retained because it demonstrated no gain
+and did not improve the policy or ownership model.
