@@ -171,4 +171,7 @@ and post-bind errors makes the current total 14,903 lines, 13,518 code lines,
 and 868/2,457. The added decision shape is test-only. Removing an already-
 quiesced branch whose caller loop already handles that state makes the final
 tree 14,900 lines, 13,515 code lines, and 866/2,451. The production proxy is
-1,553 code lines and 185/606.
+1,553 code lines and 185/606. A later TLS/upload-ceiling proof adds 63 test-only
+lines and 60 code lines without a decision point, so the current tree is 14,963
+lines, 13,575 code lines, and still 866/2,451; the production proxy remains
+unchanged.

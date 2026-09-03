@@ -6992,3 +6992,21 @@ API. The whole Rust tree is now 14,963 lines and 13,575 code lines; structural
 and cognitive estimates remain exactly 866 and 2,451, and the production proxy
 remains 1,553 code lines at 185/606. The proof is retained because it closes a
 policy interaction, not because it improves the coverage percentage.
+
+## 2026-09-02 — certify the final package on the declared Linux floor
+
+The exact composite-proof commit passes the complete native factory, including
+149 unit cases, 70 integration cases, six doctests, benchmark smokes,
+warning-denied docs, the packaged-crate rebuild, and the offline dependency
+audit. The cached Docker factory then rebuilt the source with Rust 1.88.0 on
+Linux, repeated that matrix, compiled the 78-file container archive, and passed
+all nine release resource lanes. The one-file archive difference is Cargo's
+generated VCS metadata, which is unavailable in the source-only Docker build.
+
+Every Linux resource process returned to four descriptors and two threads
+after shutdown; the failed-start sampler may briefly observe a third thread as
+the just-joined runtime exits, within its explicit allowance. Finally, the
+stripped Debian image ran the complete 219-case deterministic matrix as the
+unprivileged `65534:65534` user. This confirms that the added proof uses no
+post-MSRV language feature and that the conformance artifact contains the final
+test rather than a stale builder binary.
