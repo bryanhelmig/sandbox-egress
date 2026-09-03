@@ -6592,3 +6592,22 @@ The complete 147-test unit suite, 32-case lifecycle suite, and strict
 all-target Clippy pass. Whole-tree SCC 4.0.0 reports 865 structural and 2,539
 cognitive complexity points; the added cost is almost entirely the explicit
 two-sided configuration matrix.
+
+## 2026-09-02 — separate the proxy runtime from its test machinery
+
+The strongest simplification candidate was structural rather than behavioral:
+`src/proxy.rs` mixed 1,721 lines of runtime implementation with 2,847 lines of
+white-box fixtures. The test body moved unchanged into the existing
+`src/proxy/tests/` tree, where it retains private access and its three existing
+child modules.
+
+All 147 unit tests and strict all-target Clippy pass after the move. SCC keeps
+the combined proxy structural estimate exactly 277 (187 runtime plus 90 test),
+so no branch reduction is claimed. Its cognitive total falls from 921 to 831
+only because the tool no longer adds the inline-module nesting level to every
+test. The honest gain is that lifecycle reviewers can read the full production
+proxy in 1,721 lines rather than navigate a 4,568-line mixed-purpose file.
+
+The attach/close Criterion interval remains 1.3799--1.3965 milliseconds and
+reports no detected change. The move affects only `cfg(test)` source in normal
+builds; it preserves every public type, behavior, and capability.

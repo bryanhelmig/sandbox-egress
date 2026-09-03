@@ -17,6 +17,11 @@ synchronous caller
                                   counters + cancellation
 ```
 
+The production proxy runtime is kept in `src/proxy.rs`; its white-box phase,
+race, and failure-injection cases live under `src/proxy/tests/`. Keeping that
+evidence colocated as a child module preserves private-boundary tests without
+mixing roughly 2,800 lines of test machinery into the runtime implementation.
+
 ## Core objects
 
 `Proxy` owns the runtime thread. `Proxy::attach` is a synchronous command that

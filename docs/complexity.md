@@ -134,3 +134,25 @@ by 7/22, the policy by 1/3, and the isolated integer token bucket contributes
 the default `src tests benches` report. A workspace-based fixture was removed
 after package verification showed that it would not be present in the root
 crate archive.
+
+## Proxy production/test separation checkpoint
+
+Recorded 2026-09-02 after moving the proxy's unchanged inline test body into
+`src/proxy/tests/mod.rs`:
+
+```text
+files: 30
+lines: 14,843
+code lines: 13,473
+structural complexity estimate: 865
+cognitive complexity estimate: 2,449
+proxy.rs: 187 structural, 612 cognitive, 1,721 lines
+proxy/tests/mod.rs: 90 structural, 219 cognitive, 2,840 lines
+```
+
+The two proxy files retain the prior 277 combined structural points. The
+reported cognitive total falls by 90 only because SCC no longer charges every
+test for nesting inside one inline module; no decision branch was removed, so
+that movement is a measurement artifact rather than a claimed simplification.
+The material result is review scope: the production lifecycle and data path no
+longer share a 4,568-line file with failure fixtures.

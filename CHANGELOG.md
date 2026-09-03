@@ -5,6 +5,8 @@ Changelog and versions follow Semantic Versioning.
 
 ## Unreleased
 
+- Move the proxy's large unit/conformance body into its existing test-module
+  tree, leaving the security-critical runtime file focused on production code.
 - Join the owned runtime thread before returning a post-spawn proxy startup
   error, preventing failed initialization from detaching cleanup work.
 - Exercise repeated post-spawn startup failure as a ninth opt-in resource lane,
