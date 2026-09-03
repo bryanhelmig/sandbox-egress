@@ -4,6 +4,14 @@ fn local_incomplete_dns_response(query: &[u8]) -> Vec<u8> {
     query[..2].to_vec()
 }
 
+fn local_wrong_question_dns_response(query: &[u8]) -> Vec<u8> {
+    let question_end = local_dns_question_end(query);
+    let mut response = query[..question_end].to_vec();
+    response[2..12].copy_from_slice(&[0x81, 0x80, 0, 1, 0, 0, 0, 0, 0, 0]);
+    response[13] = b'x';
+    response
+}
+
 fn local_inflated_answer_count_dns_response(query: &[u8]) -> Vec<u8> {
     let mut response = Vec::with_capacity(12);
     response.extend_from_slice(&query[..2]);
@@ -120,8 +128,13 @@ fn long_cname_chain_to_metadata_is_rejected_before_dialing() {
         .expect("proxy shutdown");
 }
 
-fn assert_bad_dns_response_is_bounded(respond: fn(&[u8]) -> Vec<u8>) {
-    let (address, server) = start_local_dns(6, respond);
+fn assert_bad_dns_response_is_bounded(
+    expected_queries: usize,
+    respond: fn(&[u8]) -> Vec<u8>,
+    expected_status: &str,
+    expected_reason: &str,
+) {
+    let (address, server) = start_local_dns(expected_queries, respond);
     let dial_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let connector = Arc::new(RejectingConnector(Arc::clone(&dial_attempts)));
     let proxy = Proxy::start_with_test_connector(
@@ -156,8 +169,8 @@ fn assert_bad_dns_response_is_bounded(respond: fn(&[u8]) -> Vec<u8>) {
     let mut response = String::new();
     std::io::Read::read_to_string(&mut client, &mut response).expect("read malformed DNS denial");
 
-    assert!(response.starts_with("HTTP/1.1 502"), "{response}");
-    assert!(response.contains("dns-failed"), "{response}");
+    assert!(response.starts_with(expected_status), "{response}");
+    assert!(response.contains(expected_reason), "{response}");
     assert!(started.elapsed() < Duration::from_secs(1));
     assert_eq!(dial_attempts.load(Ordering::Acquire), 0);
     let final_usage = lease
@@ -173,12 +186,32 @@ fn assert_bad_dns_response_is_bounded(respond: fn(&[u8]) -> Vec<u8>) {
 
 #[test]
 fn malformed_dns_replies_are_bounded_and_never_dialed() {
-    assert_bad_dns_response_is_bounded(local_incomplete_dns_response);
+    assert_bad_dns_response_is_bounded(
+        6,
+        local_incomplete_dns_response,
+        "HTTP/1.1 502",
+        "dns-failed",
+    );
+}
+
+#[test]
+fn matching_id_with_wrong_dns_question_is_ignored_until_deadline() {
+    assert_bad_dns_response_is_bounded(
+        2,
+        local_wrong_question_dns_response,
+        "HTTP/1.1 504",
+        "dns-timeout",
+    );
 }
 
 #[test]
 fn inflated_dns_section_counts_fail_without_dialing() {
-    assert_bad_dns_response_is_bounded(local_inflated_answer_count_dns_response);
+    assert_bad_dns_response_is_bounded(
+        6,
+        local_inflated_answer_count_dns_response,
+        "HTTP/1.1 502",
+        "dns-failed",
+    );
 }
 
 #[test]

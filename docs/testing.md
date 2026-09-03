@@ -513,8 +513,11 @@ main conformance body.
 An incomplete-wire case answers each A/AAAA attempt with only the two-byte
 transaction identifier. It requires exactly six questions, a bounded
 `dns-failed` response, zero connector calls, and exact final denial accounting.
-The focused case is repeated 25 times; broader malformed response shapes remain
-an explicit hardening inventory rather than an implied claim.
+A separate response preserves the live transaction identifier but substitutes
+a different question. Hickory ignores exactly one A and one AAAA reply until
+the crate's 200 ms DNS deadline, producing `dns-timeout` with zero connector
+calls. The focused pair is repeated 25 times; broader malformed response shapes
+remain an explicit hardening inventory rather than an implied claim.
 A deterministic failover case holds the first approved connector future
 pending under a 400 ms absolute deadline and maps the second address to a local
 listener. It must connect through the second address in resolver order; the old

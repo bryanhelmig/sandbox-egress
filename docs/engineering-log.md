@@ -6668,3 +6668,17 @@ They now remain explicit research or adapter candidates instead of implied
 upstream composition and asks for an external integration proof plus the same
 library exercised behind a resource-capped executable. No implemented feature,
 test, or security claim was removed.
+
+## 2026-09-02 — pin DNS transaction and question association
+
+A deterministic local resolver case now replies with the live transaction ID
+but substitutes a different question. Hickory ignores one A and one AAAA reply
+until Sandbox Egress's 200 millisecond DNS deadline; the client receives the
+distinct `dns-timeout` denial, no connector is called, close returns zero
+active work, and the local server observes no retry beyond those two queries.
+
+This differs usefully from a two-byte truncated reply, which the resolver
+actively rejects across six bounded attempts as `dns-failed`. The combined
+pair passed 25 fresh proxy/runtime processes before the cases were split for
+independent naming. The split unit count is 148. No production branch,
+dependency, or public API was added.
