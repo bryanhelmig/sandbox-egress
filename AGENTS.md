@@ -6,9 +6,11 @@ must survive context compaction. Then read `docs/security-invariants.md` and
 `docs/architecture.md` before changing lifecycle, identity, DNS, or tunnelling
 code.
 
-For ongoing hardening, also read `docs/engineering-log.md` and select work from
-`docs/hardening-backlog.md`. Record negative results; do not keep unmeasured
-optimizations.
+For ongoing hardening, select work from `docs/hardening-backlog.md`, read the
+recent tail of `docs/engineering-log.md`, and search that append-only log for
+the proposed idea before repeating an experiment. Load the relevant entries,
+not the entire long-running record. Record negative results; do not keep
+unmeasured optimizations.
 
 ## Product boundary
 
