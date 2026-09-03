@@ -6782,3 +6782,20 @@ threads, completing in 365 milliseconds. Extracting the two failure shapes
 from the nested measurement loop preserved 868 aggregate structural points and
 reduced the candidate's aggregate cognitive estimate from 2,461 to 2,457.
 Production source and public API are unchanged.
+
+## 2026-09-02 — compare the boundary with Microsoft MXC
+
+A final primary-source scan added Microsoft MXC at commit `878936a4`. Its
+backends provide three useful checks on this design: Seatbelt rejects hostname
+and address filtering it cannot express, Bubblewrap lowers IPv4-mapped ranges
+into the packet family Linux actually emits and rejects ambiguous broader
+ranges, and the experimental Nanvix path handles preflight DNS failures
+differently when omission would widen rather than narrow access.
+
+These are policy-compilation and host-boundary lessons, not evidence for a new
+proxy abstraction. Sandbox Egress already rejects unsupported configuration,
+classifies mapped and compatible addresses by their effective IPv4 address,
+and validates each live DNS answer set before dialing. MXC ties cleanup to its
+runner/backend; it does not replace the per-source, certifiably closed `Lease`
+needed when an address will be reused. The comparison therefore adds durable
+references but no production branch or public API.

@@ -24,6 +24,7 @@ links remain upstream-owned and are not vendored.
 | [CubeSandbox](https://github.com/TencentCloud/CubeSandbox) | `30e002cb` | dedicated TAP ownership, host allocator, L4/L7 split, pooled setup | sandbox platform rather than an embeddable CONNECT lease |
 | [OpenSandbox](https://github.com/opensandbox-group/OpenSandbox) | `1eb8fffa` | deny-first subjects, generation-aware policy, atomic nft updates, restart cleanup | mutable transparent sidecar/control plane with different authority scope |
 | [mvm](https://github.com/tinylabscom/mvm) | `4ebd13d5` | mechanically enforced vsock-only single egress path and fresh restore endpoint | full signed-plan sandbox with no workload NIC, not source-IP CONNECT |
+| [Microsoft MXC](https://github.com/microsoft/mxc) | `878936a4` | backend capability validation, mapped-address firewall lowering, host-side microVM socket policy | cross-backend sandbox product; policy lifetime follows its runner/backend |
 | [PandaStack](https://github.com/pandastack-io/pandastack-ai) | `1147f535` | shared snapshot IP translation, authoritative slot ownership, destroy-first reuse, orphan reconciliation | sandbox platform whose network pool remains supervisor-owned |
 | [Hickory DNS](https://github.com/hickory-dns/hickory-dns) | `8c7b8780` (main), `0.26.1` (dependency) | maintained async resolver, system configuration, cache and transport behavior | decoded record vectors reserve from wire section counts before caller result limits |
 
@@ -147,6 +148,25 @@ a slot reusable, and reconciles orphan ownership and namespaces before the
 prewarmer starts. The project comments tie that shape to earlier leak,
 double-free, and stale-namespace incidents. These are supervisor lessons, not
 evidence to add pooling or durable storage to Sandbox Egress itself.
+
+Microsoft MXC's backend matrix reinforces the same compositional rule from a
+different direction. Its [Seatbelt path](https://github.com/microsoft/mxc/blob/878936a4aa3356b64b0949d5f213b85449a2e414/docs/seatbelt/seatbelt-backend.md)
+rejects hostname filtering when the OS primitive cannot express it, rather than
+accepting a policy and silently weakening it. Its
+[Bubblewrap firewall path](https://github.com/microsoft/mxc/blob/878936a4aa3356b64b0949d5f213b85449a2e414/docs/bwrap-support/bubblewrap-backend.md)
+normalizes IPv4-mapped literals and CIDRs into the packet family Linux will
+actually emit, and rejects ambiguous shorter IPv6 blocks that straddle the
+mapped range. Its experimental [Nanvix backend](https://github.com/microsoft/mxc/blob/878936a4aa3356b64b0949d5f213b85449a2e414/docs/nanvix-microvm/nanvix.md)
+instead resolves hostnames into a host-side socket policy before the run and
+handles resolution failure according to whether dropping an entry can widen
+access.
+
+Those are useful backend and policy-compilation lessons, but they do not expose
+a smaller shared-listener lifecycle. Sandbox Egress already rejects
+unrepresentable identity/configuration shapes, checks mapped and compatible
+addresses at the effective IPv4 boundary, and validates every live lookup as a
+set before dialing. MXC keeps sandbox/backend lifetime as the cleanup owner;
+the per-source `Lease` certificate remains the distinct reusable boundary here.
 
 ## Listener failure comparison
 
