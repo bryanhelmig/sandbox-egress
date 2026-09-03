@@ -6611,3 +6611,10 @@ proxy in 1,721 lines rather than navigate a 4,568-line mixed-purpose file.
 The attach/close Criterion interval remains 1.3799--1.3965 milliseconds and
 reports no detected change. The move affects only `cfg(test)` source in normal
 builds; it preserves every public type, behavior, and capability.
+
+The extracted test root still mixed 1,233 lines of DNS, address-policy, and
+dial cases with lifecycle races. Those cases now form a `routing` child module;
+the root falls from 2,840 to 1,608 lines and routing is 1,234 lines. All 147
+tests and Clippy pass again. Aggregate SCC remains exactly 865 structural and
+2,449 cognitive, confirming that this follow-up isolates responsibility rather
+than deleting evidence or gaming the score.

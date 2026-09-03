@@ -21,6 +21,8 @@ The production proxy runtime is kept in `src/proxy.rs`; its white-box phase,
 race, and failure-injection cases live under `src/proxy/tests/`. Keeping that
 evidence colocated as a child module preserves private-boundary tests without
 mixing roughly 2,800 lines of test machinery into the runtime implementation.
+DNS, address-policy, and dial proofs have their own `routing` child; lifecycle
+and ownership-race proofs remain in the test root.
 
 ## Core objects
 

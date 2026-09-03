@@ -156,3 +156,9 @@ test for nesting inside one inline module; no decision branch was removed, so
 that movement is a measurement artifact rather than a claimed simplification.
 The material result is review scope: the production lifecycle and data path no
 longer share a 4,568-line file with failure fixtures.
+
+The immediate follow-up separates the 1,234-line DNS/address/dial proof cluster
+as `src/proxy/tests/routing.rs`. The complete report becomes 31 files and
+14,845 lines while retaining exactly 865 structural and 2,449 cognitive points.
+The test root is 1,608 lines at 71/159; routing is 1,234 lines at 19/60. This is
+again responsibility isolation, not deleted logic or a lower aggregate score.
