@@ -32,7 +32,8 @@ part: controlled access from the jail to the network.
 Sandbox Egress is not the whole jail. The host must still isolate processes,
 files, memory, and syscalls, and must use a namespace, firewall, NAT boundary,
 or equivalent mechanism so the guest cannot bypass the proxy with a direct
-socket. Merely setting `HTTP_PROXY` is not a security boundary.
+socket. Merely setting `HTTP_PROXY` or `HTTPS_PROXY` is not a security
+boundary.
 
 If that boundary exempts trusted proxy sockets with Linux `SO_MARK`, remove
 both `CAP_NET_ADMIN` and `CAP_NET_RAW` from every untrusted workload and
@@ -82,7 +83,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let run_egress_ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
     let lease = proxy.attach(PeerIdentity::SourceIp(run_egress_ip), policy)?;
 
-    // Expose this URL inside the guest as its HTTP/HTTPS proxy.
+    // Expose this HTTP CONNECT proxy to an HTTPS client. For clients using
+    // standard proxy environment variables, this is normally HTTPS_PROXY.
     let guest_proxy_url = lease.endpoint();
     let live_usage = lease.usage();
     println!("proxy={guest_proxy_url} usage={live_usage:?}");

@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         policy,
     )?;
 
-    println!("HTTP_PROXY={}", lease.endpoint());
+    println!("HTTPS_PROXY={}", lease.endpoint());
     println!("Press Enter to revoke the lease.");
     let mut line = String::new();
     io::stdin().read_line(&mut line)?;

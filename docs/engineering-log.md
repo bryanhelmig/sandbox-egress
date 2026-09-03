@@ -7010,3 +7010,18 @@ stripped Debian image ran the complete 219-case deterministic matrix as the
 unprivileged `65534:65534` user. This confirms that the added proof uses no
 post-MSRV language feature and that the conformance artifact contains the final
 test rather than a stale builder binary.
+
+## 2026-09-02 — name the thin wrapper's proxy variable honestly
+
+The final consumer-language audit found that the CONNECT-only, port-443 thin
+executable printed `HTTP_PROXY`. Standard proxy environment conventions use
+that variable for plain HTTP requests, a mode this crate deliberately does not
+implement. HTTPS clients conventionally use `HTTPS_PROXY` with an `http://`
+URL to select an HTTP CONNECT proxy.
+
+The wrapper now prints `HTTPS_PROXY`, its process-level test pins that output,
+and the README calls the endpoint an HTTP CONNECT proxy rather than an
+HTTP/HTTPS application proxy. The host-confinement warning names both variables
+because neither prevents a guest from opening a direct socket. This changes no
+library API or data path; it removes an implied capability from the executable
+surface.
