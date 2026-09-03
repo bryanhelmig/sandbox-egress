@@ -6729,3 +6729,20 @@ package is `syn` 2/3 in transitive procedural-macro compilation under Hickory;
 this is not a parallel runtime subsystem the crate can remove. A thin-LTO,
 stripped release build of the executable wrapper is 2.8 MiB on the measured
 Apple host. These observations do not justify a dependency or feature change.
+
+## 2026-09-02 — one-allocation denial response trial discarded
+
+The denial path first formats a short body and then the complete HTTP response.
+A candidate calculated the body length directly and formatted the response once,
+removing one small allocation without changing bytes or branches. The existing
+`connect_denied_hostname` Criterion case established a 66.538--75.238
+microsecond baseline. The candidate measured 73.385--80.777 microseconds and
+Criterion initially reported a 6.079--22.227 percent regression. A control run
+after restoring the exact baseline code then measured 79.118--84.516
+microseconds, slower than both prior intervals. The host had drifted enough to
+invalidate attribution to the allocation change.
+
+The result is inconclusive, not a demonstrated regression, and supplies no
+performance reason to retain the rewrite. The candidate was removed. The
+current two-step form also names the body whose length it emits, so there is no
+compelling clarity win to trade against an unsupported optimization.
