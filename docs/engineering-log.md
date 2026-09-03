@@ -6983,9 +6983,11 @@ byte shorter than its wire image. It observes the CONNECT success, sends the
 hello, and proves that the proxy reads and accounts exactly the permitted
 prefix, emits `upload-limit`, forwards zero bytes to the already-connected
 upstream, records one denial and no completion, certifies close, and shuts down
-cleanly. The complete coverage matrix now has 149 unit cases and 70 integration
-cases. Line coverage rises from 95.33 to 95.50 percent, regions from 94.48 to
-94.71 percent, and functions from 94.43 to 94.96 percent.
+cleanly. One hundred consecutive fresh release processes repeat the complete
+case without a timing or cleanup failure. The complete coverage matrix now has
+149 unit cases and 70 integration cases. Line coverage rises from 95.33 to
+95.50 percent, regions from 94.48 to 94.71 percent, and functions from 94.43 to
+94.96 percent.
 
 This adds 63 test-only lines and no production branch, dependency, or public
 API. The whole Rust tree is now 14,963 lines and 13,575 code lines; structural
