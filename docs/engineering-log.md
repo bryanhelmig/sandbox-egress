@@ -6640,3 +6640,17 @@ and 19,697 connections/second; baseline results were 19,730 and 18,073. The
 ordering reversed and ranges overlapped, so no change is claimed. Eight tunnels
 also moved an exact 2 GiB per direction at 3,185.4 MiB/s upload and 3,517.4
 MiB/s download. The simplification pass preserves the measured data path.
+
+## 2026-09-02 — startup extraction trial discarded
+
+The remaining production hotspot is the listener-owner loop, so a candidate
+extracted resolver, connector, and listener initialization into a helper with
+an `InitializedProxy` carrier. It made the loop shorter on screen but made the
+system larger: 18 more Rust lines, one more structural complexity point, five
+more cognitive points, and a private type used only to shuttle values once.
+Clippy still required the long-function exception on the event loop.
+
+The candidate was removed. Startup and command processing intentionally remain
+together in the one task that owns listener ordering; splitting code is useful
+when it separates a review responsibility, not when it only moves branches and
+adds plumbing.
