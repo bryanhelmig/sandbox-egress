@@ -433,9 +433,11 @@ Start with [AGENTS.md](AGENTS.md). The deeper project record is split into:
 
 ## Status
 
-Sandbox Egress is early, pre-release software. The core lifecycle works and is
-tested, but the hostile conformance matrix and protocol enforcement are not yet
-complete. There is no compatibility promise before the first published
-release.
+Sandbox Egress is early, pre-release software. The core lifecycle,
+deterministic hostile suite, packaged source, and macOS/Rust 1.88 Linux
+factories work. Before a public `0.1`, it still needs independent API and
+threat-model review plus evidence from a real external sandbox integration;
+broader client and host-cage matrices remain ongoing. There is no compatibility
+promise before the first published release.
 
 Licensed under MIT.
