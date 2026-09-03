@@ -528,9 +528,6 @@ impl LeaseState {
 
     fn quiesce_if_generation(&self, expected: u64) -> Option<FinalUsage> {
         let mut phase = self.phase.lock().expect("lease phase poisoned");
-        if *phase == Phase::Quiesced {
-            return Some(self.counters.final_snapshot());
-        }
         if !matches!(*phase, Phase::Revoking(generation) if generation == expected)
             || expected == u64::MAX
         {

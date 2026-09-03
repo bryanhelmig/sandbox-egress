@@ -168,6 +168,7 @@ documentation brought that tree to 14,890 lines and 13,506 code lines while
 aggregate complexity remained exactly 865 structural and 2,449 cognitive
 points. Extending the existing failed-start resource lane across both pre-bind
 and post-bind errors makes the current total 14,903 lines, 13,518 code lines,
-and 868/2,457. The added decision shape is test-only. The production proxy has
-1,556 code lines and remains 187/612; its six added lines are public
-documentation, not data-path logic.
+and 868/2,457. The added decision shape is test-only. Removing an already-
+quiesced branch whose caller loop already handles that state makes the final
+tree 14,900 lines, 13,515 code lines, and 866/2,451. The production proxy is
+1,553 code lines and 185/606.

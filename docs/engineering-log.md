@@ -6799,3 +6799,24 @@ and validates each live DNS answer set before dialing. MXC ties cleanup to its
 runner/backend; it does not replace the per-source, certifiably closed `Lease`
 needed when an address will be reused. The comparison therefore adds durable
 references but no production branch or public API.
+
+## 2026-09-02 — remove a redundant quiescence race path
+
+Coverage-guided review found an already-quiesced fast path inside
+`quiesce_if_generation`. The outer loop checks for `Quiesced` before sampling a
+generation and again on its next iteration. If another close waiter changes the
+phase between those operations, returning `None` therefore loops directly to
+the existing snapshot path; the inner special case changed no ownership state
+and avoided no wait.
+
+Removing the three-line branch reduces the production proxy from 187/612 to
+185/606 structural/cognitive points and the complete Rust tree from 868/2,457
+to 866/2,451. The focused quiesced-retry, failed-close-retry, and concurrent
+close/shutdown certificates pass. Fifty fresh-process quiet-close arrival
+races and 100 simultaneous-attach races also pass.
+
+Criterion first appeared to improve by 1.0--3.0 percent against an earlier
+baseline. The reverse-order control measured the restored branch at
+1.3894--1.4054 milliseconds against the simplified 1.3891--1.4080-millisecond
+baseline and detected no change. The deletion is retained for simpler state
+logic, with no performance claim.
