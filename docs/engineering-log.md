@@ -7027,3 +7027,16 @@ HTTP/HTTPS application proxy. The host-confinement warning names both variables
 because neither prevents a guest from opening a direct socket. This changes no
 library API or data path; it removes an implied capability from the executable
 surface.
+
+## 2026-09-02 — execute the publish artifact
+
+`cargo package` proves that the selected files compile, but its verification
+step does not execute the packaged tests. The unpacked 0.1.0 archive was
+therefore tested directly, offline, with an isolated target directory. All 149
+unit cases, 70 integration cases, and benchmark smokes passed from the archive;
+all six README doctests then passed against the same unpacked manifest.
+
+This is a release-boundary check rather than a new permanent test lane: it
+proves that no deterministic test, example, or documented integration depends
+on an unshipped repository file. It changes no source, public API, package
+contents, or performance path.
