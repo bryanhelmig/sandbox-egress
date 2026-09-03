@@ -6697,3 +6697,22 @@ host address they already own beside namespace, route, and firewall setup.
 Public API docs, README, deployment contract, and simplicity review now state
 that boundary. This retains wildcard capability without making the proxy infer
 network topology or adding per-lease routing state.
+
+## 2026-09-02 — final simplification resource gate
+
+The complete deterministic conformance command passes 148 unit, 2 CLI, 17
+concurrency, 32 lifecycle, and 19 tunnelling cases after the step-back changes.
+The nine release-mode resource lanes then ran in isolated processes at their
+documented defaults: 8,000 identity lifecycles, 1,000 failed starts, 256
+concurrent management lifecycles, 128 idle tunnels, 64 near-ceiling partial
+ClientHellos, 128 partial headers, 128 partial upstream responses, 64 repeated
+bidirectionally backpressured tunnels, and 2,000 iterations each of completed,
+transfer-limited, reset, and denied terminal connections.
+
+Every lane passed and finished at nine descriptors and two threads after proxy
+shutdown. Live descriptor peaks matched retained socket topology, including
+526 for the 128 idle and partial-upstream cases, then returned to baseline.
+RSS is reported as a process high-water signal rather than a reclamation
+promise; the largest observed value was 18,960 KiB after buffering 3,841,280
+bytes of partial ClientHello input. No structural change is justified by these
+measurements.
