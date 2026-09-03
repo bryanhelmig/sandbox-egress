@@ -6633,3 +6633,10 @@ kernel, why the awkward close/error ownership shape is load-bearing, which
 capabilities remain justified, and which tempting product features stay
 outside. It also makes future additions answer concrete authority, lifecycle,
 evidence, and deletion questions before implementation.
+
+The performance gate then alternated the current tree with detached baseline
+`6aa02f6` across two 50,000-connection runs each. Current results were 18,041
+and 19,697 connections/second; baseline results were 19,730 and 18,073. The
+ordering reversed and ranges overlapped, so no change is claimed. Eight tunnels
+also moved an exact 2 GiB per direction at 3,185.4 MiB/s upload and 3,517.4
+MiB/s download. The simplification pass preserves the measured data path.

@@ -722,3 +722,34 @@ The single proxy and lease used 16 local destinations and certified exact final
 accounting after every worker and upstream joined. This is a fresh regression
 checkpoint, not a claim about external networks or a speedup over the much
 longer five-million-connection soak.
+
+## Simplification-pass controlled checkpoint
+
+Recorded 2026-09-02 after the mapped-configuration hardening and test-module
+separation. The connection comparison alternated the current tree
+(`356f6ff`) with detached production baseline `6aa02f6`, using 50,000 loopback
+connections, concurrency 64, and 16 destinations:
+
+```text
+current:  18,041 and 19,697 connections/second
+baseline: 19,730 and 18,073 connections/second
+current p50: 1,926 and 1,770 us
+baseline p50: 1,778 and 1,845 us
+```
+
+Ordering reversed and the ranges overlap almost exactly, so no connection-rate
+change is claimed. This is consistent with the implementation diff: mapped
+address validation executes only at startup, and the organization changes move
+only `cfg(test)` code.
+
+The established-tunnel checkpoint moved 2 GiB per direction through eight
+concurrent tunnels with exact accounting:
+
+```text
+upload:   3,185.4 MiB/s, 642 ms
+download: 3,517.4 MiB/s, 582 ms
+```
+
+The attach/close Criterion interval was 1.3799--1.3965 milliseconds and
+reported no detected change. Together these are regression checks, not a claim
+that source organization improves runtime performance.
