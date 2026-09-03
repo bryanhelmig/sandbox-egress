@@ -6838,3 +6838,20 @@ coverage. Warning-denied rustdoc also passes with private items included. The
 final SCC 4.0.0 measurement is 31 Rust files, 14,900 total lines, 13,515 code
 lines, 866 structural points, and 2,451 cognitive points. This documentation
 cleanup removes four net lines and changes no code, capability, or public API.
+
+## 2026-09-02 — keep Hickory's supported resolver boundary
+
+The dependency audit followed the normal graph behind Hickory's IDNA/ICU and
+two-generation `syn` footprint. Sandbox Egress already disables Hickory's
+default features and enables only `system-config` and `tokio`, but Hickory
+0.26.1 depends on its IDNA and URL machinery unconditionally inside
+`hickory-proto` and `hickory-net`. There is no supported feature switch for an
+ASCII-only downstream consumer. The duplicate normal package report contains
+only `syn` 2 and 3, both in transitive macro compilation.
+
+Replacing or patching the resolver to remove compile-time dependencies would
+trade a mature DNS implementation for a local security-sensitive fork. It
+would not shrink the public API, runtime ownership model, or normal resolver
+behavior. The current eight direct runtime dependencies and feature selection
+therefore stay unchanged; this is a possible upstream-footprint question, not
+a crate-level simplification opportunity.
