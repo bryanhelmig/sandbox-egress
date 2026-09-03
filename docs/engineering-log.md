@@ -6716,3 +6716,16 @@ RSS is reported as a process high-water signal rather than a reclamation
 promise; the largest observed value was 18,960 KiB after buffering 3,841,280
 bytes of partial ClientHello input. No structural change is justified by these
 measurements.
+
+## 2026-09-02 — close the simplification measurement loop
+
+The final SCC 4.0.0 pass reports 31 Rust files, 14,890 total lines, 13,506 code
+lines, 865 structural points, and 2,449 cognitive points. The production proxy
+contains 1,556 code lines and remains 187/612; its apparent move from 1,721 to
+1,727 source lines is entirely the wildcard-endpoint documentation.
+
+The normal graph still has eight direct dependencies. Its only duplicated
+package is `syn` 2/3 in transitive procedural-macro compilation under Hickory;
+this is not a parallel runtime subsystem the crate can remove. A thin-LTO,
+stripped release build of the executable wrapper is 2.8 MiB on the measured
+Apple host. These observations do not justify a dependency or feature change.

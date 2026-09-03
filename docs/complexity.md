@@ -162,3 +162,9 @@ as `src/proxy/tests/routing.rs`. The complete report becomes 31 files and
 14,845 lines while retaining exactly 865 structural and 2,449 cognitive points.
 The test root is 1,608 lines at 71/159; routing is 1,234 lines at 19/60. This is
 again responsibility isolation, not deleted logic or a lower aggregate score.
+
+The subsequent DNS question-association proof and wildcard-endpoint API
+documentation bring the current tree to 14,890 lines and 13,506 code lines.
+Aggregate complexity remains exactly 865 structural and 2,449 cognitive points.
+The production proxy has 1,556 code lines and remains 187/612; its six added
+lines are public documentation, not data-path logic.
