@@ -6746,3 +6746,25 @@ The result is inconclusive, not a demonstrated regression, and supplies no
 performance reason to retain the rewrite. The candidate was removed. The
 current two-step form also names the body whose length it emits, so there is no
 compelling clarity win to trade against an unsupported optimization.
+
+## 2026-09-02 — verify the simplified tree at the Linux MSRV
+
+The reproducible Docker factory built the current tree with Rust 1.88.0 on
+Debian Bookworm. Formatting, all-target compilation, strict Clippy, 148 unit
+tests, 2 CLI, 17 concurrency, 32 lifecycle, and 19 tunnelling tests, ignored
+benchmark smokes, six doctests, warning-denied rustdoc, package verification,
+and all nine shortened release resource lanes passed. Container `cargo-deny`
+is intentionally absent; the native final factory owns that policy check.
+
+The resulting Debian conformance image then reran the 148/2/17/32/19
+deterministic binaries as UID/GID 65534 and passed. Linux resource processes
+returned to four descriptors and two threads after shutdown, except the
+failed-start lane's final thread sampler momentarily observed three; the lane
+still passed its bounded recovery contract. This validates the crate boundary,
+not the privileged Firecracker or host-network integration around it.
+
+The separate Alpine host-boundary image then ran its privileged generic Linux
+certificate successfully: proxy-only routing, fenced lease close, source-IP
+identity reuse, and named namespace/nftables orphan cleanup all passed. This is
+the compositional layer a VMM supervisor must provide; it does not launch or
+test Firecracker itself.
