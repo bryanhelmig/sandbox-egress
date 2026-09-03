@@ -22,7 +22,7 @@ pub struct Usage {
 }
 
 /// A usage snapshot certified final by successful lease shutdown.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FinalUsage(Usage);
 
 impl FinalUsage {

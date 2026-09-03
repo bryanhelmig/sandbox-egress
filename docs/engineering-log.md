@@ -7053,3 +7053,17 @@ change, the shared clone at 9.93 ns with no detected change, and attach plus
 close at 1.40 ms with no detected change. No production code separated the
 samples. The isolated alert is therefore retained as host variance, not a
 reason to tune the proxy or weaken the shared immutable configuration shape.
+
+## 2026-09-02 — make final usage unforgeable through the safe API
+
+The public-surface audit found that `FinalUsage` derived `Default`. Its tuple
+field was private, but any caller could still construct a value whose type is
+documented as a certified final snapshot. This did not affect cleanup or live
+counters, but it made the semantic distinction from `Usage` weaker than the
+API claimed.
+
+Removing that one derive leaves successful `Lease::close` as the only public
+constructor. `Usage` remains defaultable for ordinary live snapshots, and
+`FinalUsage` remains copyable after certification. This is a one-line API
+tightening before the first public release, with no new type, branch, or
+runtime cost.

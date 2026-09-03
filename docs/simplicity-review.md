@@ -41,7 +41,8 @@ owners. `PeerIdentity` and `Endpoint` are boundary values. `Usage` and
 `FinalUsage` distinguish a live observation from a certified final snapshot.
 Typed close and shutdown errors retain the owning handle. TLS and diagnostic
 types configure an existing phase; they do not create another subsystem or
-lifecycle.
+lifecycle. `FinalUsage` deliberately has no public constructor or `Default`
+implementation: its type-level meaning is that certified close produced it.
 
 The synchronous management API over one owned async runtime is also part of the
 kernel. Requiring every sandbox supervisor to become async, or allocating one

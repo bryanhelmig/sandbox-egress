@@ -74,6 +74,8 @@ measurement, and rejected-experiment history lives in the
 
 ### Changed
 
+- Make successful lease shutdown the only public constructor of `FinalUsage`;
+  it no longer implements `Default`.
 - Keep resolver caching disabled by default, cap optional cache storage at 64
   responses, default DNS concurrency to 32, and default global connection
   admission to 256 after resource and capacity measurements.
