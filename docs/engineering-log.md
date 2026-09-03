@@ -6915,3 +6915,22 @@ preserved ownership. The authoritative IANA IPv4 and IPv6 special-purpose CSVs
 also retain their reviewed hashes. These gates validate the simplified state
 logic and factory behavior without adding a fuzzing workflow or changing the
 production data path.
+
+## 2026-09-02 — separate the release summary from the evidence ledger
+
+The final public-surface audit found no unjustified exported type or method.
+In particular, the proxy endpoint is needed before attachment when an
+OS-assigned listener port must be included in policy, while the lease endpoint
+supports the ordinary attach-then-handoff flow. The visible-SNI convenience
+method states the safe default, while the explicit authority enum is required
+to make ECH behavior a conscious host decision. Removing either pair would
+make a common integration awkward without reducing runtime complexity.
+
+The unreleased changelog was a different kind of duplication: 116 chronological
+bullets repeated the repository's commit history and this evidence ledger. It
+now has 24 release-facing bullets grouped as additions, security properties,
+and changes, with a link back here for exact experiments and negative results.
+The summary still names every material capability class and security boundary;
+the detailed proofs remain in the conformance suites, design documents, Git
+history, and this append-only log. This removes 180 documentation lines and no
+code, public API, test, or capability.
