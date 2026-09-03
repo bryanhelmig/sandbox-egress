@@ -376,12 +376,13 @@ scripts:
 cargo run --locked --bin sandbox-egress -- example.com
 ```
 
-After locked dependencies and cargo-deny advisory data are present, the
-factory and tests run offline and never use the public network. The IANA drift
-command is an explicit maintainer research step: it downloads the two
-authoritative CSVs and fails when either differs from the last reviewed
-SHA-256 pin. A changed pin requires a policy review; the script never rewrites
-the deny table.
+The test programs never call the public network. Ordinary first-time Cargo or
+CI setup may fetch the locked dependencies and tools; package verification and
+the dependency-policy check run offline once those inputs are present. The
+IANA drift command is a separate, explicit maintainer research step: it
+downloads the two authoritative CSVs and fails when either differs from the
+last reviewed SHA-256 pin. A changed pin requires a policy review; the script
+never rewrites the deny table.
 
 Coverage is a review aid, not a release threshold. The optional command pins
 its instrumenter version and is most useful for finding unexamined lifecycle
