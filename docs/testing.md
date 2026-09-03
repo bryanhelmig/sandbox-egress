@@ -631,6 +631,14 @@ stable `tls-sni-missing` and `client-hello-invalid` diagnostics respectively,
 zero bytes at both upstreams, exact attempted-upload accounting, two denials,
 and no completed or active connections.
 
+A separate cross-feature case sets the lease upload ceiling one byte below a
+valid ClientHello. Inspection must account exactly that prefix, report the
+stable `upload-limit` reason rather than the process-level
+`client-hello-too-large` reason, forward zero bytes to the already-connected
+upstream, and certify one denial with no active or completed connection. This
+pins the distinction between an incomplete bounded handshake and the later
+tunnel rule that requires an observed excess byte.
+
 A fixed valid ClientHello includes a GREASE cipher-suite value and a GREASE
 extension before SNI. Rustls must accept it, the focused extension walk must
 not mistake it for ECH, and the full inspected path must forward every byte

@@ -380,6 +380,14 @@ later transport failure. An over-limit upload already coalesced with the
 CONNECT header remains an earlier fail-closed case: it is denied in full before
 DNS or dialing.
 
+TLS inspection is another earlier bounded phase. Its parser ceiling is the
+smaller of the process ClientHello bound and the lease upload ceiling. If that
+many bytes still do not contain a complete ClientHello, the proxy already knows
+that no permitted complete hello can fit: it reports `upload-limit`, accounts
+exactly the allowed prefix, and forwards none of it upstream without reading an
+extra byte. The observed-excess rule above applies after inspection, in the
+ordinary bidirectional tunnel where an exact-boundary stream may validly end.
+
 An immutable policy may also set a nonzero tunnel idle timeout. Its clock
 starts only after CONNECT success and any configured ClientHello inspection;
 handshake work remains governed by the absolute handshake deadline. Every
