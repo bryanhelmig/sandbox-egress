@@ -7068,4 +7068,5 @@ constructor. `Usage` remains defaultable for ordinary live snapshots, and
 tightening before the first public release, with no new type, branch, or
 runtime cost. The complete native factory and a fresh offline execution of all
 219 deterministic tests, benchmark smokes, and six doctests from the unpacked
-79-file Cargo archive pass with the tightened surface.
+79-file Cargo archive pass with the tightened surface. The complete 219-case
+matrix and benchmark smokes also pass in a fresh optimized release build.
