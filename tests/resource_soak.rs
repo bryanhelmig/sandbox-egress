@@ -1290,6 +1290,23 @@ fn churn_address(sequence: usize) -> IpAddr {
 }
 
 fn assert_stable_non_memory_resources(baseline: Resources, current: Resources) {
+    let require_metrics = env::var("SANDBOX_EGRESS_REQUIRE_RESOURCE_METRICS").as_deref() == Ok("1");
+    assert_resource_recovery(baseline, current, require_metrics);
+}
+
+fn assert_resource_recovery(baseline: Resources, current: Resources, require_metrics: bool) {
+    if require_metrics {
+        for (name, before, after) in [
+            ("RSS", baseline.rss_kib, current.rss_kib),
+            ("descriptors", baseline.descriptors, current.descriptors),
+            ("threads", baseline.threads, current.threads),
+        ] {
+            assert!(
+                before.is_some() && after.is_some(),
+                "required {name} measurement unavailable"
+            );
+        }
+    }
     if let (Some(baseline), Some(current)) = (baseline.descriptors, current.descriptors) {
         assert!(
             current <= baseline + 2,
@@ -1377,4 +1394,35 @@ fn command_line_count(program: &str, arguments: &[&str]) -> Option<u64> {
     let output = Command::new(program).args(arguments).output().ok()?;
     output.status.success().then_some(())?;
     Some(String::from_utf8(output.stdout).ok()?.lines().count() as u64)
+}
+
+#[test]
+fn certificate_rejects_missing_baseline_or_current_resource_measurements() {
+    let measured = Resources {
+        rss_kib: Some(100),
+        descriptors: Some(10),
+        threads: Some(3),
+    };
+    for missing in [
+        Resources {
+            rss_kib: None,
+            ..measured
+        },
+        Resources {
+            descriptors: None,
+            ..measured
+        },
+        Resources {
+            threads: None,
+            ..measured
+        },
+    ] {
+        assert!(
+            std::panic::catch_unwind(|| assert_resource_recovery(missing, measured, true)).is_err()
+        );
+        assert!(
+            std::panic::catch_unwind(|| assert_resource_recovery(measured, missing, true)).is_err()
+        );
+    }
+    assert_resource_recovery(measured, measured, true);
 }

@@ -24,3 +24,8 @@ Hosted CI is deliberately one Linux job running `./scripts/check.sh`. Before a
 release, a maintainer also runs the Rust 1.88 container factory, dependency
 audit, and any resource, cross-platform, or performance checks appropriate to
 the change. See the release gates in `docs/roadmap.md`.
+
+
+For resource, lifecycle, or host-boundary changes, follow the claim-to-check
+matrix in [factory pressure](docs/factory-pressure.md). Record exact workloads
+and budgets with the results; a missing measurement cannot certify a release.

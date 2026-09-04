@@ -11,26 +11,36 @@ use ipnet::Ipv6Net;
 use sandbox_egress::{PeerIdentity, Policy, Proxy, ProxyConfig};
 
 fn attach_and_close(criterion: &mut Criterion) {
-    let proxy =
-        Proxy::start(ProxyConfig::default().with_identity_reuse_quiet_period(Duration::ZERO))
-            .expect("start benchmark proxy");
-    let identity = PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST));
-    let policy = Policy::builder().build().expect("valid policy");
-
-    criterion.bench_function("attach_close_empty_lease", |bencher| {
-        bencher.iter(|| {
-            let lease = proxy
-                .attach(identity.clone(), policy.clone())
-                .expect("attach benchmark lease");
-            lease
-                .close(Instant::now() + Duration::from_secs(1))
-                .expect("close benchmark lease");
+    // Preserve the historical control name; the companion measures the actual
+    // default quiet period rather than rewarding removal of that safety guard.
+    for (name, config) in [
+        (
+            "attach_close_empty_lease",
+            ProxyConfig::default().with_identity_reuse_quiet_period(Duration::ZERO),
+        ),
+        (
+            "attach_close_empty_lease_default_quiet",
+            ProxyConfig::default(),
+        ),
+    ] {
+        let proxy = Proxy::start(config).expect("start benchmark proxy");
+        let identity = PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST));
+        let policy = Policy::builder().build().expect("valid policy");
+        criterion.bench_function(name, |bencher| {
+            bencher.iter(|| {
+                let lease = proxy
+                    .attach(identity.clone(), policy.clone())
+                    .expect("attach benchmark lease");
+                let usage = lease
+                    .close(Instant::now() + Duration::from_secs(1))
+                    .expect("close benchmark lease");
+                assert_eq!(usage.usage().active_connections, 0);
+            });
         });
-    });
-
-    proxy
-        .shutdown(Instant::now() + Duration::from_secs(1))
-        .expect("shutdown benchmark proxy");
+        proxy
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .expect("shutdown benchmark proxy");
+    }
 }
 
 fn config_ownership(criterion: &mut Criterion) {

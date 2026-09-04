@@ -262,7 +262,10 @@ impl PolicyBuilder {
         self
     }
 
-    /// Set the maximum bytes uploaded over one tunnel.
+    /// Set the maximum bytes uploaded over each individual tunnel.
+    ///
+    /// This is not an aggregate lease quota: every new tunnel gets this
+    /// allowance, while [`Usage`](crate::Usage) totals bytes across all tunnels.
     ///
     /// After CONNECT succeeds, the proxy forwards exactly the permitted
     /// prefix. A nonempty read after the limit is reached is accounted,
@@ -272,7 +275,10 @@ impl PolicyBuilder {
         self
     }
 
-    /// Set the maximum bytes downloaded over one tunnel.
+    /// Set the maximum bytes downloaded over each individual tunnel.
+    ///
+    /// This is not an aggregate lease quota: every new tunnel gets this
+    /// allowance, while [`Usage`](crate::Usage) totals bytes across all tunnels.
     ///
     /// After CONNECT succeeds, the proxy forwards exactly the permitted
     /// prefix. A nonempty read after the limit is reached is accounted,

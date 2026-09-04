@@ -128,6 +128,10 @@ hostname may resolve to an otherwise ordinary public address, but a direct IP
 literal requires an explicit `allow_network` grant. Both paths still honor
 network denials, translated-address checks, and the proxy-endpoint guard.
 
+Byte limits apply separately to each tunnel; `Usage` totals bytes across the
+whole lease. A new connection gets a fresh byte allowance. Process connection,
+DNS, and dial capacities reject zero or oversized values at startup.
+
 ## Why a lease?
 
 Starting a connection and ending a run are concurrent events. A connection may
@@ -447,3 +451,5 @@ broader client and host-cage matrices remain ongoing. There is no compatibility
 promise before the first published release.
 
 Licensed under MIT.
+
+The opt-in [factory pressure guide](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/factory-pressure.md) covers resource certificates, management progress under churn, and default-setting lifecycle measurements.

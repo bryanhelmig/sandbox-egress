@@ -102,7 +102,8 @@ For a snapshot taken from a running VM:
 The opt-in namespace lane below preserves a live old tunnel while fencing its
 veth, certifies zero host-side proxy work, proves the still-live old namespace
 has no egress device, and only then recreates the same source IP for a fresh
-lease. It models the host ownership transition without coupling the crate to a
+lease on the same running proxy. A different destination grant and an unrelated
+continuous echo tunnel pin policy replacement and isolation. It models the host ownership transition without coupling the crate to a
 particular sandbox or VMM. A concrete sandbox integration can wrap this same
 contract with its own launch, restore, and teardown checks.
 

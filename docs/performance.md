@@ -766,3 +766,30 @@ The restored identical code measured slower than both prior intervals, so host
 drift invalidates the apparent candidate regression. The trial is
 inconclusive. The candidate was not retained because it demonstrated no gain
 and did not improve the policy or ownership model.
+
+
+## Default lifecycle and factory-pressure checkpoint
+
+Recorded 2026-09-04 on the Apple M1 with Rust 1.97.1. The lifecycle suite now
+measures the actual default quiet period beside the preserved historical
+zero-quiet control:
+
+```text
+command: ./scripts/bench.sh
+attach_close_empty_lease:               1.2545 .. 1.2672 ms
+attach_close_empty_lease_default_quiet: 27.026  .. 27.117 ms
+allowed loopback CONNECT:              104.06 .. 121.08 us
+direct loopback TCP control:           33.237 .. 42.440 us
+```
+
+The full connection/lifecycle benchmark suite passed. Criterion reported
+improvements against several locally retained prior samples, including an
+unchanged full-configuration clone control. Those are not controlled A/B
+measurements of this pass, and no speedup is claimed. The production admission,
+revocation, and data path were not changed. The useful new pressure is that
+lowering or omitting the default quiet guard cannot hide behind a benchmark
+which intentionally disables it.
+
+The bounded management-churn and resource checkpoints are recorded in the
+engineering log; their commands and acceptance budgets live in
+[factory pressure](factory-pressure.md).

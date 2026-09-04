@@ -7111,3 +7111,94 @@ the permanent source URL, so Cargo metadata and README links can refer to the
 same future public location. GitHub private vulnerability reporting cannot be
 enabled while the repository itself is private; that remains an explicit gate
 before making the repository public.
+
+
+## 2026-09-04 — apply product pressure without widening the proxy
+
+The independent review identified gaps between the shared-lease product claim
+and the evidence presented by the factory. This pass changes harnesses and
+startup validation rather than admission, revocation, identity release, or the
+data path. No capability is removed and no Rust dependency is added.
+
+The Linux host fixture now stays alive across both source-IP generations, with
+one listener and a different destination-port grant for the replacement. It
+fences the old guest, certifies its close, removes its old veth, and requires the
+replacement to deny the old port while reaching the new one. A second lease
+keeps one echo connection open throughout; reconnecting would hide a lifecycle
+regression. It must finish with one accepted/completed connection, no denials,
+and exact byte totals. The first privileged, network-isolated container run
+passed with 1,030 bystander exchanges and 6,180 bytes in each direction. The
+whole shell lane now has a 90-second watchdog and includes orphan namespace
+cleanup on failure. This is still not delayed-SYN, NAT, or VMM certification.
+
+An opt-in release-mode management workload runs 32 default-quiet attach/close
+cycles beside eight churning clients, first attributed and then unknown. All
+quiet-identity counters must stay zero; every sample must overlap observed
+terminal competitor connections and stay within the declared one-second
+attach/close workload budget. The initial native run completed 28,576 known
+and 37,616 unknown exchanges. Maximum attach/close times were 203/27,102 us and
+167/26,265 us respectively. This finite workload did not reproduce starvation;
+it does not prove progress under arbitrary backlog saturation. No lifecycle
+rewrite or fairness scheduler is justified by this result.
+
+The new resource certificate runs all nine existing soak lanes in fresh bounded
+process groups, requires RSS/FD/thread observations, and emits JSON with source,
+workload, toolchain, platform, logs, and explicit budgets. First-batch warm-up is
+followed by a growth envelope, so final recovery cannot hide earlier growth.
+Five fixed evaluator controls cover missing observations, incomplete evidence,
+interim growth, and the independent peak ceiling. With four default batches,
+250 serial runs per batch, and 64 occupied connections, every lane passed. The
+largest sampled RSS was 18,960 KiB (partial ClientHello); the largest observed
+post-warmup growth was 112 KiB. The default 128 MiB sampled ceiling and 8 MiB
+growth allowance are coarse regression tripwires for the fixture process,
+not a production memory guarantee. Python is required only for this opt-in
+certificate; ordinary hosted CI remains unchanged.
+
+A red public-startup test demonstrated that zero process capacity was silently
+accepted. Connection, DNS, and dial capacities now preserve the requested
+value and reject zero or above-semaphore-maximum values before runtime startup.
+The same matrix passes after the change, and both valid boundaries start and
+stop. Per-tunnel byte scope and remaining parser-size clamps are explicit in
+the API docs. The complexity script now enforces its documented SCC version;
+the stale assertion that hosted CI runs SCC has been corrected.
+
+The lifecycle benchmark preserves its historical zero-quiet name and adds a
+separate default-setting case. The quiet period itself remains unchanged.
+`docs/factory-pressure.md` ties claims to checks, defines a bounded junior-agent
+hit list, and reserves upstream-chaining/custom-NAT64 scope decisions for the
+owner. Additional configuration frameworks, parser replacements, and automatic
+feature deletion are not introduced.
+
+
+A final review found a narrower measurement gap: Rust recovery assertions could
+skip comparison if a baseline collector alone returned `None`. Certification
+now sets a strict measurement flag consumed by the existing recovery helper;
+both baseline and current RSS/FD/thread observations must exist. A fixed Rust
+case checks every missing field on both sides. The ordinary optional resource
+sampler retains its platform behavior. A complete CLI negative control with a
+one-KiB RSS budget produced a nonzero exit and `passed: false`, as required.
+
+The complete benchmark command passed with default attach/close at
+27.026–27.117 ms and the preserved zero-quiet control at 1.2545–1.2672 ms.
+Prior saved Criterion samples are not controlled A/B evidence; no speedup is
+claimed. The final Linux 1.88 host fixture rerun retained the same proxy through
+both generations and completed 1,067 bystander exchanges (6,402 bytes each way).
+
+
+Final verification passed: the ordinary factory ran 221 deterministic tests,
+six doctests, benchmark smokes, docs/package verification, and dependency policy;
+the serialized hostile conformance lane passed its 220 applicable cases. The
+strict-baseline resource certificate passed all nine lanes with a maximum
+sampled RSS of 18,928 KiB and maximum post-warmup growth of 176 KiB. Both complete
+bench suites and the Linux host certificate passed. Shell/Python syntax, fixed
+certificate controls, and `git diff --check` passed. Rust SCC totals are 896
+structural and 2,547 cognitive points; the added coordination is in fixtures
+and evidence, while `src/proxy.rs` is unchanged. The two Python evidence files
+add 213 lines outside that Rust-only SCC view. These costs are explicit rather
+than hidden by moving tests or weakening the measurements.
+
+Contributor instructions now require the relevant pressure lane for resource,
+lifecycle, and host-adapter changes while preserving the single lightweight
+hosted CI job. Focused raw logs and the JSON reports are under ignored `target/`
+for local inspection; the portable commands and recorded outcomes are in this
+log and the factory-pressure guide.

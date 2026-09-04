@@ -40,6 +40,17 @@ impl ProxyConfig {
         if !is_bindable_listener(self.bind_address) {
             return Err("listener must be a unicast or wildcard address with any required zone");
         }
+        for limit in [
+            self.max_connections,
+            self.max_concurrent_dns,
+            self.max_concurrent_dials,
+        ] {
+            if !(1..=tokio::sync::Semaphore::MAX_PERMITS).contains(&limit) {
+                return Err(
+                    "connection, DNS, and dial capacities must be nonzero and fit the runtime semaphore",
+                );
+            }
+        }
         if self.header_timeout.is_zero() {
             return Err("header timeout must be nonzero");
         }
@@ -126,10 +137,10 @@ impl ProxyConfig {
         self
     }
 
-    /// Set the process-wide concurrent connection ceiling, clamped to the
-    /// runtime semaphore's safe range.
+    /// Set the process-wide concurrent connection ceiling.
+    /// Startup rejects zero and values beyond the runtime semaphore's range.
     pub fn with_max_connections(mut self, max: usize) -> Self {
-        self.max_connections = max.clamp(1, tokio::sync::Semaphore::MAX_PERMITS);
+        self.max_connections = max;
         self
     }
 
@@ -147,20 +158,21 @@ impl ProxyConfig {
     }
 
     /// Set the process-wide ceiling for DNS lookups executing concurrently,
-    /// clamped to the runtime semaphore's safe range.
+    /// rejecting zero and values beyond the runtime semaphore's range at startup.
     /// Connections waiting for a permit remain subject to their DNS and
     /// absolute handshake deadlines.
     pub fn with_max_concurrent_dns(mut self, max: usize) -> Self {
-        self.max_concurrent_dns = max.clamp(1, tokio::sync::Semaphore::MAX_PERMITS);
+        self.max_concurrent_dns = max;
         self
     }
 
     /// Set the process-wide ceiling for outbound connection attempts executing
-    /// concurrently, clamped to the runtime semaphore's safe range.
+    /// concurrently. Startup rejects zero and values beyond the runtime
+    /// semaphore's range.
     /// Waiting for a permit remains subject to the absolute handshake deadline;
     /// a permit is released as soon as dialing finishes, before tunnelling.
     pub fn with_max_concurrent_dials(mut self, max: usize) -> Self {
-        self.max_concurrent_dials = max.clamp(1, tokio::sync::Semaphore::MAX_PERMITS);
+        self.max_concurrent_dials = max;
         self
     }
 
@@ -204,13 +216,14 @@ impl ProxyConfig {
         self
     }
 
-    /// Set the maximum CONNECT header block size.
+    /// Set the maximum CONNECT header block size, clamped to 1 KiB..=1 MiB.
     pub fn with_max_header_bytes(mut self, bytes: usize) -> Self {
         self.max_header_bytes = bytes.clamp(1_024, 1024 * 1024);
         self
     }
 
-    /// Set the maximum buffered TLS `ClientHello` size for inspected tunnels.
+    /// Set the maximum buffered TLS `ClientHello` size for inspected tunnels,
+    /// clamped to 1 KiB..=1 MiB.
     pub fn with_max_client_hello_bytes(mut self, bytes: usize) -> Self {
         self.max_client_hello_bytes = bytes.clamp(1_024, 1024 * 1024);
         self
@@ -663,23 +676,36 @@ mod tests {
     }
 
     #[test]
-    fn runtime_semaphore_limits_stay_within_the_runtime_bound() {
-        let config = ProxyConfig::default()
-            .with_max_connections(usize::MAX)
-            .with_max_concurrent_dns(usize::MAX)
-            .with_max_concurrent_dials(usize::MAX);
-        assert_eq!(config.max_connections, tokio::sync::Semaphore::MAX_PERMITS);
-        assert_eq!(
-            config.max_concurrent_dns,
-            tokio::sync::Semaphore::MAX_PERMITS
-        );
-        assert_eq!(
-            config.max_concurrent_dials,
-            tokio::sync::Semaphore::MAX_PERMITS
-        );
-        crate::Proxy::start(config)
-            .expect("clamped global limit starts")
+    fn invalid_process_capacity_fails_before_runtime_start() {
+        for limit in [0, tokio::sync::Semaphore::MAX_PERMITS + 1, usize::MAX] {
+            for config in [
+                ProxyConfig::default().with_max_connections(limit),
+                ProxyConfig::default().with_max_concurrent_dns(limit),
+                ProxyConfig::default().with_max_concurrent_dials(limit),
+            ] {
+                assert!(
+                    matches!(
+                        crate::Proxy::start(config),
+                        Err(crate::ProxyError::Initialization(_))
+                    ),
+                    "invalid process capacity {limit} was silently accepted"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn valid_process_capacity_boundaries_start_and_stop() {
+        for limit in [1, tokio::sync::Semaphore::MAX_PERMITS] {
+            crate::Proxy::start(
+                ProxyConfig::default()
+                    .with_max_connections(limit)
+                    .with_max_concurrent_dns(limit)
+                    .with_max_concurrent_dials(limit),
+            )
+            .expect("valid process limits")
             .shutdown(Instant::now() + Duration::from_secs(1))
             .expect("proxy shutdown");
+        }
     }
 }

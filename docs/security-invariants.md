@@ -362,9 +362,10 @@ ClientHello inspection, and management close. In particular, a ready operation
 cannot begin after an already-expired deadline merely because the timeout
 wrapper polls its inner future first.
 The process header deadline must also be nonzero. Global connection, DNS, and
-dial limits are clamped to Tokio's semaphore maximum, and a per-lease limit
-beyond that maximum returns a typed policy error before attachment; extreme
-host configuration cannot reach a panicking semaphore constructor.
+dial limits reject zero or values beyond Tokio's semaphore maximum at startup,
+and a per-lease limit outside that range returns a typed policy error before
+attachment. Invalid capacity cannot silently become a different grant or reach
+a panicking semaphore constructor.
 
 Per-tunnel byte ceilings count bytes read from the guest or upstream. After
 CONNECT establishment, while allowance remains, the metered reader caps its

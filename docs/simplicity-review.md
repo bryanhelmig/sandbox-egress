@@ -21,8 +21,10 @@ not independent product ideas. They close concrete gaps in one of four places:
 3. bounding hostile connection work;
 4. certifying teardown and final accounting.
 
-No current capability is expensive and marginal enough to remove safely. The
-strongest simplification in this pass is structural: production proxy code,
+This pass retained every capability; that is a point-in-time judgment, not a
+permanent exemption from consumer evidence. The owner-facing candidates in
+[factory pressure](factory-pressure.md) should be justified before expansion.
+The strongest simplification in this pass is structural: production proxy code,
 routing proofs, and lifecycle proofs now have separate review scopes. Future
 growth should face a much higher bar than the current surface did.
 

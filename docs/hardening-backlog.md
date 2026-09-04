@@ -8,6 +8,9 @@ are recorded in [testing](testing.md) and the
 [engineering log](engineering-log.md); this keeps the list useful to the next
 contributor instead of preserving solved work as apparent backlog.
 
+The current bounded contribution list and measured pressure lanes are in
+[factory pressure](factory-pressure.md). Start there before adding another harness.
+
 ## Lifecycle and identity
 
 - Retransmitted or delayed old-run SYNs that arrive after listener-level close

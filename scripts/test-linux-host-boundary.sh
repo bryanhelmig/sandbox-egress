@@ -9,12 +9,16 @@ if [ "$(id -u)" -ne 0 ]; then
   echo "unsupported: run as root in a disposable Linux host or privileged container" >&2
   exit 2
 fi
-for command in ip nft nc cargo; do
+for command in ip nft nc cargo ss timeout; do
   if ! command -v "$command" >/dev/null 2>&1; then
     echo "unsupported: missing $command" >&2
     exit 2
   fi
 done
+
+if [ "${SANDBOX_EGRESS_HOST_BOUNDED:-0}" != 1 ]; then
+  exec timeout 90 env SANDBOX_EGRESS_HOST_BOUNDED=1 "$0" "$@"
+fi
 
 host_namespace="seh$$"
 guest_namespace="seg$$"
@@ -26,11 +30,13 @@ fixture="${SANDBOX_EGRESS_HOST_FIXTURE:-$(pwd)/target/debug/examples/linux_host_
 temporary="$(mktemp -d /tmp/sandbox-egress-host.XXXXXX)"
 proxy_pid=""
 client_pid=""
+orphan_namespace="seo$$"
 
 cleanup() {
   set +e
   [ -z "$client_pid" ] || kill "$client_pid" 2>/dev/null
   [ -z "$proxy_pid" ] || kill "$proxy_pid" 2>/dev/null
+  ip netns del "$orphan_namespace" 2>/dev/null
   ip netns del "$guest_namespace" 2>/dev/null
   ip netns del "$host_namespace" 2>/dev/null
   rm -rf "$temporary"
@@ -71,9 +77,8 @@ wait_for_line() {
 }
 
 start_fixture() {
-  generation="$1"
-  control="$temporary/control-$generation"
-  output="$temporary/proxy-$generation.log"
+  control="$temporary/control"
+  output="$temporary/proxy.log"
   mkfifo "$control"
   exec 9<>"$control"
   ip netns exec "$host_namespace" "$fixture" "$host_ip:0" "$guest_ip" <&9 >"$output" 2>&1 &
@@ -81,8 +86,10 @@ start_fixture() {
   wait_for_line PROXY_ADDR= "$output"
   wait_for_line UPSTREAM_ADDR= "$output"
   wait_for_line BYPASS_ADDR= "$output"
+  wait_for_line REPLACEMENT_ADDR= "$output"
   proxy_address=$(sed -n 's/^PROXY_ADDR=//p' "$output")
   upstream_address=$(sed -n 's/^UPSTREAM_ADDR=//p' "$output")
+  replacement_address=$(sed -n 's/^REPLACEMENT_ADDR=//p' "$output")
   bypass_address=$(sed -n 's/^BYPASS_ADDR=//p' "$output")
   proxy_port=${proxy_address##*:}
   upstream_port=${upstream_address##*:}
@@ -112,7 +119,7 @@ assert_direct_path_blocked() {
 }
 
 create_network
-start_fixture 1
+start_fixture
 install_deny_first_boundary
 assert_direct_path_blocked
 assert_proxy_path
@@ -130,17 +137,17 @@ client_pid=$!
 wait_for_line 'HTTP/1.1 200 Connection Established' "$old_output"
 
 ip -n "$guest_namespace" link set "$guest_link" down
-printf '\n' >&9
-wait "$proxy_pid"
-proxy_pid=""
-if ! grep -q '^FINAL .*active=0' "$temporary/proxy-1.log"; then
+printf 'close\n' >&9
+wait_for_line 'FINAL generation=1 ' "$output"
+kill -0 "$proxy_pid"
+if ! grep -q '^FINAL generation=1 .*active=0' "$output"; then
   echo "lease did not certify zero active connections" >&2
-  cat "$temporary/proxy-1.log" >&2
+  cat "$output" >&2
   exit 1
 fi
 
 attempts=0
-while ip netns exec "$host_namespace" ss -Hnt state established | grep -q ":$proxy_port"; do
+while ip netns exec "$host_namespace" ss -Hnt state established | grep -q "$guest_ip:"; do
   attempts=$((attempts + 1))
   if [ "$attempts" -ge 40 ]; then
     echo "proxy retained a host-side tunnel after certified close" >&2
@@ -149,11 +156,10 @@ while ip netns exec "$host_namespace" ss -Hnt state established | grep -q ":$pro
   sleep 0.05
 done
 
-# Recreate the kernel boundary with the same source address. A fresh proxy
-# lease works only after the old path is fenced and cleanup has certified.
+# Recreate the kernel boundary with the same source address while the shared
+# proxy and unrelated tunnel remain alive. Only the run lease changes.
 ip netns del "$guest_namespace"
 ip -n "$host_namespace" link del "$host_link" 2>/dev/null || true
-orphan_namespace="seo$$"
 ip netns attach "$orphan_namespace" "$client_pid"
 if ip -n "$orphan_namespace" link show "$guest_link" >/dev/null 2>&1; then
   echo "fenced old namespace retained its egress device" >&2
@@ -174,14 +180,26 @@ ip -n "$guest_namespace" address add "$guest_ip/30" dev "$guest_link"
 ip -n "$host_namespace" link set "$host_link" up
 ip -n "$guest_namespace" link set "$guest_link" up
 
-start_fixture 2
+printf 'attach\n' >&9
+wait_for_line 'ATTACHED generation=2 ' "$output"
+kill -0 "$proxy_pid"
+grep -q "^ATTACHED generation=2 endpoint=$proxy_address$" "$output"
 install_deny_first_boundary
 assert_direct_path_blocked
+# The old grant must not survive the new policy on the same source address.
+request="CONNECT 127.0.0.1:$upstream_port HTTP/1.1\r\nHost: 127.0.0.1:$upstream_port\r\n\r\n"
+response=$(printf '%b' "$request" | ip netns exec "$guest_namespace" nc -w 2 "$host_ip" "$proxy_port")
+printf '%s' "$response" | grep -q '403'
+printf '%s' "$response" | grep -q 'port-denied'
+upstream_port=${replacement_address##*:}
 assert_proxy_path
-printf '\n' >&9
+ip -n "$guest_namespace" link set "$guest_link" down
+printf 'finish\n' >&9
 wait "$proxy_pid"
 proxy_pid=""
-grep -q '^FINAL .*active=0' "$temporary/proxy-2.log"
+grep -q '^FINAL generation=2 .*active=0' "$output"
+grep -q '^BYSTANDER exchanges=' "$output"
+cat "$output"
 
 # Simulate supervisor restart reconciliation: named kernel resources remain
 # deny-first until they are explicitly removed, then no stale name survives.
@@ -192,4 +210,4 @@ if ip netns list | grep -Eq "(^|[[:space:]])($guest_namespace|$host_namespace)([
   exit 1
 fi
 
-echo "linux host boundary: proxy-only path, fenced close, identity reuse, and orphan cleanup passed"
+echo "linux host boundary: same-proxy policy replacement, unrelated tunnel continuity, fenced close, and orphan cleanup passed"

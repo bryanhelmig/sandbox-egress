@@ -22,7 +22,8 @@ The suite is organized by claimed invariant rather than by source module.
 - Boundary validation: extreme but type-valid durations are rejected by the
   public construction APIs before they can overflow runtime deadline math.
   Zero header timeouts are rejected as unusable. Extreme global connection and
-  DNS limits are clamped to the runtime semaphore maximum and proven to start;
+  DNS/dial limits reject zero and values beyond the runtime semaphore maximum;
+  both valid process boundaries are proven to start and stop;
   the exact per-lease maximum builds while one larger returns a typed error.
 
 No test may depend on the public internet. DNS and upstream behavior must be
@@ -584,7 +585,7 @@ That contender receives exactly one `dial-capacity` denial and never reaches
 the connector. A public system-dial case sets the limit to one and holds two
 real loopback tunnels open at once, proving each permit is released after
 connection establishment rather than retained for tunnel lifetime. Extreme
-host configuration is also clamped before semaphore construction.
+host configuration is rejected before semaphore construction.
 
 A direct connection-task case supplies an already-expired listener-accept
 timestamp without sending any header bytes. It must immediately return the
@@ -693,8 +694,7 @@ before copying project sources. This cache boundary makes source-only rebuilds
 fast without changing the commands or exact Rust version used for verification.
 Factory scripts and container metadata are included in `cargo package` output,
 so a source package does not contain documentation for missing commands. The
-ordinary local factory compiles that assembled package, matching the dedicated
-CI release gate; a source-tree build alone cannot prove the include list is
+ordinary local factory compiles that assembled package, matching the ordinary factory; a source-tree build alone cannot prove the include list is
 complete.
 
 `./scripts/measure-load.sh [connections] [concurrency] [destinations]` drives
@@ -765,11 +765,26 @@ namespaces and a veth pair, starts the same library through the
 CONNECT must reach a controlled loopback echo service through the proxy while
 a direct host-veth decoy remains unreachable. The lane then holds a tunnel,
 fences the guest link, requires certified zero-active close and no host-side
-proxy socket, removes the old veth, and inspects the still-live old namespace
+proxy socket for the revoked guest, removes the old veth, and inspects the still-live old namespace
 by PID to prove its egress device is absent. Only then does it recreate the same
-source IP for a fresh successful lease. Final reconciliation deletes both
-named namespaces and proves neither survives.
+source IP for a replacement lease on the same live proxy and listener. The old
+upstream port is denied and the replacement upstream succeeds. An unrelated
+host-side lease keeps one echo tunnel open across both generations; it must
+continue making progress and finish with one completed connection and exact
+byte counters. Final reconciliation deletes both named namespaces and proves
+neither survives. The complete shell lane has a 90-second watchdog.
 
 This is a generic host lifecycle certificate, not sandbox or VMM emulation. It
 does not claim IPv6, UDP/DNS, inherited-descriptor, or NAT-port coverage; those
 remain named deployment tests in the hardening backlog.
+
+
+## Product-facing factory pressure
+
+[Factory pressure](factory-pressure.md) defines the opt-in management-churn
+workload, default-setting lifecycle benchmark, and resource certificate. The
+certificate requires RSS/FD/thread measurements and applies explicit sampled
+peak and post-warmup growth budgets; unsupported measurements fail this release
+lane. Fixed negative controls prove that missing samples and hidden interim
+memory growth cannot produce a passing certificate. These heavier checks remain
+outside the ordinary edit loop.

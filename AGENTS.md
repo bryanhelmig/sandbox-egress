@@ -77,3 +77,13 @@ A passing attractive-path test is not enough. Add the corresponding denial,
 cancellation, timeout, identity-reuse, and resource-bound case where relevant.
 Structural changes should run `./scripts/measure-complexity.sh` and explain a
 material increase or decrease rather than optimizing blindly for the score.
+
+
+Changes to allocation, buffering, task ownership, or resource limits also run
+`python3 scripts/certify-resources.py`; record the workload, budgets, and result.
+Missing required measurements fail that certificate. Do not raise a budget to
+make a candidate pass without independent evidence explaining the new bound.
+Changes to lifecycle or identity coordination additionally run the opt-in
+`management_load` target. Host-adapter changes run the Linux host-boundary lane.
+The commands, limits of each claim, and next bounded tasks are in
+`docs/factory-pressure.md`. Keep these heavier checks out of per-push hosted CI.

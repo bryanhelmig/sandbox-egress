@@ -7,7 +7,17 @@ measurement, and rejected-experiment history lives in the
 
 ## Unreleased
 
+### Changed
+
+- Reject zero or oversized process connection, DNS, and dial capacities at
+  startup instead of silently clamping them. Valid values are unchanged.
+
 ### Added
+
+- Same-proxy Linux identity-reuse evidence with a changed destination policy
+  and an unrelated continuous tunnel; opt-in management progress under churn;
+  default-quiet lifecycle measurements; and a bounded resource certificate
+  with explicit memory budgets and failure on missing measurements.
 
 - Establish the `Proxy` / immutable `Policy` / owning `Lease` API, with one
   shared synchronous management handle backed by an owned async runtime and a

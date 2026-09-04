@@ -9,8 +9,9 @@ size, structural-complexity, and cognitive-complexity reports:
 ```
 
 The default paths are `src`, `tests`, and `benches`; pass explicit paths to
-narrow a review. CI pins SCC 4.0.0 and prints both reports without applying an
-arbitrary project-wide threshold.
+narrow a review. The script requires SCC 4.0.0 and prints both reports without
+applying an arbitrary project-wide threshold. This is an explicit local/release
+check; the lean hosted CI job does not install or run SCC.
 
 Two useful review scopes are:
 
