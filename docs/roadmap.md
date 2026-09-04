@@ -50,6 +50,21 @@ consumer-owned adapter when it can compose with the current library boundary.
 
 ## Release gates
 
-Before a public `0.1.0`: API review, threat-model review, deterministic
-malformed-input corpora, MSRV CI, dependency/license audit, package dry-run
-inspection, benchmark baseline, and at least one external sandbox integration.
+The source can become public after its permanent repository URL is known, that
+URL is added to package metadata and README links, private vulnerability
+reporting is configured, and the first hosted CI run passes. The full Git
+history already has a clean secret scan; its author name and email must be
+treated as intentionally public.
+
+Before publishing a preview crate: choose the prerelease version, turn the
+Unreleased changelog into release notes, run `cargo publish --locked --dry-run`,
+inspect the package, and verify the generated crate documentation. Publishing
+remains a deliberate local maintainer action; there is no automatic release
+workflow or long-lived registry token in GitHub Actions.
+
+Before presenting `0.1.0` as ready for serious sandbox integration: complete an
+independent API review, an independent threat-model review, and at least one
+external sandbox integration. The deterministic malformed-input corpus, MSRV
+factory, dependency/license audit, package inspection, benchmark baseline, and
+resource certification are already implemented but must be rerun for the
+release commit.

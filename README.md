@@ -378,6 +378,12 @@ scripts:
 cargo run --locked --bin sandbox-egress -- example.com
 ```
 
+Hosted CI intentionally runs only `./scripts/check.sh` in one cached Linux job.
+Pushes to feature branches are checked through their pull request rather than
+also consuming a duplicate push run. Cross-platform, MSRV, dependency-policy,
+resource, complexity, and container certification remain explicit maintainer
+checks instead of spending hosted minutes on every change.
+
 The test programs never call the public network. Ordinary first-time Cargo or
 CI setup may fetch the locked dependencies and tools; package verification and
 the dependency-policy check run offline once those inputs are present. The

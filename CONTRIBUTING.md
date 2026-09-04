@@ -19,3 +19,8 @@ for the aggregate percentage.
 
 Bug reports involving a possible bypass should follow `SECURITY.md`, not a
 public issue.
+
+Hosted CI is deliberately one Linux job running `./scripts/check.sh`. Before a
+release, a maintainer also runs the Rust 1.88 container factory, dependency
+audit, and any resource, cross-platform, or performance checks appropriate to
+the change. See the release gates in `docs/roadmap.md`.

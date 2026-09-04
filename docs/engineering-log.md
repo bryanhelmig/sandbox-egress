@@ -7070,3 +7070,24 @@ runtime cost. The complete native factory and a fresh offline execution of all
 219 deterministic tests, benchmark smokes, and six doctests from the unpacked
 79-file Cargo archive pass with the tightened surface. The complete 219-case
 matrix and benchmark smokes also pass in a fresh optimized release build.
+
+## 2026-09-03 — make hosted CI proportional
+
+The pre-public workflow used separate jobs for a three-operating-system test
+matrix, MSRV, documentation and packaging, dependency policy, resource smoke,
+container conformance, and complexity reporting. That would reserve nine
+hosted runners for every push and pull request, while repeating compilation
+that the local release factory already performs more thoroughly.
+
+Hosted CI now has one cached Ubuntu job with a 15-minute bound. It runs the
+ordinary `scripts/check.sh` factory on pull requests and main-branch pushes;
+feature-branch pushes do not duplicate their pull-request run, and superseded
+runs are cancelled. MSRV, dependency, resource, complexity, cross-platform,
+and container evidence remain explicit release checks rather than disappearing
+from the project contract.
+
+The publication audit also ran a registry-connected `cargo publish --dry-run`
+successfully and scanned all 279 commits with Gitleaks without finding a leak.
+The crate name was absent from the crates.io index at the time of the check.
+Repository metadata, portable docs links, a private security-reporting channel,
+and the first real hosted run necessarily wait for the public repository URL.
