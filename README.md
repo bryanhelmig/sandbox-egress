@@ -371,6 +371,7 @@ scripts:
 ./scripts/test-conformance.sh   hostile lifecycle and concurrency cases
 ./scripts/bench.sh              Criterion performance baseline
 ./scripts/measure-resources.sh  lease, control, idle, TLS, pressure, terminal soak
+python3 scripts/certify-resources.py  bounded RSS/FD/thread certificate
 ./scripts/measure-complexity.sh source size and complexity trend report
 ./scripts/measure-coverage.sh   optional uncovered-code review report
 ./scripts/measure-load.sh       concurrent CONNECT capacity and tail latency
@@ -451,5 +452,3 @@ broader client and host-cage matrices remain ongoing. There is no compatibility
 promise before the first published release.
 
 Licensed under MIT.
-
-The opt-in [factory pressure guide](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/factory-pressure.md) covers resource certificates, management progress under churn, and default-setting lifecycle measurements.

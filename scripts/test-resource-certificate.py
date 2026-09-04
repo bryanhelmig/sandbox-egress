@@ -44,6 +44,26 @@ class CertificateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "sampled RSS"):
             self.assess(fixture([1100, 1100, 1100]))
 
+    def test_stable_dirty_source_is_allowed_for_candidate_measurement(self):
+        state = {"commit": "abc", "working_tree": " M src/lib.rs", "source_tree_sha256": "123"}
+        certificate.require_stable_source(state, state, False)
+
+    def test_release_certificate_rejects_a_dirty_source(self):
+        state = {"commit": "abc", "working_tree": " M src/lib.rs", "source_tree_sha256": "123"}
+        with self.assertRaisesRegex(ValueError, "clean working tree"):
+            certificate.require_stable_source(state, state, True)
+
+    def test_source_change_during_certificate_is_rejected(self):
+        before = {"commit": "abc", "working_tree": "", "source_tree_sha256": "123"}
+        for field, changed in [
+            ("commit", "def"),
+            ("working_tree", " M src/lib.rs"),
+            ("source_tree_sha256", "456"),
+        ]:
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "source tree changed"):
+                after = dict(before, **{field: changed})
+                certificate.require_stable_source(before, after, False)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -7202,3 +7202,18 @@ lifecycle, and host-adapter changes while preserving the single lightweight
 hosted CI job. Focused raw logs and the JSON reports are under ignored `target/`
 for local inspection; the portable commands and recorded outcomes are in this
 log and the factory-pressure guide.
+
+## 2026-09-04 — close the resource-certificate provenance race
+
+Review found that the certificate recorded its commit, dirty state, and source
+fingerprint only before starting nine separate Rust processes. Another local
+contributor could therefore change the tree between lanes and leave a passing
+report whose initial fingerprint did not describe every executed binary.
+
+The driver now compares the complete source state before and after the lanes
+and fails a mixed-source run. Dirty trees remain useful for measuring a local
+candidate, while `--require-clean` makes release evidence fail before expensive
+work begins. Three fixed controls cover stable dirty candidates, dirty release
+runs, and changes to the commit, status, or content fingerprint. The README
+places the certificate beside the other development commands rather than after
+the license footer.

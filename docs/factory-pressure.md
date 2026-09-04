@@ -22,12 +22,13 @@ or privileged container job.
 ## Resource certificate
 
 The Python standard-library driver runs each existing Rust resource lane in a
-fresh process. It first runs five deterministic negative-control tests for the
+fresh process. It first runs eight deterministic negative-control tests for the
 evidence evaluator. Each Rust subprocess group has a timeout; a stuck workload
 is killed and cannot receive a success certificate. The JSON report records
 commands, workload settings, commit, dirty state, source-tree fingerprint,
-toolchain, platform, logs, measurements, and pass/fail. A failed or unsupported
-measurement produces `passed: false` and a nonzero command exit.
+toolchain, platform, logs, measurements, and pass/fail. It fingerprints the
+source before and after all lanes and rejects a mixed-source run. A failed or
+unsupported measurement produces `passed: false` and a nonzero command exit.
 
 ```sh
 python3 scripts/certify-resources.py
@@ -58,7 +59,8 @@ For a fixed release worker, calibrate with repeated unchanged runs, then record
 an explicit invocation such as:
 
 ```sh
-python3 scripts/certify-resources.py --runs-per-batch 1000 --batches 6 \
+python3 scripts/certify-resources.py --require-clean \
+  --runs-per-batch 1000 --batches 6 \
   --connections 128 --max-rss-kib 131072 --max-growth-kib 8192 \
   --output target/release-resource-certificate.json
 ```

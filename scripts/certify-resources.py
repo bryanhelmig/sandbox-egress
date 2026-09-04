@@ -74,6 +74,29 @@ def capture(command, cwd):
     return subprocess.check_output(command, cwd=cwd, text=True, timeout=15).strip()
 
 
+def source_state(root):
+    """Fingerprint every tracked or unignored source file."""
+    digest = hashlib.sha256()
+    paths = capture(["git", "ls-files", "-c", "-o", "--exclude-standard", "-z"], root).split("\0")
+    for name in sorted(set(paths) - {""}):
+        path = root / name
+        if path.is_file():
+            digest.update(name.encode() + b"\0" + hashlib.sha256(path.read_bytes()).digest())
+    return {
+        "commit": capture(["git", "rev-parse", "HEAD"], root),
+        "working_tree": capture(["git", "status", "--porcelain=v1"], root),
+        "source_tree_sha256": digest.hexdigest(),
+    }
+
+
+def require_stable_source(before, after, require_clean):
+    """Reject release dirt or any source change while the lanes execute."""
+    if require_clean and before["working_tree"]:
+        raise ValueError("resource certification requires a clean working tree")
+    if before != after:
+        raise ValueError("source tree changed while resource certification was running")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=Path("target/resource-certificate.json"))
@@ -83,6 +106,7 @@ def main():
     parser.add_argument("--max-rss-kib", type=int, default=131072)
     parser.add_argument("--max-growth-kib", type=int, default=8192)
     parser.add_argument("--lane-timeout-seconds", type=int, default=180)
+    parser.add_argument("--require-clean", action="store_true")
     args = parser.parse_args()
     if args.batches < 3 or min(args.runs_per_batch, args.connections, args.max_rss_kib,
                               args.lane_timeout_seconds) <= 0 or args.max_growth_kib < 0:
@@ -109,25 +133,20 @@ def main():
         "SANDBOX_EGRESS_TERMINAL_BATCHES": args.batches,
     }
     environment = dict(os.environ, **{key: str(value) for key, value in config.items()})
-    report = {"schema": 1, "passed": False, "utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    report = {"schema": 2, "passed": False, "utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
               "platform": platform.platform(), "workload": config,
               "max_rss_kib": args.max_rss_kib, "max_growth_kib": args.max_growth_kib,
-              "lane_timeout_seconds": args.lane_timeout_seconds, "lanes": {}}
+              "lane_timeout_seconds": args.lane_timeout_seconds,
+              "require_clean": args.require_clean, "lanes": {}}
     try:
         if platform.system() not in ("Linux", "Darwin"):
             raise ValueError("resource certification requires Linux or macOS measurements")
         subprocess.run([sys.executable, str(root / "scripts/test-resource-certificate.py")],
                        check=True, timeout=15)
-        report["commit"] = capture(["git", "rev-parse", "HEAD"], root)
-        report["working_tree"] = capture(["git", "status", "--porcelain=v1"], root)
+        before = source_state(root)
+        report.update(before)
+        require_stable_source(before, before, args.require_clean)
         report["rustc"] = capture(["rustc", "--version"], root)
-        digest = hashlib.sha256()
-        paths = capture(["git", "ls-files", "-c", "-o", "--exclude-standard", "-z"], root).split("\0")
-        for name in sorted(set(paths) - {""}):
-            path = root / name
-            if path.is_file():
-                digest.update(name.encode() + b"\0" + hashlib.sha256(path.read_bytes()).digest())
-        report["source_tree_sha256"] = digest.hexdigest()
         for name, prefix in LANES.items():
             command = ["cargo", "test", "--locked", "--release", "--test", "resource_soak", name,
                        "--", "--ignored", "--nocapture", "--exact"]
@@ -149,6 +168,9 @@ def main():
                 raise ValueError(f"{name}: Rust lane failed; see {path}")
             result.update(assess(path.read_text(), prefix, args.batches, args.max_rss_kib, args.max_growth_kib))
             result["passed"] = True
+        after = source_state(root)
+        report["finished_source"] = after
+        require_stable_source(before, after, args.require_clean)
         report["passed"] = True
     except (ValueError, OSError, subprocess.SubprocessError) as error:
         report["error"] = str(error)
