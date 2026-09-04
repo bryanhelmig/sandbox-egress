@@ -41,7 +41,7 @@ sidecar in the network namespace. Since Linux 5.17, either capability can set
 the mark; Docker retains `CAP_NET_RAW` by default. Running as a non-root UID
 does not replace this capability check.
 
-The complete [deployment contract](docs/deployment-contract.md) divides the
+The complete [deployment contract](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/deployment-contract.md) divides the
 guarantees owned by this crate from the direct TCP, UDP, DNS, inherited-socket,
 and host-IPC confinement that the sandbox must own. That checklist is the
 right starting point before calling a deployment safe.
@@ -351,7 +351,7 @@ sets of every process sharing the guest network namespace. In particular,
 drop both `CAP_NET_ADMIN` and `CAP_NET_RAW`; a default container capability set
 may still include the latter.
 
-The [host network integration contract](docs/host-integration.md) makes the
+The [host network integration contract](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/host-integration.md) makes the
 generation record, fail-closed readiness, restore/resume, orphan
 reconciliation, bandwidth fairness, and kernel-capacity evidence explicit.
 Firecracker, containers, namespaces, and process sandboxes are consumers of
@@ -420,22 +420,22 @@ docker build -f Dockerfile.host-boundary -t sandbox-egress-host-boundary:local .
 docker run --rm --privileged sandbox-egress-host-boundary:local
 ```
 
-Start with [AGENTS.md](AGENTS.md). The deeper project record is split into:
+Start with [AGENTS.md](https://github.com/bryanhelmig/sandbox-egress/blob/main/AGENTS.md). The deeper project record is split into:
 
-- [founding context](docs/founding-context.md) — product ambition and audience;
-- [design brief](docs/design-brief.md) — the original lifecycle requirements;
-- [security invariants](docs/security-invariants.md) — claims and trust boundary;
-- [host network integration](docs/host-integration.md) — lifecycle, restore,
+- [founding context](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/founding-context.md) — product ambition and audience;
+- [design brief](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/design-brief.md) — the original lifecycle requirements;
+- [security invariants](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/security-invariants.md) — claims and trust boundary;
+- [host network integration](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/host-integration.md) — lifecycle, restore,
   readiness, shaping, and kernel evidence;
-- [architecture](docs/architecture.md) — internal ownership and data flow;
-- [testing strategy](docs/testing.md) — conformance and resource evidence;
-- [performance evidence](docs/performance.md) — reproducible measurements;
-- [complexity evidence](docs/complexity.md) — source and decision-shape trends;
-- [simplicity review](docs/simplicity-review.md) — what belongs in the core;
-- [engineering log](docs/engineering-log.md) — experiments and negative results;
-- [hardening backlog](docs/hardening-backlog.md) — attack and measurement matrix;
-- [prior art](docs/prior-art.md) — reviewed projects and pinned revisions;
-- [roadmap](docs/roadmap.md) — known gaps and release gates.
+- [architecture](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/architecture.md) — internal ownership and data flow;
+- [testing strategy](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/testing.md) — conformance and resource evidence;
+- [performance evidence](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/performance.md) — reproducible measurements;
+- [complexity evidence](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/complexity.md) — source and decision-shape trends;
+- [simplicity review](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/simplicity-review.md) — what belongs in the core;
+- [engineering log](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/engineering-log.md) — experiments and negative results;
+- [hardening backlog](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/hardening-backlog.md) — attack and measurement matrix;
+- [prior art](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/prior-art.md) — reviewed projects and pinned revisions;
+- [roadmap](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/roadmap.md) — known gaps and release gates.
 
 ## Status
 

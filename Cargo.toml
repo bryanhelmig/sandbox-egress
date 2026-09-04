@@ -5,6 +5,7 @@ edition = "2024"
 rust-version = "1.88"
 description = "Embeddable, run-scoped egress proxy for Rust sandbox supervisors"
 documentation = "https://docs.rs/sandbox-egress"
+repository = "https://github.com/bryanhelmig/sandbox-egress"
 license = "MIT"
 readme = "README.md"
 keywords = ["sandbox", "egress", "proxy", "ssrf", "microvm"]

@@ -7091,3 +7091,23 @@ successfully and scanned all 279 commits with Gitleaks without finding a leak.
 The crate name was absent from the crates.io index at the time of the check.
 Repository metadata, portable docs links, a private security-reporting channel,
 and the first real hosted run necessarily wait for the public repository URL.
+
+## 2026-09-04 — preserve the audited history and establish the private origin
+
+Before the first remote push, the complete 280-commit history was inspected as
+one linear project history. Gitleaks found no secrets in any reachable commit;
+the history contains one root, no merges, one intentional author identity, no
+fixup or work-in-progress subjects, no suspicious historical paths, and no
+large binary artifacts. The largest reachable blob is the 403 KiB engineering
+log itself, and a full Git bundle compresses the repository and all history to
+about 1 MiB. Two dangling blobs reported by `git fsck` are unreachable and
+will not be transferred by a normal push.
+
+That evidence favors keeping the history: its many small commits preserve the
+performance, correctness, security, and simplification cycles that explain the
+current design, while rebasing or squashing would remove provenance without a
+material upload-size benefit. The private GitHub repository now establishes
+the permanent source URL, so Cargo metadata and README links can refer to the
+same future public location. GitHub private vulnerability reporting cannot be
+enabled while the repository itself is private; that remains an explicit gate
+before making the repository public.
