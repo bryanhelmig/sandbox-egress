@@ -11,8 +11,22 @@ measurement, and rejected-experiment history lives in the
 
 - Reject zero or oversized process connection, DNS, and dial capacities at
   startup instead of silently clamping them. Valid values are unchanged.
+- Apply the same startup validation to parser, DNS answer/cache, and diagnostic
+  ceilings. Invalid requests fail instead of silently changing the limit.
+- Reject malformed, out-of-range, or nondecimal Host ports before DNS or dialing,
+  while preserving absent ports and valid matching decimal ports.
+- Require exact CONNECT success in allowed benchmarks, with a real-denial
+  negative control; instrument and stabilize the opt-in management workload
+  without weakening its competing-traffic requirement.
+- Center the README on `Proxy / Policy / Lease`, certified close, and the host
+  boundary; preserve advanced examples as tested configuration documentation.
 
 ### Added
+
+- Explicit release certification with isolated source snapshots, fresh dependency
+  evidence, independent performance budgets, and failure on missing/noisy evidence.
+- A separate public-API host consumer covering failed-close ownership and retry;
+  freshness and hash checks for the Linux fixture; ownership warnings on handles.
 
 - Same-proxy Linux identity-reuse evidence with a changed destination policy
   and an unrelated continuous tunnel; opt-in management progress under churn;

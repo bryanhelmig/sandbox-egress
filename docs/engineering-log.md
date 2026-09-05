@@ -7217,3 +7217,85 @@ work begins. Three fixed controls cover stable dirty candidates, dirty release
 runs, and changes to the commit, status, or content fingerprint. The README
 places the certificate beside the other development commands rather than after
 the license footer.
+
+## 2026-09-05 — make release evidence earn its verdict
+
+Review of `b1a6c3f` reproduced two narrow defects before changing production
+behavior. The HTTP authority parser accepts malformed port spellings while
+`port_u16()` conflates invalid and absent ports; the existing Host check therefore
+accepted `:abc` and `:99999`. Fixed DNS/IPv4/bracketed-IPv6 matrices now require an
+absent port or a valid matching decimal port. An initial repair also exposed
+`+443`, accepted by the dependency's integer conversion; the small adapter now
+requires decimal digits while keeping `http`/`httparse` as the grammar boundary.
+A real-listener case proves rejected headers produce no resolver or connector
+calls. This was protocol-validation evidence, not an established SSRF bypass.
+
+The allowed CONNECT benchmarks previously treated a 39-byte read as success;
+a real 403 can satisfy that read. Every allowed benchmark now checks exact 200
+bytes, hostname fixtures check their upstream acknowledgement, and final usage
+checks distinguish allowed and denied work. A shared success oracle is exercised
+against a real policy denial as an ordinary and container conformance test.
+Timing boundaries remain intact, but historical estimates are not comparable
+with the stronger oracle. No historical denial or performance improvement is
+inferred from the old measurement gap.
+
+The management experiment preserved the failed overlap assertion and recorded
+per-sample attempt/connect/terminal/error counters. Three ordinary-close trials
+failed the offered-traffic overlap check; all three alternating reset-on-drop
+trials passed. Quiet intervals had neither fresh attempts nor terminal outcomes,
+with workers in connect/read phases. Resetting completed fixture sockets (as in
+the existing connection benchmarks) removes that confound without counting
+socket timeouts as work or changing production admission/drain code. This is
+evidence for a workload repair, not proof of a particular kernel cause or an
+arbitrary-saturation fairness guarantee. Detailed counters remain in the lane.
+
+Hard parser, DNS answer/cache, and diagnostic ceilings now follow the existing
+process-capacity rule: preserve the requested value and reject an invalid startup
+configuration. The original code failed the new invalid-limit control by silently
+enlarging a 512-byte request. Valid boundaries and defaults remain unchanged.
+`Proxy` and `Lease` gain ownership-oriented `must_use` warnings; the runtime and
+lifecycle implementation are unchanged.
+
+The host fixture is now a separate unpublished package using only the public
+crate, with the example compiling that same source. It deliberately fails close,
+proves retained ownership and denied reattachment, retries, and preserves the
+same listener, changed replacement policy, and continuous bystander. The local
+shell always asks Cargo to establish freshness; supplied binaries require an
+expected SHA-256. Linux builds disable fixture debug symbols to avoid unnecessary
+image/storage cost. An initial Docker artifact selector matched both a CLI and
+a test; filtering Cargo's target kind fixed it. Two failed build containers from
+this experiment were removed after a local storage failure; unrelated images
+and caches were retained. The Linux consumer passed with 1,044 bystander
+exchanges and 6,264 exact bytes in each direction.
+
+The example and external package include one shared source under `tests/support`.
+Cargo excludes nested packages from published archives, so placing the canonical
+source inside the consumer package would break the packaged example. Package-file
+inspection caught that issue before publication. The final layout retains the
+external dependency boundary while keeping the shared example source packaged.
+
+The README now centers the three-object model, owning-error retry, and the host
+boundary. Advanced recipes moved to `docs/configuration.md` and remain doctested;
+all seven documentation examples passed. No feature flags, new runtime
+dependencies, host framework, or upstream/NAT64 feature deletion were introduced.
+
+The explicit release driver composes existing checks from clean isolated git
+snapshots. It records source/tool/image/advisory identity, rejects incomplete
+lanes, uses fresh advisory data, retains failure logs, and compares independent
+setup/default-close/upload/download budgets. Six fixed evidence controls include
+actual failing/timed-out subprocesses. The first performance use must calibrate
+unchanged-source alternating pairs; neither a changed workload nor noisy evidence
+can establish a speedup. The source-controlled instructions distinguish this
+certificate from independent security review and actual VMM/host certification.
+Hosted CI remains one ordinary cached job.
+
+SCC 4.0.0 reports 964 structural and 2,719 cognitive Rust points versus the prior
+896/2,547. The increase is primarily explicit matrices, benchmark assertions,
+management diagnostics, and the external consumer's ownership checks. The Python
+release driver and controls are additional maintainer complexity outside that
+Rust-only metric, justified by one fail-closed composition of existing lanes.
+Raw red/green experiments live under ignored `target/release-hardening/`; the
+clean-source release run writes its own complete manifest and logs after this
+implementation is committed. Full accept-drain saturation, delayed-packet/NAT
+generation teardown, and DNS decoder allocation bounds remain separate bounded
+investigations; this batch does not claim to settle them.

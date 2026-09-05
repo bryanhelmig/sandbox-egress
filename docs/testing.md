@@ -760,11 +760,14 @@ traffic while a dedicated release worker should not.
 
 `scripts/test-linux-host-boundary.sh` is an opt-in privileged lane, kept out of
 the ordinary unprivileged factory. It creates separate host and guest network
-namespaces and a veth pair, starts the same library through the
-`linux_host_proxy` example, and installs a deny-first nftables input chain. A guest
+namespaces and a veth pair, starts the same library through the separate
+`tests/consumer` package (also compiled as the `linux_host_proxy` example), and
+installs a deny-first nftables input chain. Cargo checks executable freshness on
+each local invocation; prebuilt fixtures require an expected SHA-256. A guest
 CONNECT must reach a controlled loopback echo service through the proxy while
 a direct host-veth decoy remains unreachable. The lane then holds a tunnel,
-fences the guest link, requires certified zero-active close and no host-side
+fences the guest link, proves an expired close retains ownership and rejects
+reattachment, retries to certified zero-active close, and requires no host-side
 proxy socket for the revoked guest, removes the old veth, and inspects the still-live old namespace
 by PID to prove its egress device is absent. Only then does it recreate the same
 source IP for a replacement lease on the same live proxy and listener. The old
@@ -788,3 +791,11 @@ peak and post-warmup growth budgets; unsupported measurements fail this release
 lane. Fixed negative controls prove that missing samples and hidden interim
 memory growth cannot produce a passing certificate. These heavier checks remain
 outside the ordinary edit loop.
+
+The [release driver](release-certification.md) binds these checks to isolated
+source snapshots, records tool/image/advisory provenance, and requires independent
+performance budgets. Fixed negative controls reject incomplete reports, changed
+sources, failing or timed-out commands, incompatible workloads, and noisy or
+regressed performance. `benchmark_contract` additionally feeds an actual 403
+policy denial through the success oracle used by the CONNECT benchmark and
+requires rejection; a 39-byte read alone cannot certify successful setup.

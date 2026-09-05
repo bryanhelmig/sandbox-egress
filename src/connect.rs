@@ -87,7 +87,7 @@ pub(crate) fn parse_connect(bytes: &[u8]) -> Result<ConnectRequest, &'static str
         return Err("userinfo-not-allowed");
     }
     let authority: Authority = target.parse().map_err(|_| "invalid-authority")?;
-    let port = authority.port_u16().ok_or("missing-port")?;
+    let port = decimal_port(&authority).ok_or("missing-port")?;
     let host = authority_host(authority.host()).map_err(|()| "invalid-ipv6-literal")?;
     if host.is_empty() {
         return Err("missing-host");
@@ -127,15 +127,25 @@ fn validate_host_header(
         return Err("invalid-host-header");
     }
     let authority: Authority = value.parse().map_err(|_| "invalid-host-header")?;
+    // Authority accepts an invalid port spelling, while port_u16() reports
+    // both that case and an absent port as None. Compare with the parser's
+    // complete host (including IPv6 brackets) to distinguish the two.
+    let port = decimal_port(&authority);
+    if authority.as_str() != authority.host() && port.is_none() {
+        return Err("invalid-host-header");
+    }
     let host = authority_host(authority.host()).map_err(|()| "invalid-host-header")?;
-    if !hosts_equivalent(connect_host, host)
-        || authority
-            .port_u16()
-            .is_some_and(|port| port != connect_port)
-    {
+    if !hosts_equivalent(connect_host, host) || port.is_some_and(|port| port != connect_port) {
         return Err("host-header-mismatch");
     }
     Ok(())
+}
+
+fn decimal_port(authority: &Authority) -> Option<u16> {
+    authority
+        .port()
+        .filter(|port| port.as_str().bytes().all(|byte| byte.is_ascii_digit()))
+        .map(|port| port.as_u16())
 }
 
 fn authority_host(host: &str) -> Result<&str, ()> {
@@ -313,6 +323,7 @@ mod tests {
             "example.com",
             "example.com:65536",
             "example.com:-1",
+            "example.com:+443",
             "example.com:0",
             "example.com:443:444",
             "example.com:443/path",
@@ -372,6 +383,22 @@ mod tests {
                 reason,
                 "unexpected result for {request:?}"
             );
+        }
+    }
+
+    #[test]
+    fn host_port_is_absent_or_valid_and_matching() {
+        for host in ["example.com", "127.0.0.1", "[2001:db8::1]"] {
+            for suffix in ["", ":443", ":00443"] {
+                let wire = format!("CONNECT {host}:443 HTTP/1.1\r\nHost: {host}{suffix}\r\n\r\n");
+                assert!(parse_connect(wire.as_bytes()).is_ok(), "rejected {wire:?}");
+            }
+            for suffix in [
+                ":", ":abc", ":-1", ":+443", ":0", ":444", ":65536", ":99999",
+            ] {
+                let wire = format!("CONNECT {host}:443 HTTP/1.1\r\nHost: {host}{suffix}\r\n\r\n");
+                assert!(parse_connect(wire.as_bytes()).is_err(), "accepted {wire:?}");
+            }
         }
     }
 

@@ -51,6 +51,27 @@ impl ProxyConfig {
                 );
             }
         }
+        if !(1..=1024).contains(&self.max_resolved_addresses) {
+            return Err("resolved address ceiling must be in 1..=1024");
+        }
+        if [self.max_header_bytes, self.max_client_hello_bytes]
+            .iter()
+            .any(|bytes| !(1024..=1024 * 1024).contains(bytes))
+        {
+            return Err("header and ClientHello ceilings must be in 1 KiB..=1 MiB");
+        }
+        if self.dns_cache_entries > MAX_DNS_CACHE_ENTRIES
+            || self.dns_cache_max_ttl > MAX_DNS_CACHE_TTL
+        {
+            return Err("DNS cache must not exceed 64 responses or 24 hours");
+        }
+        if self
+            .diagnostics
+            .as_ref()
+            .is_some_and(|config| !(1..=10_000).contains(&config.max_events_per_second))
+        {
+            return Err("diagnostic event rate must be in 1..=10000");
+        }
         if self.header_timeout.is_zero() {
             return Err("header timeout must be nonzero");
         }
@@ -180,12 +201,12 @@ impl ProxyConfig {
     ///
     /// Caching is disabled by default because a DNS response can contain many
     /// records and the resolver bounds its cache by response count, not bytes.
-    /// The values cannot exceed 64 responses and 24 hours. The TTL ceiling
+    /// Startup rejects values exceeding 64 responses or 24 hours. The TTL ceiling
     /// applies to both successful and negative answers. Set `entries` to zero
     /// to disable the cache.
     pub fn with_dns_cache(mut self, entries: u64, max_ttl: Duration) -> Self {
-        self.dns_cache_entries = entries.min(MAX_DNS_CACHE_ENTRIES);
-        self.dns_cache_max_ttl = max_ttl.min(MAX_DNS_CACHE_TTL);
+        self.dns_cache_entries = entries;
+        self.dns_cache_max_ttl = max_ttl;
         self
     }
 
@@ -209,23 +230,23 @@ impl ProxyConfig {
 
     /// Set the maximum IP addresses accepted from one DNS lookup.
     ///
-    /// Values are clamped to `1..=1024`. An answer over the configured ceiling
+    /// Startup rejects values outside `1..=1024`. An answer over the configured ceiling
     /// is rejected as a whole rather than partially dialed.
     pub fn with_max_resolved_addresses(mut self, max: usize) -> Self {
-        self.max_resolved_addresses = max.clamp(1, 1_024);
+        self.max_resolved_addresses = max;
         self
     }
 
-    /// Set the maximum CONNECT header block size, clamped to 1 KiB..=1 MiB.
+    /// Set the maximum CONNECT header block size; startup requires 1 KiB..=1 MiB.
     pub fn with_max_header_bytes(mut self, bytes: usize) -> Self {
-        self.max_header_bytes = bytes.clamp(1_024, 1024 * 1024);
+        self.max_header_bytes = bytes;
         self
     }
 
     /// Set the maximum buffered TLS `ClientHello` size for inspected tunnels,
-    /// clamped to 1 KiB..=1 MiB.
+    /// with startup requiring 1 KiB..=1 MiB.
     pub fn with_max_client_hello_bytes(mut self, bytes: usize) -> Self {
-        self.max_client_hello_bytes = bytes.clamp(1_024, 1024 * 1024);
+        self.max_client_hello_bytes = bytes;
         self
     }
 
@@ -268,7 +289,7 @@ impl ProxyConfig {
     /// Emit bounded denial events through a caller-owned bounded channel.
     ///
     /// Delivery uses nonblocking [`SyncSender::try_send`]. Events are limited
-    /// process-wide to `max_events_per_second`, clamped to `1..=10_000`.
+    /// process-wide to `max_events_per_second`; startup requires `1..=10_000`.
     /// Rate- or channel-suppressed events are counted on the next event that
     /// can be delivered. A disconnected receiver silently disables delivery.
     pub fn with_diagnostic_channel(
@@ -278,7 +299,7 @@ impl ProxyConfig {
     ) -> Self {
         self.diagnostics = Some(DiagnosticConfig {
             sender,
-            max_events_per_second: max_events_per_second.clamp(1, 10_000),
+            max_events_per_second,
         });
         self
     }
@@ -380,31 +401,26 @@ mod tests {
     }
 
     #[test]
-    fn parser_and_resolver_ceilings_stay_bounded() {
-        assert_eq!(
-            ProxyConfig::default()
-                .with_max_resolved_addresses(0)
-                .max_resolved_addresses,
-            1
-        );
-        assert_eq!(
-            ProxyConfig::default()
-                .with_max_resolved_addresses(usize::MAX)
-                .max_resolved_addresses,
-            1_024
-        );
-        assert_eq!(
-            ProxyConfig::default()
-                .with_max_client_hello_bytes(0)
-                .max_client_hello_bytes,
-            1_024
-        );
-        assert_eq!(
-            ProxyConfig::default()
-                .with_max_client_hello_bytes(usize::MAX)
-                .max_client_hello_bytes,
-            1024 * 1024
-        );
+    fn invalid_hard_ceilings_fail_instead_of_changing_the_request() {
+        let (sender, _receiver) = std::sync::mpsc::sync_channel(1);
+        let configs = [
+            ProxyConfig::default().with_max_resolved_addresses(0),
+            ProxyConfig::default().with_max_resolved_addresses(1025),
+            ProxyConfig::default().with_max_header_bytes(512),
+            ProxyConfig::default().with_max_header_bytes(1024 * 1024 + 1),
+            ProxyConfig::default().with_max_client_hello_bytes(512),
+            ProxyConfig::default().with_max_client_hello_bytes(1024 * 1024 + 1),
+            ProxyConfig::default().with_dns_cache(65, Duration::from_secs(1)),
+            ProxyConfig::default().with_dns_cache(1, Duration::from_secs(86_401)),
+            ProxyConfig::default().with_diagnostic_channel(sender.clone(), 0),
+            ProxyConfig::default().with_diagnostic_channel(sender, 10_001),
+        ];
+        for config in configs {
+            assert!(matches!(
+                crate::Proxy::start(config),
+                Err(crate::ProxyError::Initialization(_))
+            ));
+        }
     }
 
     #[test]
@@ -426,9 +442,10 @@ mod tests {
         assert_eq!(disabled.dns_cache_entries, 0);
         assert_eq!(disabled.dns_cache_max_ttl, Duration::ZERO);
 
-        let clamped = ProxyConfig::default().with_dns_cache(u64::MAX, Duration::MAX);
-        assert_eq!(clamped.dns_cache_entries, 64);
-        assert_eq!(clamped.dns_cache_max_ttl, Duration::from_secs(86_400));
+        let bounded = ProxyConfig::default().with_dns_cache(64, Duration::from_secs(86_400));
+        bounded.validate().unwrap();
+        let invalid = ProxyConfig::default().with_dns_cache(u64::MAX, Duration::MAX);
+        assert!(invalid.validate().is_err());
     }
 
     #[test]
@@ -634,24 +651,20 @@ mod tests {
     }
 
     #[test]
-    fn diagnostic_rate_stays_bounded() {
+    fn valid_hard_ceiling_boundaries_start_and_stop() {
         let (sender, _receiver) = std::sync::mpsc::sync_channel(1);
-        let config = ProxyConfig::default().with_diagnostic_channel(sender.clone(), 0);
-        assert_eq!(
-            config
-                .diagnostics
-                .expect("diagnostics configured")
-                .max_events_per_second,
-            1
-        );
-        let config = ProxyConfig::default().with_diagnostic_channel(sender, u32::MAX);
-        assert_eq!(
-            config
-                .diagnostics
-                .expect("diagnostics configured")
-                .max_events_per_second,
-            10_000
-        );
+        for (bytes, addresses, rate) in [(1024, 1, 1), (1024 * 1024, 1024, 10_000)] {
+            crate::Proxy::start(
+                ProxyConfig::default()
+                    .with_max_header_bytes(bytes)
+                    .with_max_client_hello_bytes(bytes)
+                    .with_max_resolved_addresses(addresses)
+                    .with_diagnostic_channel(sender.clone(), rate),
+            )
+            .unwrap()
+            .shutdown(Instant::now() + Duration::from_secs(1))
+            .unwrap();
+        }
     }
 
     #[test]

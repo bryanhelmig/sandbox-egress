@@ -9,7 +9,7 @@ if [ "$(id -u)" -ne 0 ]; then
   echo "unsupported: run as root in a disposable Linux host or privileged container" >&2
   exit 2
 fi
-for command in ip nft nc cargo ss timeout; do
+for command in ip nft nc cargo ss timeout sha256sum; do
   if ! command -v "$command" >/dev/null 2>&1; then
     echo "unsupported: missing $command" >&2
     exit 2
@@ -26,7 +26,19 @@ host_link="seh$$"
 guest_link="seg$$"
 host_ip="198.19.0.1"
 guest_ip="198.19.0.2"
-fixture="${SANDBOX_EGRESS_HOST_FIXTURE:-$(pwd)/target/debug/examples/linux_host_proxy}"
+if [ -n "${SANDBOX_EGRESS_HOST_FIXTURE:-}" ]; then
+  fixture="$SANDBOX_EGRESS_HOST_FIXTURE"
+  expected_hash="${SANDBOX_EGRESS_HOST_FIXTURE_SHA256:?prebuilt fixture requires its expected SHA-256}"
+else
+  fixture=$(./scripts/build-host-fixture.sh)
+  expected_hash=$(sha256sum "$fixture" | cut -d ' ' -f 1)
+fi
+actual_hash=$(sha256sum "$fixture" | cut -d ' ' -f 1)
+if [ "$actual_hash" != "$expected_hash" ]; then
+  echo "error: host fixture SHA-256 mismatch" >&2
+  exit 1
+fi
+printf 'HOST_FIXTURE sha256=%s executable=%s\n' "$actual_hash" "$fixture"
 temporary="$(mktemp -d /tmp/sandbox-egress-host.XXXXXX)"
 proxy_pid=""
 client_pid=""
@@ -42,10 +54,6 @@ cleanup() {
   rm -rf "$temporary"
 }
 trap cleanup EXIT HUP INT TERM
-
-if [ ! -x "$fixture" ]; then
-  cargo build --locked --example linux_host_proxy
-fi
 
 create_network() {
   ip netns add "$host_namespace"
@@ -198,6 +206,7 @@ printf 'finish\n' >&9
 wait "$proxy_pid"
 proxy_pid=""
 grep -q '^FINAL generation=2 .*active=0' "$output"
+grep -q '^RETRY ownership=retained identity=rejected' "$output"
 grep -q '^BYSTANDER exchanges=' "$output"
 cat "$output"
 

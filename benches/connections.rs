@@ -1,6 +1,8 @@
 //! End-to-end local connection setup benchmarks.
 #![allow(missing_docs)]
 
+mod support;
+
 use std::hint::black_box;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
@@ -8,6 +10,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
+use support::assert_connect_success;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use ipnet::IpNet;
@@ -60,14 +63,18 @@ fn allowed_connect(criterion: &mut Criterion) {
             client
                 .read_exact(&mut response)
                 .expect("read CONNECT response");
+            assert_connect_success(&response);
             black_box(response);
             reset_on_drop(client);
         });
     });
 
-    lease
+    let usage = lease
         .close(Instant::now() + Duration::from_secs(2))
-        .expect("close benchmark lease");
+        .expect("close benchmark lease")
+        .usage();
+    assert_eq!(usage.active_connections, 0);
+    assert_eq!(usage.denied_connections, 0);
     proxy
         .shutdown(Instant::now() + Duration::from_secs(2))
         .expect("shutdown benchmark proxy");
@@ -115,18 +122,23 @@ fn allowed_hostname_connect(criterion: &mut Criterion, inspect_tls: bool) {
             client
                 .read_exact(&mut response)
                 .expect("read CONNECT response");
+            assert_connect_success(&response);
             let mut acknowledgement = [0_u8; 1];
             client
                 .read_exact(&mut acknowledgement)
                 .expect("read upstream acknowledgement");
+            assert_eq!(&acknowledgement, b"x");
             black_box((response, acknowledgement));
             reset_on_drop(client);
         });
     });
 
-    lease
+    let usage = lease
         .close(Instant::now() + Duration::from_secs(2))
-        .expect("close benchmark lease");
+        .expect("close benchmark lease")
+        .usage();
+    assert_eq!(usage.active_connections, 0);
+    assert_eq!(usage.denied_connections, 0);
     proxy
         .shutdown(Instant::now() + Duration::from_secs(2))
         .expect("shutdown benchmark proxy");
@@ -198,6 +210,7 @@ fn upstream_proxy_connect_case(
                 client
                     .read_exact(&mut response)
                     .expect("read CONNECT response");
+                assert_connect_success(&response);
                 black_box(&response[..]);
             } else {
                 let mut response = [0_u8; 256];
@@ -209,9 +222,19 @@ fn upstream_proxy_connect_case(
         });
     });
 
-    lease
+    let usage = lease
         .close(Instant::now() + Duration::from_secs(2))
-        .expect("close benchmark lease");
+        .expect("close benchmark lease")
+        .usage();
+    assert_eq!(usage.active_connections, 0);
+    assert_eq!(
+        usage.denied_connections,
+        if successful {
+            0
+        } else {
+            usage.accepted_connections
+        }
+    );
     proxy
         .shutdown(Instant::now() + Duration::from_secs(2))
         .expect("shutdown benchmark proxy");
@@ -245,14 +268,18 @@ fn denied_connect(criterion: &mut Criterion) {
                 .expect("write CONNECT");
             let mut response = [0_u8; 256];
             let bytes = client.read(&mut response).expect("read denial");
+            assert!(response[..bytes].starts_with(b"HTTP/1.1 403"));
             black_box(&response[..bytes]);
             reset_on_drop(client);
         });
     });
 
-    lease
+    let usage = lease
         .close(Instant::now() + Duration::from_secs(2))
-        .expect("close benchmark lease");
+        .expect("close benchmark lease")
+        .usage();
+    assert_eq!(usage.active_connections, 0);
+    assert_eq!(usage.denied_connections, usage.accepted_connections);
     proxy
         .shutdown(Instant::now() + Duration::from_secs(2))
         .expect("shutdown benchmark proxy");
@@ -303,9 +330,12 @@ fn oversized_header(criterion: &mut Criterion) {
         });
     });
 
-    lease
+    let usage = lease
         .close(Instant::now() + Duration::from_secs(2))
-        .expect("close benchmark lease");
+        .expect("close benchmark lease")
+        .usage();
+    assert_eq!(usage.active_connections, 0);
+    assert_eq!(usage.denied_connections, usage.accepted_connections);
     proxy
         .shutdown(Instant::now() + Duration::from_secs(2))
         .expect("shutdown benchmark proxy");

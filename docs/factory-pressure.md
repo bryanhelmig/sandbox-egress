@@ -19,6 +19,11 @@ Keep hosted CI as one ordinary Linux job. These heavier lanes run locally or on
 an explicitly selected release worker. Do not turn every push into a benchmark
 or privileged container job.
 
+[Release certification](release-certification.md) combines the required lanes
+from isolated, committed source snapshots and records failed or missing evidence.
+It requires a reviewed, comparable performance baseline; an unchanged-source
+calibration is useful evidence about the worker, not an optimization result.
+
 ## Resource certificate
 
 The Python standard-library driver runs each existing Rust resource lane in a
@@ -85,6 +90,14 @@ Every reported sample must overlap completed competitor connections; socket
 timeouts do not count as evidence of useful churn. The fixture bounds workers
 to 128 and cycles to 1,000. Results print the configuration, observed exchanges,
 maximum attach latency, and maximum close latency.
+
+Clients use reset-on-drop after observing a terminal peer outcome, matching the
+connection benchmarks. This avoids accumulating local TCP teardown state that
+can interrupt offered churn. Per-cycle counters distinguish connection attempts,
+successful connects, terminal outcomes, and connect/read errors. The overlap
+assertion remains mandatory; neither a socket timeout nor a quiet interval is
+counted as competing work. Ordinary TCP teardown is covered by the lifecycle
+and resource lanes rather than being conflated with this bounded churn fixture.
 
 This is a finite progress workload, not a new API guarantee of fairness or
 bounded attach latency under arbitrary saturation. The shared accept drain

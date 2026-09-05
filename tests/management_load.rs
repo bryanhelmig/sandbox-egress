@@ -16,11 +16,50 @@ fn setting(name: &str, default: u64) -> u64 {
     value
 }
 
-fn churn(endpoint: SocketAddr, stop: &AtomicBool, exchanges: &AtomicU64) {
+#[derive(Default)]
+struct Traffic {
+    completed: AtomicU64,
+    attempts: AtomicU64,
+    connected: AtomicU64,
+    connect_errors: AtomicU64,
+    read_errors: AtomicU64,
+    last_connect_errno: AtomicU64,
+}
+
+impl Traffic {
+    fn snapshot(&self) -> [u64; 5] {
+        [
+            &self.completed,
+            &self.attempts,
+            &self.connected,
+            &self.connect_errors,
+            &self.read_errors,
+        ]
+        .map(|counter| counter.load(Ordering::Acquire))
+    }
+}
+
+fn churn(endpoint: SocketAddr, stop: &AtomicBool, traffic: &Traffic) {
     while !stop.load(Ordering::Acquire) {
-        let Ok(mut stream) = TcpStream::connect_timeout(&endpoint, Duration::from_secs(1)) else {
-            continue;
+        traffic.attempts.fetch_add(1, Ordering::Relaxed);
+        let mut stream = match TcpStream::connect_timeout(&endpoint, Duration::from_secs(1)) {
+            Ok(stream) => stream,
+            Err(error) => {
+                traffic.connect_errors.fetch_add(1, Ordering::Relaxed);
+                traffic.last_connect_errno.store(
+                    u64::try_from(error.raw_os_error().unwrap_or(0)).unwrap_or(0),
+                    Ordering::Relaxed,
+                );
+                continue;
+            }
         };
+        traffic.connected.fetch_add(1, Ordering::Relaxed);
+        // Like the connection benchmarks, retire completed client sockets with
+        // RST so local TCP teardown state cannot interrupt the offered churn.
+        // We still require a terminal peer outcome before counting useful work.
+        socket2::SockRef::from(&stream)
+            .set_linger(Some(Duration::ZERO))
+            .unwrap();
         stream
             .set_read_timeout(Some(Duration::from_secs(1)))
             .unwrap();
@@ -47,7 +86,9 @@ fn churn(endpoint: SocketAddr, stop: &AtomicBool, exchanges: &AtomicU64) {
             }
         };
         if terminal {
-            exchanges.fetch_add(1, Ordering::Release);
+            traffic.completed.fetch_add(1, Ordering::Release);
+        } else {
+            traffic.read_errors.fetch_add(1, Ordering::Relaxed);
         }
     }
 }
@@ -74,7 +115,7 @@ fn management_progress_during_attributed_and_unknown_connection_churn() {
                 .unwrap()
         });
         let stop = Arc::new(AtomicBool::new(false));
-        let exchanges = Arc::new(AtomicU64::new(0));
+        let exchanges = Arc::new(Traffic::default());
         let mut clients = Vec::new();
         for _ in 0..workers {
             let stop = Arc::clone(&stop);
@@ -87,13 +128,13 @@ fn management_progress_during_attributed_and_unknown_connection_churn() {
         let progress = Arc::clone(&exchanges);
         let management = thread::spawn(move || {
             let warmup = Instant::now() + Duration::from_secs(5);
-            while progress.load(Ordering::Acquire) < workers {
+            while progress.completed.load(Ordering::Acquire) < workers {
                 assert!(Instant::now() < warmup, "connection pressure never started");
                 thread::sleep(Duration::from_millis(1));
             }
             let mut samples = Vec::new();
             for _ in 0..cycles {
-                let before = progress.load(Ordering::Acquire);
+                let before = progress.snapshot();
                 let start = Instant::now();
                 let lease = management_proxy
                     .attach(
@@ -113,7 +154,16 @@ fn management_progress_during_attributed_and_unknown_connection_churn() {
                     sandbox_egress::Usage::default(),
                     "unrelated work crossed identities"
                 );
-                samples.push((attach, close, progress.load(Ordering::Acquire) - before));
+                let after = progress.snapshot();
+                let delta: [u64; 5] = std::array::from_fn(|i| after[i] - before[i]);
+                eprintln!(
+                    "management_sample attributed={attributed} cycle={} attach_us={} close_us={} before={before:?} delta_completed_attempts_connected_connect_errors_read_errors={delta:?} last_connect_errno={}",
+                    samples.len(),
+                    attach.as_micros(),
+                    close.as_micros(),
+                    progress.last_connect_errno.load(Ordering::Relaxed)
+                );
+                samples.push((attach, close, delta[0]));
             }
             let _ = reply.send(samples);
         });
@@ -139,22 +189,39 @@ fn management_progress_during_attributed_and_unknown_connection_churn() {
             .expect("returned proxy owner")
             .shutdown(Instant::now() + Duration::from_secs(2))
             .unwrap();
-        let max_attach = samples.iter().map(|s| s.0).max().unwrap();
-        let max_close = samples.iter().map(|s| s.1).max().unwrap();
-        eprintln!(
-            "management_load attributed={attributed} workers={workers} cycles={cycles} quiet=default exchanges={} max_attach_us={} max_close_us={} limit_ms={}",
-            exchanges.load(Ordering::Acquire),
-            max_attach.as_micros(),
-            max_close.as_micros(),
-            maximum.as_millis()
-        );
-        assert!(
-            samples.iter().all(|s| s.2 > 0),
-            "a sample had no competing traffic"
-        );
-        assert!(
-            max_attach <= maximum && max_close <= maximum,
-            "management exceeded explicit progress budget"
+        require_samples(
+            &samples,
+            attributed,
+            workers,
+            maximum,
+            exchanges.completed.load(Ordering::Acquire),
         );
     }
+}
+
+fn require_samples(
+    samples: &[(Duration, Duration, u64)],
+    attributed: bool,
+    workers: u64,
+    maximum: Duration,
+    total: u64,
+) {
+    let max_attach = samples.iter().map(|s| s.0).max().unwrap();
+    let max_close = samples.iter().map(|s| s.1).max().unwrap();
+    eprintln!(
+        "management_load attributed={attributed} workers={workers} cycles={} quiet=default exchanges={} max_attach_us={} max_close_us={} limit_ms={}",
+        samples.len(),
+        total,
+        max_attach.as_micros(),
+        max_close.as_micros(),
+        maximum.as_millis()
+    );
+    assert!(
+        samples.iter().all(|s| s.2 > 0),
+        "a sample had no competing traffic"
+    );
+    assert!(
+        max_attach <= maximum && max_close <= maximum,
+        "management exceeded explicit progress budget"
+    );
 }

@@ -21,6 +21,7 @@ copy_suite() {
 }
 
 copy_suite sandbox_egress lib --lib
+copy_suite benchmark_contract test --test benchmark_contract
 copy_suite cli test --test cli
 copy_suite concurrency test --test concurrency
 copy_suite lifecycle test --test lifecycle

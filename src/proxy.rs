@@ -38,6 +38,7 @@ use crate::{
 };
 
 /// Shared proxy listener and synchronous management handle.
+#[must_use = "keep the proxy owner and call shutdown to certify cleanup"]
 pub struct Proxy {
     endpoint: Endpoint,
     commands: tokio_mpsc::UnboundedSender<Command>,
@@ -258,6 +259,7 @@ impl Drop for Proxy {
 }
 
 /// Exclusive management handle for one run's proxy identity and work.
+#[must_use = "keep the lease owner and call close before reusing its identity"]
 pub struct Lease {
     id: u64,
     endpoint: Endpoint,

@@ -1,16 +1,23 @@
 FROM rust:1.88.0-alpine
 
 ENV RUSTUP_TOOLCHAIN=1.88.0
+ENV CARGO_PROFILE_DEV_DEBUG=0
 
 RUN apk add --no-cache iproute2 nftables netcat-openbsd musl-dev
 
 WORKDIR /workspace
 COPY . .
 
-RUN cargo build --locked --example linux_host_proxy \
-    && cp target/debug/examples/linux_host_proxy /usr/local/bin/linux_host_proxy \
+RUN fixture=$(./scripts/build-host-fixture.sh) \
+    && cp "$fixture" /usr/local/bin/linux_host_proxy \
+    && sha256sum /usr/local/bin/linux_host_proxy > /usr/local/bin/linux_host_proxy.sha256
+
+RUN artifacts=$(cargo test --locked --release --test management_load --no-run --message-format=json) \
+    && management=$(printf '%s\n' "$artifacts" | grep -F '"kind":["test"]' | sed -n 's/.*"executable":"\([^"]*\)".*/\1/p') \
+    && test -x "$management" \
+    && cp "$management" /usr/local/bin/management_load \
     && rm -rf target
 
 ENV SANDBOX_EGRESS_HOST_FIXTURE=/usr/local/bin/linux_host_proxy
 
-CMD ["./scripts/test-linux-host-boundary.sh"]
+CMD ["sh", "-c", "export SANDBOX_EGRESS_HOST_FIXTURE_SHA256=$(cut -d ' ' -f 1 /usr/local/bin/linux_host_proxy.sha256); exec ./scripts/test-linux-host-boundary.sh"]

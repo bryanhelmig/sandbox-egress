@@ -1,6 +1,62 @@
 use super::*;
 
 #[test]
+fn invalid_host_port_is_denied_before_dns_or_dial() {
+    let (lookups, observed) = mpsc::channel();
+    let dials = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let proxy = Proxy::start_with_test_backends(
+        ProxyConfig::default(),
+        Arc::new(CapturingAnswerResolver {
+            captured: lookups,
+            answers: vec!["192.0.2.1".parse().unwrap()],
+        }),
+        Arc::new(RejectingConnector(Arc::clone(&dials))),
+    )
+    .unwrap();
+    let lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(std::net::Ipv4Addr::LOCALHOST.into()),
+            Policy::builder()
+                .allow_host("allowed.test")
+                .unwrap()
+                .allow_network("0.0.0.0/0".parse().unwrap())
+                .allow_network("::/0".parse().unwrap())
+                .allow_port(443)
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    let mut count = 0;
+    for host in ["allowed.test", "192.0.2.1", "[2001:db8::1]"] {
+        for port in ["abc", "99999", "", "0", "444"] {
+            let mut client = std::net::TcpStream::connect(lease.endpoint().socket_addr()).unwrap();
+            client
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            std::io::Write::write_all(
+                &mut client,
+                format!("CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:{port}\r\n\r\n").as_bytes(),
+            )
+            .unwrap();
+            assert!(read_blocking_header(&mut client).starts_with(b"HTTP/1.1 400"));
+            count += 1;
+        }
+    }
+    let usage = lease
+        .close(Instant::now() + Duration::from_secs(2))
+        .unwrap()
+        .usage();
+    assert_eq!(usage.accepted_connections, count);
+    assert_eq!(usage.denied_connections, count);
+    assert_eq!(usage.active_connections, 0);
+    assert!(observed.try_recv().is_err());
+    assert_eq!(dials.load(Ordering::Acquire), 0);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(2))
+        .unwrap();
+}
+
+#[test]
 fn pending_first_address_cannot_starve_a_reachable_second_address() {
     let target = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
         .expect("bind fallback target");

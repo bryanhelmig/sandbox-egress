@@ -2,6 +2,7 @@
 set -eu
 
 cargo fmt --all -- --check
+cargo fmt --manifest-path tests/consumer/Cargo.toml -- --check
 cargo check --locked --all-targets --all-features
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo test --locked --all-targets --all-features
