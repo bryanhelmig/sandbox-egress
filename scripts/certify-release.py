@@ -156,7 +156,7 @@ def main():
             report["checks"][name] = {"status": "passed", "evidence": result}
         except (ValueError, OSError, subprocess.SubprocessError, KeyError) as error:
             report["checks"][name] = {"status": "failed", "error": str(error)}
-            raise
+            print(f"release check failed: {name}: {error}", flush=True)
         finally:
             save()
 
@@ -228,9 +228,10 @@ def main():
                 return {"build": build, "image": image, "run": checked}
             lane("msrv", lambda: container("msrv", "Dockerfile"))
             lane("host", lambda: container("host", "Dockerfile.host-boundary", True))
-            host_image = report["checks"]["host"]["evidence"]["image"]
-            lane("linux-management", lambda: run_image("linux-management", host_image,
-                 command=["/usr/local/bin/management_load", "--ignored", "--nocapture"]))
+            if report["checks"]["host"]["status"] == "passed":
+                host_image = report["checks"]["host"]["evidence"]["image"]
+                lane("linux-management", lambda: run_image("linux-management", host_image,
+                     command=["/usr/local/bin/management_load", "--ignored", "--nocapture"]))
             lane("benchmarks", lambda: run(["./scripts/bench.sh"], candidate, output / "benchmarks.log", 1800))
 
             def performance():

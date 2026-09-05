@@ -16,8 +16,8 @@ measurement, and rejected-experiment history lives in the
 - Reject malformed, out-of-range, or nondecimal Host ports before DNS or dialing,
   while preserving absent ports and valid matching decimal ports.
 - Require exact CONNECT success in allowed benchmarks, with a real-denial
-  negative control; instrument and stabilize the opt-in management workload
-  without weakening its competing-traffic requirement.
+  negative control; instrument the opt-in management workload without weakening
+  its competing-traffic requirement.
 - Center the README on `Proxy / Policy / Lease`, certified close, and the host
   boundary; preserve advanced examples as tested configuration documentation.
 

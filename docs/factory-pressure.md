@@ -91,13 +91,13 @@ timeouts do not count as evidence of useful churn. The fixture bounds workers
 to 128 and cycles to 1,000. Results print the configuration, observed exchanges,
 maximum attach latency, and maximum close latency.
 
-Clients use reset-on-drop after observing a terminal peer outcome, matching the
-connection benchmarks. This avoids accumulating local TCP teardown state that
-can interrupt offered churn. Per-cycle counters distinguish connection attempts,
-successful connects, terminal outcomes, and connect/read errors. The overlap
-assertion remains mandatory; neither a socket timeout nor a quiet interval is
-counted as competing work. Ordinary TCP teardown is covered by the lifecycle
-and resource lanes rather than being conflated with this bounded churn fixture.
+Per-cycle counters distinguish connection attempts, successful connects, terminal
+outcomes, and connect/read errors. The overlap assertion remains mandatory;
+neither a socket timeout nor a quiet interval counts as competing work. Local
+macOS trials have exposed intervals with no useful offered traffic despite
+management latency staying within budget. Reset-on-drop and fixed pacing were
+insufficiently repeatable and were rejected; see the engineering log. A failed
+overlap check must remain failed evidence pending a reproducible explanation.
 
 This is a finite progress workload, not a new API guarantee of fairness or
 bounded attach latency under arbitrary saturation. The shared accept drain

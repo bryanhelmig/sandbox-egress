@@ -18,6 +18,8 @@ lane, and records pass/fail plus commands, log hashes, source fingerprints,
 toolchain, and image identities. Missing tools, required measurements, changed
 sources, failed checks, or incompatible benchmark contracts produce a nonzero
 exit and `passed: false`. A successful Cargo benchmark alone is insufficient.
+Independent lanes continue after a failure so the report can guide the next
+repair; dependent lanes remain `not_run` when their prerequisite failed.
 
 Required lanes are ordinary checks, hostile conformance, a fresh dependency
 policy check, strict resource certification, native management pressure, source

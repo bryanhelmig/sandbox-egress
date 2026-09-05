@@ -54,12 +54,6 @@ fn churn(endpoint: SocketAddr, stop: &AtomicBool, traffic: &Traffic) {
             }
         };
         traffic.connected.fetch_add(1, Ordering::Relaxed);
-        // Like the connection benchmarks, retire completed client sockets with
-        // RST so local TCP teardown state cannot interrupt the offered churn.
-        // We still require a terminal peer outcome before counting useful work.
-        socket2::SockRef::from(&stream)
-            .set_linger(Some(Duration::ZERO))
-            .unwrap();
         stream
             .set_read_timeout(Some(Duration::from_secs(1)))
             .unwrap();

@@ -7299,3 +7299,16 @@ clean-source release run writes its own complete manifest and logs after this
 implementation is committed. Full accept-drain saturation, delayed-packet/NAT
 generation teardown, and DNS decoder allocation bounds remain separate bounded
 investigations; this batch does not claim to settle them.
+
+The first clean-source release run passed ordinary/conformance but contradicted
+that initial management repair: even reset-on-drop had an unknown-peer interval
+with no attempts or terminal work over three close samples (about 27 ms each).
+A subsequent fixed 1 ms pacing experiment alternated paced/unpaced trials:
+unpaced failed 3/3, paced failed 1/3. These are insufficiently repeatable repairs.
+Both reset-on-drop and pacing were therefore removed; only diagnostic counters
+remain. This explicitly supersedes the earlier impression that resetting sockets
+removed the confound. No production fairness bug or kernel cause is established.
+The pressure lane stays required and fails on the same missing-overlap evidence.
+The release driver now completes independent lanes after failure, leaving any
+failed or unavailable lane unable to certify the candidate. Full logs survive;
+a selectively green rerun cannot erase the initial failure.
