@@ -75,7 +75,7 @@ class ReleaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             for name in ("benches/connections.rs", "benches/lifecycle.rs", "benches/support/mod.rs",
-                         "tests/throughput.rs", "scripts/measure-throughput.sh", "Cargo.lock",
+                         "tests/throughput.rs", "scripts/measure-throughput.sh", "Cargo.toml", "Cargo.lock",
                          "rust-toolchain.toml", ".cargo/config.toml"):
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)

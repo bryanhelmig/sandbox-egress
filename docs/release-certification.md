@@ -30,7 +30,7 @@ traffic. No registry credential or upload command is used.
 ## Performance acceptance
 
 The baseline must be an explicitly selected reviewed commit with identical
-benchmark code, throughput workload, dependency lockfile, toolchain, and Cargo
+benchmark code, throughput workload, Cargo manifest and lockfile, toolchain, and Cargo
 configuration. If the oracle or workload changes, establish a new baseline;
 do not compare incompatible definitions. `--baseline HEAD` is useful for an
 unchanged-source calibration, not proof of improvement over an older release.

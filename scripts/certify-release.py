@@ -97,7 +97,7 @@ def judge_performance(baseline, candidate):
 def benchmark_contract(root):
     digest = hashlib.sha256()
     for name in ["benches/connections.rs", "benches/lifecycle.rs", "benches/support/mod.rs",
-                 "tests/throughput.rs", "scripts/measure-throughput.sh", "Cargo.lock",
+                 "tests/throughput.rs", "scripts/measure-throughput.sh", "Cargo.toml", "Cargo.lock",
                  "rust-toolchain.toml", ".cargo/config.toml"]:
         digest.update(name.encode() + b"\0" + (root / name).read_bytes())
     return digest.hexdigest()
