@@ -5,7 +5,14 @@ Changelog and versions follow Semantic Versioning. The finer-grained design,
 measurement, and rejected-experiment history lives in the
 [engineering log](docs/engineering-log.md).
 
-## Unreleased
+## 0.1.0-alpha.1 — 2026-09-05
+
+First public preview for API evaluation and controlled host integration. It is
+not a production-readiness certificate. Management-pressure overlap and
+unchanged-source performance calibration remain unresolved; see the
+[release evidence](docs/release-certification.md#preview-launch-evidence).
+Independent API/threat-model review and a real sandbox integration are still
+required before a stable release.
 
 ### Changed
 

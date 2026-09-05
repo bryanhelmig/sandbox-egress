@@ -6,6 +6,15 @@ An embeddable Rust CONNECT proxy for sandbox supervisors. Give each run an
 immutable network policy, bounded connection work, usage counters, and an
 explicit shutdown boundary. One shared runtime serves many runs.
 
+## Try the preview
+
+```sh
+cargo add sandbox-egress@=0.1.0-alpha.1
+```
+
+This preview is for evaluation and controlled integration. The API may change
+between previews. Read the host boundary below before connecting a sandbox.
+
 ## Three objects
 
 - `Proxy` owns the listener, resolver, runtime, and process-wide budgets.
@@ -139,9 +148,13 @@ explain the design and its evidence.
 
 ## Status
 
-Early, pre-release software. Passing factory checks does not replace independent
-API/threat-model review or a real integrating sandbox's security certification.
-There is no compatibility promise before the first published release. The
+`0.1.0-alpha.1` is a preview, with no stable API promise. Correctness, resource,
+and Linux host-fixture checks have passed, but the full release certificate
+remains failed: repeatable management-pressure overlap and performance
+calibration are unresolved. See the [release evidence](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/release-certification.md#preview-launch-evidence).
+
+Passing factory checks does not replace independent API/threat-model review or a
+real integrating sandbox's security certification. The
 [roadmap](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/roadmap.md)
 separates public-source, preview-crate, and production-readiness gates.
 

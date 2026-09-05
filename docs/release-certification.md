@@ -120,3 +120,42 @@ The next two bounded tasks are:
 
 Neither failure establishes a production starvation bug or performance
 regression. Both remain open evidence gates before a clean go-live verdict.
+
+
+## Preview launch evidence
+
+The first publication is `0.1.0-alpha.1`, for evaluation and controlled
+integration. It is not the clean go-live verdict described above, and does not
+claim production certification. No acceptance budget, overlap requirement, or
+production lifecycle behavior was changed to prepare this preview.
+
+A follow-up on 2026-09-05 evaluated unchanged implementation commit
+`6797565ae1c363510b4412ca793c42312ce18784` on the local Ubuntu 24.04 ARM64
+Colima guest (two virtual CPUs, Rust 1.97.1). Five consecutive native Linux
+management-pressure runs passed twice and failed three times for missing
+terminal-traffic overlap. The failing runs still met the management deadline.
+Three alternating unchanged-source performance pairs also failed the existing
+repeat-spread limit. Setup overhead ranged from approximately 90 to 553
+microseconds across all six observations. This virtual worker did not provide a
+repeatable performance baseline; these numbers are not advertised benchmarks.
+
+A separate standard-library-only TCP accept/drop control, without the proxy or
+Tokio, reproduced no-completion intervals in all six macOS trials. Endpoint-only
+socket snapshots showed clients in `SYN_SENT`. A Linux repeat also observed a
+gap, then its optional state collector failed because `netstat` was unavailable;
+that incomplete repeat is diagnostic evidence, not a passing control. These
+observations show the symptom can occur without this library. They do not
+establish the kernel cause or excuse a failing proxy pressure lane.
+
+Local raw observations and the control source are retained under ignored
+`target/go-live/`: `tcp-control.rs`, `tcp-control.log`,
+`linux-tcp-control.log`, and `linux-calibration/`. The existing failed release
+manifests remain unchanged. The next investigation should capture bounded TCP
+state and connection-error counters across a gap before proposing a workload
+change. A dedicated worker is still needed for repeatable performance evidence.
+
+Preview publication uses the ordinary factory, hostile conformance, fresh
+dependency policy, package inspection and publish dry run. It makes the source
+and API available for review while the full-certificate failures, independent
+API/threat-model review, and a real sandbox integration remain open. It must not
+be cited as evidence that all release lanes passed.

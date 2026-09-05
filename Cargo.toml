@@ -1,6 +1,6 @@
 [package]
 name = "sandbox-egress"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 edition = "2024"
 rust-version = "1.88"
 description = "Embeddable, run-scoped egress proxy for Rust sandbox supervisors"

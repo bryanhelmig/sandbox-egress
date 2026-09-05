@@ -7359,3 +7359,40 @@ seven doctests, benchmark smokes, Clippy, docs/package verification, and depende
 policy. `git diff --check` passed. The local log is
 `target/release-hardening/cleanup-check.log`; heavier implementation certificates
 were not relabeled as evidence for this documentation-only commit.
+
+
+## 2026-09-05 — prepare the first public preview
+
+Selected `0.1.0-alpha.1` for evaluation and controlled integration, retaining the
+stable-release and production-readiness gates. Updated package versions and
+both lockfiles without changing dependency versions, converted the changelog,
+added the exact preview installation command, and replaced the placeholder
+security contact with GitHub private vulnerability reporting. No production
+code, factory threshold, or hosted CI expansion is part of this preparation.
+
+The follow-up native Linux pressure series on unchanged `6797565` passed 2/5;
+three failures had missing terminal-traffic overlap despite bounded management
+latency. Three alternating unchanged-source performance pairs failed setup
+repeat spread (approximately 90–553 microseconds across all six observations).
+The selected two-vCPU Colima worker did not settle either evidence gate.
+A plain standard-library TCP accept/drop control reproduced no-completion gaps
+without this crate in all six macOS trials, with stalled clients in SYN_SENT.
+The Linux control also observed a gap before its optional netstat collector
+failed because that tool was absent. The incomplete run is not a passing check.
+Raw inputs and observations remain under `target/go-live/`; portable conclusions
+and the next diagnostic boundary are in `docs/release-certification.md`.
+
+Before changing repository visibility, a fresh redacted Gitleaks scan found no
+secrets in all 288 reachable commits (approximately 1.76 MB scanned); `git fsck`
+reported only dangling blobs. An initial Cargo publish dry run passed. Existing
+history is preserved. Preview publication is deliberately distinct from a
+passing full release certificate; both measurement failures remain open.
+
+Preview preparation verification passed: `./scripts/check.sh` (224 ordinary
+tests, seven doctests, benchmark smokes, formatting, Clippy, docs and package),
+223 hostile conformance cases, all six release-evaluator controls, and a fresh
+isolated advisory/license/source-policy check. Both lockfiles were compared
+structurally to confirm that only this package's version changed. The archive
+contains 91 regular files with the expected version, MIT license and Rust 1.88
+minimum, and no build/cache/credential paths. Generated documentation contains
+all three public entry points. Logs are under `target/go-live/`.

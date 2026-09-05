@@ -1,14 +1,19 @@
 # Security policy
 
-This project is pre-release. Please do not publicly disclose suspected policy
-bypasses, identity confusion, DNS rebinding, or revocation failures before the
-maintainers have had a reasonable chance to investigate.
+This project is an early preview. It has not completed an independent security
+review or a production sandbox integration. The supported preview is
+`0.1.0-alpha.1`; fixes may require upgrading to a later preview, with API changes.
 
-Until a public security contact is established, retain a minimal reproducer
-privately. Do not include credentials, production addresses, payload contents,
-or third-party data. This file will be updated before the repository is
-published.
+Please [report a vulnerability privately](https://github.com/bryanhelmig/sandbox-egress/security/advisories/new).
+Use that channel for suspected policy bypasses, identity confusion, DNS
+rebinding, revocation failures, and other security issues. Avoid public issues
+or pull requests for undisclosed vulnerabilities.
 
-The current implemented and unimplemented claims are listed in `README.md` and
-`docs/security-invariants.md`.
+Include the affected version, a minimal local reproducer, expected behavior,
+and observed behavior. Do not include credentials, production addresses,
+payload contents, or third-party data. Please allow maintainers a reasonable
+chance to investigate before public disclosure; this project has no guaranteed
+response-time SLA.
 
+The implemented claims and host responsibilities are documented in
+[README.md](README.md) and [security invariants](docs/security-invariants.md).
