@@ -6,6 +6,8 @@ publish code or a crate, change hosted CI, or replace an independent security
 review. Python 3, Cargo with the pinned toolchain, cargo-deny, SCC 4.0.0, and a
 working Docker daemon are required. Docker runs the host fixture in a disposable
 privileged container with its external network disconnected.
+Both container factories omit dev-profile debug symbols to keep test images
+small; native release benchmarks retain the committed release profile.
 
 The driver creates detached candidate/baseline worktrees under `~/code` (or
 `--worktree-parent`) and removes clean worktrees afterward. Unexpected edits are

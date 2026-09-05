@@ -1,6 +1,8 @@
 FROM rust:1.88.0-slim-bookworm AS factory
 
 ENV RUSTUP_TOOLCHAIN=1.88.0
+# Test artifacts do not need debug symbols; keep the dependency-cache layer small.
+ENV CARGO_PROFILE_DEV_DEBUG=0
 
 RUN rustup component add clippy rustfmt
 

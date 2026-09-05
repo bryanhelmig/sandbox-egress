@@ -7312,3 +7312,13 @@ The pressure lane stays required and fails on the same missing-overlap evidence.
 The release driver now completes independent lanes after failure, leaving any
 failed or unavailable lane unable to certify the candidate. Full logs survive;
 a selectively green rerun cannot erase the initial failure.
+
+The second clean-source run passed ordinary, conformance, native management,
+fresh dependency policy, all nine strict resource lanes, and full benchmarks.
+Its MSRV dependency-cache layer exhausted Docker's internal filesystem while
+committing debug artifacts, so MSRV/host certification correctly stayed failed
+and dependent Linux management stayed unrun. That experiment's failed container
+was removed. The MSRV factory now omits dev-profile debug symbols just like the
+host consumer factory; the committed native release profile and acceptance
+budgets are unchanged. A new complete run is required for the updated source;
+the storage-failed manifest remains available.
