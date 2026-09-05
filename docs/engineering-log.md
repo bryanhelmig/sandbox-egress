@@ -7396,3 +7396,13 @@ structurally to confirm that only this package's version changed. The archive
 contains 91 regular files with the expected version, MIT license and Rust 1.88
 minimum, and no build/cache/credential paths. Generated documentation contains
 all three public entry points. Logs are under `target/go-live/`.
+
+
+Publication preflight: the clean-commit `cargo publish --locked --dry-run`
+passed, and a second Gitleaks history scan found no secrets in 289 commits.
+The repository was made public and GitHub private vulnerability reporting was
+enabled and verified. The actual crates.io upload stopped before uploading with
+`no token found`; no registry credential was inspected or stored by this work.
+The README therefore installs from the preview Git tag. The GitHub source
+preview can proceed independently; crates.io publication requires the
+maintainer's local `cargo login`. This does not change the open production gates.

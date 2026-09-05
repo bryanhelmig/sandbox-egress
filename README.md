@@ -9,7 +9,7 @@ explicit shutdown boundary. One shared runtime serves many runs.
 ## Try the preview
 
 ```sh
-cargo add sandbox-egress@=0.1.0-alpha.1
+cargo add sandbox-egress --git https://github.com/bryanhelmig/sandbox-egress --tag v0.1.0-alpha.1
 ```
 
 This preview is for evaluation and controlled integration. The API may change
