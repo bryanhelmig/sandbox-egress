@@ -89,5 +89,9 @@ The current bounded contribution list and measured pressure lanes are in
 
 ## Reproducible evidence
 
+- Resolve the intermittent native management workload's missing competing
+  traffic and calibrate the independent performance budgets on a quiet worker.
+  Follow the [recorded evidence and bounded next tasks](release-certification.md#recorded-release-evidence)
+  rather than repeating rejected reset-on-drop or pacing repairs.
 - Loom or state-machine tests for small ownership transitions where useful.
 - Coverage reports tied to the hostile matrix, not used as a quality proxy.

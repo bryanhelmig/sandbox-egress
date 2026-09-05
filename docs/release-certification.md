@@ -24,19 +24,20 @@ Independent lanes continue after a failure so the report can guide the next
 repair; dependent lanes remain `not_run` when their prerequisite failed.
 
 Required lanes are ordinary checks, hostile conformance, a fresh dependency
-policy check, strict resource certification, native management pressure, source
-complexity, the Rust 1.88 container factory, the external host consumer, Linux
-management pressure, complete Criterion suites, and a controlled performance comparison. The advisory
-database is freshly fetched into the evidence directory and its commit is
+policy check, evidence-evaluator controls, strict resource certification, native
+management pressure, source complexity, the Rust 1.88 container factory, the
+external host consumer, Linux management pressure, complete Criterion suites,
+and a controlled performance comparison. The advisory database is freshly
+fetched into the evidence directory and its commit is
 recorded; network access for dependency/tool setup is separate from local test
 traffic. No registry credential or upload command is used.
 
 ## Performance acceptance
 
 The baseline must be an explicitly selected reviewed commit with identical
-benchmark code, throughput workload, Cargo manifest and lockfile, toolchain, and Cargo
-configuration. If the oracle or workload changes, establish a new baseline;
-do not compare incompatible definitions. `--baseline HEAD` is useful for an
+benchmark code, throughput workload, Cargo manifest and lockfile, toolchain,
+and Cargo configuration. If the oracle or workload changes, establish a new
+baseline; do not compare incompatible definitions. `--baseline HEAD` is useful for an
 unchanged-source calibration, not proof of improvement over an older release.
 
 Three baseline/candidate pairs alternate order. Each measures the direct TCP
@@ -80,3 +81,42 @@ and an unrelated continuous tunnel with exact accounting. The shell fixture
 owns deny-first routing, fencing, and kernel-resource replacement. Neither
 fixture claims Firecracker launch/restore, delayed-SYN authentication, full
 NAT/conntrack generation cleanup, or all host bypass topologies.
+
+## Recorded release evidence
+
+Recorded on 2026-09-05. The evaluated source is
+`4f84dd7f6a7956874bd021711748a04d05c36ce9`. These are recorded results for that
+commit, not a certificate for later changes.
+
+| Check | Recorded result |
+| --- | --- |
+| Ordinary factory | 224 tests, seven doctests, formatting, Clippy, docs and package verification passed |
+| Hostile conformance and fresh dependency policy | Passed |
+| Strict resources | All nine lanes passed; maximum sampled RSS 18,912 KiB and post-warmup growth 144 KiB |
+| Complete benchmark suites | Passed; this does not imply comparative performance acceptance |
+| Rust 1.88 factory, Linux host consumer and Linux management pressure | Passed in a separate same-source rerun after recovering Docker build space |
+| Native macOS management pressure | Failed: three close samples had no competing terminal traffic despite close latency remaining within budget |
+| Controlled performance acceptance | Failed: identical-source setup measurements were too variable; a preceding run also rejected download variability |
+
+The full report remains `passed: false`. Local raw evidence is under ignored
+`target/release-hardening/calibration-3/`; the Linux rerun is under
+`target/release-hardening/linux-final/`. Their before/after source fingerprints
+match exactly. The Linux supplement resolves the environmental container
+failures; it does not override the native pressure or performance failures.
+Portable conclusions and rejected experiments are also in the
+[engineering log](engineering-log.md).
+
+The next two bounded tasks are:
+
+1. Capture client TCP and listener state across one missing-traffic interval on
+   a fixed worker. Distinguish transport stalls from listener/runtime behavior
+   before changing production admission or drain logic. Reset-on-drop and fixed
+   pacing were tried and rejected as insufficiently repeatable; preserve the
+   overlap requirement and failed evidence.
+2. Calibrate unchanged-source performance on a quiet release worker. A longer
+   fixed throughput workload is a candidate experiment, applied equally to both
+   versions. Preserve raw alternating observations and independent budgets;
+   neither a lucky rerun nor a wider tolerance settles the existing failures.
+
+Neither failure establishes a production starvation bug or performance
+regression. Both remain open evidence gates before a clean go-live verdict.

@@ -50,6 +50,10 @@ consumer-owned adapter when it can compose with the current library boundary.
 
 ## Release gates
 
+The [recorded release evidence and open gates](release-certification.md#recorded-release-evidence)
+identify the evaluated commit and remaining management/performance work. A
+passing ordinary factory alone is not the complete release verdict.
+
 The source can become public after its permanent repository URL is known, that
 URL is added to package metadata and README links, private vulnerability
 reporting is configured, and the first hosted CI run passes. The full Git

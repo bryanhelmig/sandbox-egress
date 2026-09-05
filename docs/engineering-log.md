@@ -7322,3 +7322,40 @@ was removed. The MSRV factory now omits dev-profile debug symbols just like the
 host consumer factory; the committed native release profile and acceptance
 budgets are unchanged. A new complete run is required for the updated source;
 the storage-failed manifest remains available.
+
+## 2026-09-05 — close the release-hardening handoff
+
+Final implementation source `4f84dd7f6a7956874bd021711748a04d05c36ce9`
+passed 224 ordinary tests, seven doctests, 223 hostile conformance cases,
+fresh dependency policy, all nine strict resource lanes, and both complete
+benchmark suites. Maximum sampled RSS was 18,912 KiB; maximum measured
+post-warmup growth was 144 KiB. These remain sampled complete-fixture bounds.
+
+That source still failed native macOS management overlap: unknown-peer cycles
+22–24 had no new attempts or terminal outcomes during approximately 27 ms close
+samples. Management stayed within its one-second budget. Its unchanged-source
+performance comparison also failed because setup observations exceeded the
+allowed repeat spread. Neither failure is silently reclassified as success.
+
+The container retry still encountered Docker's full 20 GB virtual disk.
+After identifying and removing 109 untagged images whose histories matched
+this repository's factory, about 7.4 GiB was recovered. Named images, containers
+and volumes were preserved; this run's failed build containers were removed
+separately. A same-source Linux supplement then passed the Rust 1.88 factory,
+conformance, host consumer, and both management-pressure cases. The host retained
+one listener and its bystander through replacement, with 1,044 exchanges and
+6,264 exact bytes each way. The native and Linux before/after source fingerprints
+match. The original full manifest remains false; the supplement resolves only
+its environmental Linux failures.
+
+This final cleanup moves the portable result and two bounded next tasks into
+`docs/release-certification.md`, links them from the roadmap and backlog, and
+repairs wrapping in that guide. It changes documentation only. The existing
+implementation evidence remains explicitly pinned to its evaluated commit;
+this cleanup does not issue a new release certificate or expand the public API.
+
+Cleanup verification: `./scripts/check.sh` passed, including 224 ordinary tests,
+seven doctests, benchmark smokes, Clippy, docs/package verification, and dependency
+policy. `git diff --check` passed. The local log is
+`target/release-hardening/cleanup-check.log`; heavier implementation certificates
+were not relabeled as evidence for this documentation-only commit.
