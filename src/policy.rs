@@ -78,8 +78,8 @@ pub struct Policy {
     pub(crate) dns_timeout: Duration,
     pub(crate) handshake_timeout: Duration,
     pub(crate) idle_timeout: Option<Duration>,
-    pub(crate) max_upload_bytes: Option<u64>,
-    pub(crate) max_download_bytes: Option<u64>,
+    pub(crate) max_tunnel_upload_bytes: Option<u64>,
+    pub(crate) max_tunnel_download_bytes: Option<u64>,
     pub(crate) tls_authority: TlsAuthority,
 }
 
@@ -270,8 +270,8 @@ impl PolicyBuilder {
     /// After CONNECT succeeds, the proxy forwards exactly the permitted
     /// prefix. A nonempty read after the limit is reached is accounted,
     /// rejected, and closes the tunnel.
-    pub fn max_upload_bytes(mut self, bytes: u64) -> Self {
-        self.policy.max_upload_bytes = Some(bytes);
+    pub fn max_tunnel_upload_bytes(mut self, bytes: u64) -> Self {
+        self.policy.max_tunnel_upload_bytes = Some(bytes);
         self
     }
 
@@ -283,8 +283,8 @@ impl PolicyBuilder {
     /// After CONNECT succeeds, the proxy forwards exactly the permitted
     /// prefix. A nonempty read after the limit is reached is accounted,
     /// rejected, and closes the tunnel.
-    pub fn max_download_bytes(mut self, bytes: u64) -> Self {
-        self.policy.max_download_bytes = Some(bytes);
+    pub fn max_tunnel_download_bytes(mut self, bytes: u64) -> Self {
+        self.policy.max_tunnel_download_bytes = Some(bytes);
         self
     }
 
@@ -362,8 +362,8 @@ impl Default for PolicyBuilder {
                 dns_timeout: Duration::from_secs(3),
                 handshake_timeout: Duration::from_secs(10),
                 idle_timeout: None,
-                max_upload_bytes: None,
-                max_download_bytes: None,
+                max_tunnel_upload_bytes: None,
+                max_tunnel_download_bytes: None,
                 tls_authority: TlsAuthority::Disabled,
             },
         }

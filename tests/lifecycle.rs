@@ -83,16 +83,6 @@ fn attach_local(proxy: &Proxy, policy: Policy) -> sandbox_egress::Lease {
         .expect("attach localhost")
 }
 
-fn read_blocking_header(stream: &mut TcpStream) -> Vec<u8> {
-    let mut request = Vec::new();
-    let mut byte = [0_u8; 1];
-    while !request.ends_with(b"\r\n\r\n") {
-        stream.read_exact(&mut byte).expect("read complete header");
-        request.push(byte[0]);
-    }
-    request
-}
-
 fn header_denial(config: ProxyConfig, bytes: &[u8], finish_upload: bool) -> String {
     let proxy = Proxy::start(config).expect("start proxy");
     let lease = attach_local(&proxy, Policy::builder().build().expect("valid policy"));
@@ -121,6 +111,44 @@ fn header_denial(config: ProxyConfig, bytes: &[u8], finish_upload: bool) -> Stri
         .shutdown(Instant::now() + Duration::from_secs(1))
         .expect("proxy shutdown");
     response
+}
+
+#[test]
+fn connect_framing_mismatch_is_denied_before_dial() {
+    let destination = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    destination.set_nonblocking(true).unwrap();
+    let port = destination.local_addr().unwrap().port();
+    let proxy = Proxy::start(ProxyConfig::default()).unwrap();
+    let lease = attach_local(&proxy, local_policy(port));
+    let mut client = TcpStream::connect(lease.endpoint().socket_addr()).unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .unwrap();
+    client
+        .write_all(
+            format!("CONNECT 127.0.0.1:{port} HTTP/1.1\nHost: 127.0.0.1\n\nLOST\r\n\r\nKEPT")
+                .as_bytes(),
+        )
+        .unwrap();
+    let mut response = [0; 39];
+    client.read_exact(&mut response).unwrap();
+    assert!(response.starts_with(b"HTTP/1.1 400"), "{response:?}");
+    assert_eq!(
+        destination.accept().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+    let usage = lease
+        .close(Instant::now() + Duration::from_secs(1))
+        .unwrap()
+        .usage();
+    assert_eq!(usage.accepted_connections, 1);
+    assert_eq!(usage.denied_connections, 1);
+    assert_eq!(usage.completed_connections, 0);
+    assert_eq!(usage.active_connections, 0);
+    assert_eq!(usage.uploaded_bytes, 0);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .unwrap();
 }
 
 #[test]
@@ -261,319 +289,6 @@ fn policy_phase_change_requires_certified_close_and_reattach() {
     proxy
         .shutdown(Instant::now() + Duration::from_secs(2))
         .expect("proxy shutdown");
-}
-
-#[test]
-fn upstream_proxy_receives_only_the_approved_numeric_destination() {
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind upstream proxy");
-    let upstream_proxy = listener.local_addr().expect("upstream proxy address");
-    let (request_tx, request_rx) = mpsc::sync_channel(1);
-    let server = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().expect("accept upstream proxy connection");
-        stream
-            .set_read_timeout(Some(Duration::from_secs(1)))
-            .expect("set upstream proxy timeout");
-        let request = read_blocking_header(&mut stream);
-        request_tx.send(request).expect("capture upstream CONNECT");
-        stream
-            .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\nhello")
-            .expect("approve upstream CONNECT with coalesced payload");
-        let mut upload = [0_u8; 4];
-        stream
-            .read_exact(&mut upload)
-            .expect("read tunneled upload");
-        assert_eq!(&upload, b"ping");
-        stream.write_all(b"pong").expect("write tunneled download");
-        let mut trailing = Vec::new();
-        stream
-            .read_to_end(&mut trailing)
-            .expect("read tunneled upload shutdown");
-    });
-
-    let target: SocketAddr = "127.0.0.2:443".parse().expect("numeric target");
-    let proxy = Proxy::start(ProxyConfig::default().with_upstream_proxy(upstream_proxy))
-        .expect("start proxy");
-    let lease = attach_local(&proxy, local_policy(target.port()));
-    let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
-    client
-        .write_all(
-            format!(
-                "CONNECT {target} HTTP/1.1\r\nHost: {}\r\nProxy-Authorization: Basic guest-controlled\r\nX-Guest-Run: forged\r\n\r\n",
-                target.ip()
-            )
-            .as_bytes(),
-        )
-        .expect("write guest CONNECT");
-    let mut response = [0_u8; 39];
-    client
-        .read_exact(&mut response)
-        .expect("read guest CONNECT response");
-    assert_eq!(&response, b"HTTP/1.1 200 Connection Established\r\n\r\n");
-    let mut greeting = [0_u8; 5];
-    client
-        .read_exact(&mut greeting)
-        .expect("read coalesced upstream payload");
-    assert_eq!(&greeting, b"hello");
-    client.write_all(b"ping").expect("write tunneled upload");
-    let mut pong = [0_u8; 4];
-    client
-        .read_exact(&mut pong)
-        .expect("read tunneled download");
-    assert_eq!(&pong, b"pong");
-    client
-        .shutdown(Shutdown::Write)
-        .expect("finish tunneled upload");
-    let mut trailing = Vec::new();
-    client
-        .read_to_end(&mut trailing)
-        .expect("read tunnel shutdown");
-    server.join().expect("join upstream proxy");
-
-    assert_eq!(
-        request_rx.recv().expect("receive upstream CONNECT"),
-        format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n").into_bytes()
-    );
-    let usage = lease
-        .close(Instant::now() + Duration::from_secs(2))
-        .expect("certified close")
-        .usage();
-    assert_eq!(usage.accepted_connections, 1);
-    assert_eq!(usage.completed_connections, 1);
-    assert_eq!(usage.uploaded_bytes, 4);
-    assert_eq!(usage.downloaded_bytes, 9);
-    assert_eq!(usage.active_connections, 0);
-    proxy
-        .shutdown(Instant::now() + Duration::from_secs(2))
-        .expect("proxy shutdown");
-}
-
-#[test]
-fn upstream_proxy_coalesced_payload_obeys_the_download_ceiling() {
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind upstream proxy");
-    let upstream_proxy = listener.local_addr().expect("upstream proxy address");
-    let server = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().expect("accept upstream proxy connection");
-        read_blocking_header(&mut stream);
-        stream
-            .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\nsecret")
-            .expect("approve CONNECT with coalesced payload");
-        stream
-            .read_to_end(&mut Vec::new())
-            .expect("observe proxy teardown");
-    });
-
-    let target: SocketAddr = "127.0.0.2:443".parse().expect("numeric target");
-    let proxy = Proxy::start(ProxyConfig::default().with_upstream_proxy(upstream_proxy))
-        .expect("start proxy");
-    let policy = Policy::builder()
-        .allow_network("127.0.0.0/8".parse::<IpNet>().expect("loopback CIDR"))
-        .allow_port(target.port())
-        .max_download_bytes(1)
-        .build()
-        .expect("valid policy");
-    let lease = attach_local(&proxy, policy);
-    let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
-    client
-        .write_all(format!("CONNECT {target} HTTP/1.1\r\nHost: {}\r\n\r\n", target.ip()).as_bytes())
-        .expect("write guest CONNECT");
-    let mut response = [0_u8; 39];
-    client
-        .read_exact(&mut response)
-        .expect("read guest CONNECT response");
-    assert_eq!(&response, b"HTTP/1.1 200 Connection Established\r\n\r\n");
-    let mut payload = Vec::new();
-    client
-        .read_to_end(&mut payload)
-        .expect("read bounded tunnel payload");
-    assert_eq!(payload, b"s");
-    server.join().expect("join upstream proxy");
-
-    let usage = lease
-        .close(Instant::now() + Duration::from_secs(1))
-        .expect("certified close")
-        .usage();
-    assert_eq!(usage.accepted_connections, 1);
-    assert_eq!(usage.completed_connections, 0);
-    assert_eq!(usage.denied_connections, 1);
-    assert_eq!(usage.downloaded_bytes, 6);
-    assert_eq!(usage.active_connections, 0);
-    proxy
-        .shutdown(Instant::now() + Duration::from_secs(1))
-        .expect("proxy shutdown");
-}
-
-#[test]
-fn upstream_proxy_refusal_has_a_distinct_bounded_denial() {
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind upstream proxy");
-    let upstream_proxy = listener.local_addr().expect("upstream proxy address");
-    let server = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().expect("accept upstream proxy connection");
-        read_blocking_header(&mut stream);
-        stream
-            .write_all(b"HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n")
-            .expect("refuse upstream CONNECT");
-    });
-
-    let target: SocketAddr = "127.0.0.2:443".parse().expect("numeric target");
-    let proxy = Proxy::start(ProxyConfig::default().with_upstream_proxy(upstream_proxy))
-        .expect("start proxy");
-    let lease = attach_local(&proxy, local_policy(target.port()));
-    let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
-    client
-        .write_all(format!("CONNECT {target} HTTP/1.1\r\nHost: {}\r\n\r\n", target.ip()).as_bytes())
-        .expect("write guest CONNECT");
-    let mut response = String::new();
-    client
-        .read_to_string(&mut response)
-        .expect("read upstream refusal denial");
-    assert!(response.starts_with("HTTP/1.1 502"), "{response}");
-    assert!(response.contains("upstream-proxy-failed"), "{response}");
-    server.join().expect("join upstream proxy");
-
-    let usage = lease
-        .close(Instant::now() + Duration::from_secs(1))
-        .expect("certified close")
-        .usage();
-    assert_eq!(usage.accepted_connections, 1);
-    assert_eq!(usage.denied_connections, 1);
-    assert_eq!(usage.active_connections, 0);
-    proxy
-        .shutdown(Instant::now() + Duration::from_secs(1))
-        .expect("proxy shutdown");
-}
-
-#[test]
-fn upstream_proxy_response_header_is_bounded() {
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind upstream proxy");
-    let upstream_proxy = listener.local_addr().expect("upstream proxy address");
-    let server = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().expect("accept upstream proxy connection");
-        read_blocking_header(&mut stream);
-        let response = vec![b'x'; 32 * 1_024].into_boxed_slice();
-        stream
-            .write_all(&response)
-            .expect("write bounded invalid response");
-    });
-
-    let target: SocketAddr = "127.0.0.2:443".parse().expect("numeric target");
-    let proxy = Proxy::start(ProxyConfig::default().with_upstream_proxy(upstream_proxy))
-        .expect("start proxy");
-    let lease = attach_local(&proxy, local_policy(target.port()));
-    let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
-    client
-        .write_all(format!("CONNECT {target} HTTP/1.1\r\nHost: {}\r\n\r\n", target.ip()).as_bytes())
-        .expect("write guest CONNECT");
-    let mut response = String::new();
-    client
-        .read_to_string(&mut response)
-        .expect("read bounded upstream failure");
-    assert!(response.starts_with("HTTP/1.1 502"), "{response}");
-    assert!(response.contains("upstream-proxy-failed"), "{response}");
-    server.join().expect("join upstream proxy");
-
-    let usage = lease
-        .close(Instant::now() + Duration::from_secs(1))
-        .expect("certified close")
-        .usage();
-    assert_eq!(usage.accepted_connections, 1);
-    assert_eq!(usage.denied_connections, 1);
-    assert_eq!(usage.active_connections, 0);
-    proxy
-        .shutdown(Instant::now() + Duration::from_secs(1))
-        .expect("proxy shutdown");
-}
-
-#[test]
-fn close_cancels_a_pending_upstream_proxy_handshake() {
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind upstream proxy");
-    let upstream_proxy = listener.local_addr().expect("upstream proxy address");
-    let (entered_tx, entered_rx) = mpsc::sync_channel(1);
-    let (release_tx, release_rx) = mpsc::sync_channel(0);
-    let (terminal_tx, terminal_rx) = mpsc::sync_channel(1);
-    let server = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().expect("accept upstream proxy connection");
-        read_blocking_header(&mut stream);
-        entered_tx.send(()).expect("signal pending handshake");
-        release_rx.recv().expect("release upstream observer");
-        stream
-            .set_read_timeout(Some(Duration::from_secs(1)))
-            .expect("set terminal timeout");
-        let mut byte = [0_u8; 1];
-        let terminal = match stream.read(&mut byte) {
-            Ok(0) => true,
-            Err(error)
-                if !matches!(
-                    error.kind(),
-                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                ) =>
-            {
-                true
-            }
-            _ => false,
-        };
-        terminal_tx.send(terminal).expect("send terminal state");
-    });
-
-    let target: SocketAddr = "127.0.0.2:443".parse().expect("numeric target");
-    let proxy = Proxy::start(ProxyConfig::default().with_upstream_proxy(upstream_proxy))
-        .expect("start proxy");
-    let lease = attach_local(&proxy, local_policy(target.port()));
-    let mut client = TcpStream::connect(lease.endpoint().socket_addr()).expect("connect proxy");
-    client
-        .set_read_timeout(Some(Duration::from_secs(1)))
-        .expect("set guest terminal timeout");
-    client
-        .write_all(format!("CONNECT {target} HTTP/1.1\r\nHost: {}\r\n\r\n", target.ip()).as_bytes())
-        .expect("write guest CONNECT");
-    entered_rx
-        .recv_timeout(Duration::from_secs(1))
-        .expect("observe pending upstream handshake");
-
-    let started = Instant::now();
-    let usage = lease
-        .close(Instant::now() + Duration::from_millis(500))
-        .expect("cancel pending upstream handshake")
-        .usage();
-    assert!(started.elapsed() < Duration::from_millis(500));
-    assert_eq!(usage.accepted_connections, 1);
-    assert_eq!(usage.denied_connections, 0);
-    assert_eq!(usage.active_connections, 0);
-    let mut byte = [0_u8; 1];
-    assert!(
-        !matches!(
-            client.read(&mut byte),
-            Err(error)
-                if matches!(
-                    error.kind(),
-                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                )
-        ),
-        "guest socket remained open"
-    );
-    release_tx.send(()).expect("release upstream observer");
-    assert!(
-        terminal_rx
-            .recv_timeout(Duration::from_secs(2))
-            .expect("observe upstream terminal state")
-    );
-    server.join().expect("join upstream proxy");
-    proxy
-        .shutdown(Instant::now() + Duration::from_secs(1))
-        .expect("proxy shutdown");
-}
-
-#[test]
-fn upstream_proxy_cannot_reference_the_shared_listener() {
-    let reservation = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("reserve listener port");
-    let address = reservation.local_addr().expect("reserved listener address");
-    drop(reservation);
-
-    let result = Proxy::start(
-        ProxyConfig::default()
-            .with_bind_address(address)
-            .with_upstream_proxy(address),
-    );
-    assert!(result.is_err(), "recursive upstream proxy was accepted");
 }
 
 #[test]
@@ -1200,7 +915,7 @@ fn upload_limit_blocks_payload_coalesced_with_connect_header() {
     let policy = Policy::builder()
         .allow_network("127.0.0.0/8".parse::<IpNet>().expect("test CIDR"))
         .allow_port(port)
-        .max_upload_bytes(0)
+        .max_tunnel_upload_bytes(0)
         .build()
         .expect("valid policy");
     let lease = attach_local(&proxy, policy);
@@ -1240,7 +955,7 @@ fn upload_limit_allows_exact_coalesced_boundary() {
     let policy = Policy::builder()
         .allow_network("127.0.0.0/8".parse::<IpNet>().expect("test CIDR"))
         .allow_port(port)
-        .max_upload_bytes(6)
+        .max_tunnel_upload_bytes(6)
         .build()
         .expect("valid policy");
     let lease = attach_local(&proxy, policy);
@@ -1283,7 +998,7 @@ fn upload_limit_blocks_payload_sent_after_connect_response() {
     let policy = Policy::builder()
         .allow_network("127.0.0.0/8".parse::<IpNet>().expect("test CIDR"))
         .allow_port(port)
-        .max_upload_bytes(0)
+        .max_tunnel_upload_bytes(0)
         .build()
         .expect("valid policy");
     let lease = attach_local(&proxy, policy);
@@ -1331,7 +1046,7 @@ fn upload_limit_is_independent_for_each_tunnel() {
         .allow_network("127.0.0.0/8".parse::<IpNet>().expect("test CIDR"))
         .allow_port(first_port)
         .allow_port(second_port)
-        .max_upload_bytes(1)
+        .max_tunnel_upload_bytes(1)
         .build()
         .expect("valid policy");
     let lease = attach_local(&proxy, policy);

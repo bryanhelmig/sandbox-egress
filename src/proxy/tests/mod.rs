@@ -4,6 +4,110 @@ mod deadlines;
 mod dial_budget;
 mod dns_wire;
 
+#[test]
+fn closed_lease_drop_releases_reaper_after_unobserved_shutdown() {
+    let proxy = Proxy::start(ProxyConfig::default()).unwrap();
+    let lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(std::net::Ipv4Addr::LOCALHOST.into()),
+            Policy::builder().build().unwrap(),
+        )
+        .unwrap();
+    let state = Arc::downgrade(lease.state.as_ref().unwrap());
+    // Model cleanup completing after its caller stopped waiting for the certificate.
+    let (reply, receiver) = mpsc::sync_channel(0);
+    drop(receiver);
+    proxy
+        .commands
+        .send(Command::Shutdown {
+            deadline: Instant::now() + Duration::from_secs(1),
+            reply,
+            retryable: true,
+        })
+        .unwrap();
+    assert!(matches!(
+        proxy.attach(
+            PeerIdentity::SourceIp(std::net::Ipv4Addr::new(127, 0, 0, 2).into()),
+            Policy::builder().build().unwrap(),
+        ),
+        Err(AttachError::ProxyStopping)
+    ));
+    assert!(state.upgrade().unwrap().is_closed());
+    drop(lease);
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while state.strong_count() != 0 && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(1));
+    }
+    let retained = state.strong_count();
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(1))
+        .unwrap();
+    assert_eq!(
+        retained, 0,
+        "closed lease retained registry/reaper ownership"
+    );
+}
+
+#[test]
+fn closed_state_quiescence_finishes_without_new_drain_work() {
+    let state = LeaseState::new(
+        1,
+        PeerIdentity::SourceIp(std::net::Ipv4Addr::LOCALHOST.into()),
+        Policy::builder().build().unwrap(),
+        DiagnosticReporter::default(),
+    );
+    state.begin_close();
+    state.mark_closed();
+    let (commands, mut receiver) = tokio_mpsc::unbounded_channel();
+    RuntimeBuilder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap()
+        .block_on(async {
+            tokio::select! {
+                result = quiesce_after_identity_quiet(&state, Duration::ZERO, Some(&commands)) => {
+                    assert_eq!(result.unwrap().usage(), Usage::default());
+                }
+                _ = receiver.recv() => panic!("closed state requested another accept drain"),
+                () = sleep(Duration::from_secs(1)) => panic!("closed state failed to finish"),
+            }
+        });
+}
+
+#[test]
+fn shutdown_closes_state_while_quiescence_waits_for_drain() {
+    let state = LeaseState::new(
+        1,
+        PeerIdentity::SourceIp(std::net::Ipv4Addr::LOCALHOST.into()),
+        Policy::builder().build().unwrap(),
+        DiagnosticReporter::default(),
+    );
+    state.begin_close();
+    let (commands, mut receiver) = tokio_mpsc::unbounded_channel();
+    RuntimeBuilder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let close = quiesce_after_identity_quiet(&state, Duration::ZERO, Some(&commands));
+            tokio::pin!(close);
+            let command = tokio::select! {
+                command = receiver.recv() => command.unwrap(),
+                result = &mut close => panic!("close skipped the drain: {result:?}"),
+            };
+            let Command::DrainAcceptQueue { reply } = command else {
+                panic!("unexpected command");
+            };
+            state.mark_closed();
+            reply.send(Ok(())).unwrap();
+            tokio::select! {
+                result = close => assert_eq!(result.unwrap().usage(), Usage::default()),
+                _ = receiver.recv() => panic!("shutdown already certified this state"),
+                () = sleep(Duration::from_secs(1)) => panic!("closed state failed to finish"),
+            }
+        });
+}
+
 struct BoundaryReader {
     step: u8,
     extra_before_error: bool,
@@ -130,47 +234,6 @@ fn read_blocking_header(stream: &mut std::net::TcpStream) -> Vec<u8> {
         header.push(byte[0]);
     }
     header
-}
-
-fn start_refusing_upstream() -> (
-    SocketAddr,
-    mpsc::Receiver<Vec<Vec<u8>>>,
-    thread::JoinHandle<()>,
-) {
-    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
-        .expect("bind upstream proxy");
-    let address = listener.local_addr().expect("upstream proxy address");
-    let (requests_tx, requests_rx) = mpsc::sync_channel(1);
-    let server = thread::spawn(move || {
-        let mut requests = Vec::new();
-        let (mut refused, _) = listener.accept().expect("accept first attempt");
-        refused
-            .set_read_timeout(Some(Duration::from_secs(1)))
-            .expect("set first read timeout");
-        requests.push(read_blocking_header(&mut refused));
-        std::io::Write::write_all(&mut refused, b"HTTP/1.1 502 Bad Gateway\r\n\r\n")
-            .expect("refuse first target");
-        drop(refused);
-
-        let (mut accepted, _) = listener.accept().expect("accept fallback attempt");
-        accepted
-            .set_read_timeout(Some(Duration::from_secs(1)))
-            .expect("set fallback read timeout");
-        requests.push(read_blocking_header(&mut accepted));
-        std::io::Write::write_all(
-            &mut accepted,
-            b"HTTP/1.1 200 Connection Established\r\n\r\nhello",
-        )
-        .expect("approve fallback target");
-        let mut upload = [0_u8; 4];
-        std::io::Read::read_exact(&mut accepted, &mut upload).expect("read tunnel upload");
-        assert_eq!(&upload, b"ping");
-        std::io::Write::write_all(&mut accepted, b"pong").expect("write tunnel download");
-        std::io::Read::read_to_end(&mut accepted, &mut Vec::new())
-            .expect("observe upload shutdown");
-        requests_tx.send(requests).expect("send CONNECT requests");
-    });
-    (address, requests_rx, server)
 }
 
 fn start_local_dns(
@@ -1543,7 +1606,7 @@ fn header_terminator_survives_each_read_boundary_split() {
         wire.extend_from_slice(b"\r\n\r\nfollowing");
         let mut input = wire.as_slice();
         let header = runtime
-            .block_on(read_bounded_header::<4_096, _>(&mut input, 8_192))
+            .block_on(read_bounded_header(&mut input, 8_192))
             .expect("boundary-spanning terminator");
 
         assert_eq!(header.end, start + 4);
@@ -1563,17 +1626,13 @@ fn header_byte_limit_accepts_exactly_bounded_terminator() {
     let mut exact = vec![b'a'; LIMIT - 4];
     exact.extend_from_slice(b"\r\n\r\n");
     let header = runtime
-        .block_on(read_bounded_header::<4_096, _>(
-            &mut exact.as_slice(),
-            LIMIT,
-        ))
+        .block_on(read_bounded_header(&mut exact.as_slice(), LIMIT))
         .expect("terminator ending at the byte limit");
     assert_eq!(header.end, LIMIT);
 
     let mut over = vec![b'a'; LIMIT - 3];
     over.extend_from_slice(b"\r\n\r\n");
-    let Err(error) = runtime.block_on(read_bounded_header::<4_096, _>(&mut over.as_slice(), LIMIT))
-    else {
+    let Err(error) = runtime.block_on(read_bounded_header(&mut over.as_slice(), LIMIT)) else {
         panic!("accepted terminator ending beyond the byte limit");
     };
     assert_eq!(error.kind(), io::ErrorKind::InvalidData);

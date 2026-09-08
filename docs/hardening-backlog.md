@@ -73,7 +73,7 @@ The current bounded contribution list and measured pressure lanes are in
   VMM-specific launch and restore machinery in the integrating sandbox.
 - A black-box host-cage conformance harness covering direct TCP/UDP, both IP
   families, unrelated loopback and host IPC, proxy-environment overrides,
-  inherited sockets, resolver/upstream reachability, and premature identity
+  inherited sockets, resolver/destination reachability, and premature identity
   reuse. These paths cannot be certified by an in-listener library test.
 - DNS routing that cannot bypass the proxy boundary.
 - IPv4-only, IPv6-only, dual-stack, unusual MTU, and packet loss/delay.
@@ -81,10 +81,6 @@ The current bounded contribution list and measured pressure lanes are in
 - Process signals and supervisor crashes beyond the current named-namespace
   orphan cleanup proof, including reconciliation from a durable run journal.
 - Resource-capped standalone executable using the same library.
-- Authenticated and TLS corporate upstream proxies, explicit trust-root
-  ownership, and resolution-aware host-controlled bypass rules. The current
-  transport slice is unauthenticated HTTP CONNECT with validated numeric
-  targets and no ambient proxy-environment behavior.
 - macOS and Windows compilation without overstating enforcement strength.
 
 ## Reproducible evidence

@@ -26,7 +26,6 @@ const LOCALHOST_CLIENT_HELLO: &[u8] = &[
     2, 3, 4, // supported versions
     0, 13, 0, 4, 0, 2, 4, 3, // signature algorithms
 ];
-const UPSTREAM_CONNECT: &[u8] = b"CONNECT 127.0.0.2:443 HTTP/1.1\r\nHost: 127.0.0.2:443\r\n\r\n";
 
 fn allowed_connect(criterion: &mut Criterion) {
     let (port, stop, upstream) = start_upstream();
@@ -153,94 +152,6 @@ fn allowed_hostname(criterion: &mut Criterion) {
 
 fn allowed_visible_sni(criterion: &mut Criterion) {
     allowed_hostname_connect(criterion, true);
-}
-
-fn upstream_proxy_connect(criterion: &mut Criterion) {
-    upstream_proxy_connect_case(
-        criterion,
-        "connect_via_upstream_proxy",
-        Arc::from(&b"HTTP/1.1 200 Connection Established\r\n\r\n"[..]),
-        true,
-    );
-}
-
-fn upstream_proxy_near_terminator(criterion: &mut Criterion) {
-    upstream_proxy_connect_case(
-        criterion,
-        "connect_upstream_near_terminator_32k",
-        Arc::from(b"\r\n\rX".repeat((32 * 1_024) / 4)),
-        false,
-    );
-}
-
-fn upstream_proxy_connect_case(
-    criterion: &mut Criterion,
-    name: &'static str,
-    response: Arc<[u8]>,
-    successful: bool,
-) {
-    let (upstream_proxy, stop, upstream) = start_upstream_proxy(response);
-    let proxy = Proxy::start(
-        ProxyConfig::default()
-            .with_identity_reuse_quiet_period(Duration::ZERO)
-            .with_upstream_proxy(upstream_proxy),
-    )
-    .expect("start upstream-proxy benchmark");
-    let target: SocketAddr = "127.0.0.2:443".parse().expect("numeric target");
-    let policy = Policy::builder()
-        .allow_network("127.0.0.0/8".parse::<IpNet>().expect("loopback CIDR"))
-        .allow_port(target.port())
-        .build()
-        .expect("valid policy");
-    let lease = proxy
-        .attach(
-            PeerIdentity::SourceIp(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-            policy,
-        )
-        .expect("attach benchmark lease");
-    let endpoint = lease.endpoint().socket_addr();
-    let request = format!("CONNECT {target} HTTP/1.1\r\nHost: {}\r\n\r\n", target.ip());
-
-    criterion.bench_function(name, |bencher| {
-        bencher.iter(|| {
-            let mut client = TcpStream::connect(endpoint).expect("connect proxy");
-            client.write_all(request.as_bytes()).expect("write CONNECT");
-            if successful {
-                let mut response = [0_u8; 39];
-                client
-                    .read_exact(&mut response)
-                    .expect("read CONNECT response");
-                assert_connect_success(&response);
-                black_box(&response[..]);
-            } else {
-                let mut response = [0_u8; 256];
-                let bytes = client.read(&mut response).expect("read proxy denial");
-                assert!(response[..bytes].starts_with(b"HTTP/1.1 502"));
-                black_box(&response[..bytes]);
-            }
-            reset_on_drop(client);
-        });
-    });
-
-    let usage = lease
-        .close(Instant::now() + Duration::from_secs(2))
-        .expect("close benchmark lease")
-        .usage();
-    assert_eq!(usage.active_connections, 0);
-    assert_eq!(
-        usage.denied_connections,
-        if successful {
-            0
-        } else {
-            usage.accepted_connections
-        }
-    );
-    proxy
-        .shutdown(Instant::now() + Duration::from_secs(2))
-        .expect("shutdown benchmark proxy");
-    stop.store(true, Ordering::Release);
-    let _ = TcpStream::connect(upstream_proxy);
-    upstream.join().expect("join upstream proxy");
 }
 
 fn denied_connect(criterion: &mut Criterion) {
@@ -394,39 +305,12 @@ fn start_receiving_upstream(
     (address, stop, handle)
 }
 
-fn start_upstream_proxy(
-    response: Arc<[u8]>,
-) -> (SocketAddr, Arc<AtomicBool>, thread::JoinHandle<()>) {
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind upstream proxy");
-    let address = listener.local_addr().expect("upstream proxy address");
-    let stop = Arc::new(AtomicBool::new(false));
-    let thread_stop = Arc::clone(&stop);
-    let handle = thread::spawn(move || {
-        loop {
-            let (mut stream, _) = listener.accept().expect("accept upstream proxy connection");
-            if thread_stop.load(Ordering::Acquire) {
-                break;
-            }
-            let mut request = [0_u8; UPSTREAM_CONNECT.len()];
-            stream
-                .read_exact(&mut request)
-                .expect("read upstream CONNECT");
-            assert_eq!(&request, UPSTREAM_CONNECT);
-            stream
-                .write_all(&response)
-                .expect("write upstream response");
-        }
-    });
-    (address, stop, handle)
-}
-
 criterion_group! {
     name = benches;
     config = Criterion::default()
         .warm_up_time(Duration::from_millis(250))
         .measurement_time(Duration::from_secs(1))
         .sample_size(20);
-    targets = allowed_connect, allowed_hostname, allowed_visible_sni, upstream_proxy_connect,
-        upstream_proxy_near_terminator, denied_connect, oversized_header
+    targets = allowed_connect, allowed_hostname, allowed_visible_sni, denied_connect, oversized_header
 }
 criterion_main!(benches);

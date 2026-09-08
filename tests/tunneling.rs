@@ -137,15 +137,15 @@ fn wait_for_bytes(mut current: impl FnMut() -> u64) {
 fn attach_for_ports(
     proxy: &Proxy,
     ports: &[u16],
-    max_download_bytes: Option<u64>,
+    max_tunnel_download_bytes: Option<u64>,
 ) -> sandbox_egress::Lease {
     let mut policy = Policy::builder()
         .allow_network("127.0.0.0/8".parse::<IpNet>().expect("loopback test CIDR"));
     for port in ports {
         policy = policy.allow_port(*port);
     }
-    if let Some(limit) = max_download_bytes {
-        policy = policy.max_download_bytes(limit);
+    if let Some(limit) = max_tunnel_download_bytes {
+        policy = policy.max_tunnel_download_bytes(limit);
     }
     proxy
         .attach(
@@ -586,7 +586,7 @@ fn upload_limit_forwards_the_exact_allowed_prefix() {
     let policy = Policy::builder()
         .allow_network("127.0.0.0/8".parse::<IpNet>().expect("loopback test CIDR"))
         .allow_port(port)
-        .max_upload_bytes(7)
+        .max_tunnel_upload_bytes(7)
         .build()
         .expect("valid policy");
     let lease = proxy

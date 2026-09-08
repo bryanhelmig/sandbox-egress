@@ -12,7 +12,6 @@ mod resolver;
 mod tls;
 #[cfg(test)]
 mod tls_tests;
-mod upstream;
 mod usage;
 
 // Keep the advanced examples executable after moving them out of the README.

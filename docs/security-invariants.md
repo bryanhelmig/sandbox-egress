@@ -78,6 +78,9 @@ closed before the runtime thread joins. A surviving lease handle may consume
 that already-certified final snapshot locally. Send or reply disconnection is
 rechecked against closed state, but a deadline timeout still retains ownership;
 the shutdown race cannot silently turn uncommitted cleanup into success.
+If a failed shutdown has already closed a lease, later cleanup recognizes that
+terminal state and returns its frozen counters. It cannot leave a reaper
+repeatedly draining the listener for work that is already certified gone.
 
 Failed startup also remains an ownership boundary. Once the runtime thread is
 spawned, a resolver, bind, or post-bind validation error is returned only after
@@ -281,27 +284,9 @@ Dialing receives only approved `SocketAddr` values and shares the absolute
 handshake deadline. Lease cancellation drops the in-progress connect future;
 certified close waits for the owning tracked connection task to disappear.
 
-An optional process-wide upstream proxy changes the transport route, not the
-destination decision. It is a host-supplied numeric `SocketAddr`; the guest
-cannot select it through a header or environment variable. Sandbox Egress
-still resolves and validates the destination locally, then uses its checked IP
-and port as the upstream CONNECT authority. The upstream proxy therefore gets
-no hostname to resolve again. Its TCP setup, bounded 32 KiB response header,
-and CONNECT negotiation live inside the same dial permit, per-address attempt
-deadline, tracked connection task, and lease cancellation boundary. A
-non-success or malformed response is `upstream-proxy-failed`. Any bytes read
-beyond a successful response header are preserved as the first tunnel bytes;
-they receive ordinary download accounting and policy ceilings. The configured
-upstream proxy must be concrete unicast and may not be the shared Sandbox
-Egress listener itself. Scoped IPv6 is accepted only with a nonzero zone
-identifier retained in its `SocketAddr`; IPv4-mapped forms cross the same IPv4
-class boundary as native addresses.
-
-This route currently supports unauthenticated cleartext HTTP CONNECT only.
-Authentication, TLS to the upstream proxy, and host-controlled bypass rules
-require explicit designs for secret ownership, trust roots, and preserving the
-validated-address guarantee; they are not silently inferred from process or
-guest proxy environment variables.
+The checked destination is dialed directly. Proxy chaining and ambient
+`HTTP_PROXY`, `HTTPS_PROXY`, or `NO_PROXY` routing are not supported by the
+library's outbound connector.
 
 CONNECT header acquisition has a process-wide byte ceiling and an absolute
 deadline capped by the lease handshake deadline. Both deadlines begin when the
@@ -310,7 +295,10 @@ not extend either budget. Oversize input, early EOF, timeout, and other socket
 read failure remain fail-closed and have distinct bounded reason codes. The
 mature parser also uses a fixed 64-header slot array;
 header 65 is rejected as `too-many-headers` rather than allocating more space
-or being mislabeled as malformed syntax. Header terminator search scans only
+or being mislabeled as malformed syntax.
+The parser must consume exactly the acquired header slice. A premature parser
+boundary, including LF headers followed by a later CRLF delimiter in payload,
+is rejected before policy or DNS instead of discarding tunnel bytes. Header terminator search scans only
 new bytes plus the three-byte boundary overlap, so raising the trusted byte
 ceiling does not give a guest quadratic parser work.
 

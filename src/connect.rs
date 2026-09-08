@@ -23,18 +23,14 @@ pub(crate) struct HeaderBlock {
 // Whole-program LTO otherwise coupled its loop layout to unrelated policy
 // constructor changes; the committed 1 MiB benchmark reproduced the effect.
 #[inline(never)]
-pub(crate) async fn read_bounded_header<const CHUNK_BYTES: usize, R>(
-    stream: &mut R,
-    max: usize,
-) -> io::Result<HeaderBlock>
+pub(crate) async fn read_bounded_header<R>(stream: &mut R, max: usize) -> io::Result<HeaderBlock>
 where
     R: AsyncRead + Unpin,
 {
-    debug_assert!(CHUNK_BYTES > 0);
     // Keep ordinary CONNECT headers in one allocation without reserving a
     // full read chunk for every concurrent handshake.
     let mut bytes = Vec::with_capacity(max.min(256));
-    let mut chunk = [0_u8; CHUNK_BYTES];
+    let mut chunk = [0_u8; 4_096];
     loop {
         if bytes.len() >= max {
             return Err(io::Error::new(
@@ -67,11 +63,13 @@ pub(crate) struct ConnectRequest {
 pub(crate) fn parse_connect(bytes: &[u8]) -> Result<ConnectRequest, &'static str> {
     let mut headers = [httparse::EMPTY_HEADER; MAX_CONNECT_HEADERS];
     let mut request = httparse::Request::new(&mut headers);
+    // The bounded framer and mature parser must select the same boundary.
+    // Otherwise LF headers can consume a later delimiter in tunnel data.
     match request.parse(bytes) {
-        Ok(httparse::Status::Complete(_)) => {}
+        Ok(httparse::Status::Complete(end)) if end == bytes.len() => {}
         Ok(httparse::Status::Partial) => return Err("incomplete-header"),
         Err(httparse::Error::TooManyHeaders) => return Err("too-many-headers"),
-        Err(_) => return Err("malformed-header"),
+        _ => return Err("malformed-header"),
     }
     if request.method != Some("CONNECT") {
         return Err("connect-required");
@@ -217,6 +215,44 @@ mod tests {
                 .expect("valid CONNECT");
         assert_eq!(request.host, "example.com");
         assert_eq!(request.port, 443);
+    }
+
+    #[test]
+    fn connect_framing_preserves_or_rejects_payload_at_every_read_split() {
+        let runtime = RuntimeBuilder::new_current_thread().build().unwrap();
+        for (header, accepted) in [
+            (
+                "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                true,
+            ),
+            (
+                "CONNECT example.com:443 HTTP/1.1\nHost: example.com\n\n",
+                false,
+            ),
+            (
+                "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\n\n",
+                false,
+            ),
+        ] {
+            let wire = format!("{header}LOST\r\n\r\nKEPT").into_bytes();
+            for split in 1..wire.len() {
+                let mut reader = SegmentedReader {
+                    segments: [wire[..split].to_vec(), wire[split..].to_vec()].into(),
+                };
+                runtime.block_on(async {
+                    let block = read_bounded_header(&mut reader, 1_024).await.unwrap();
+                    let parsed = parse_connect(&block.bytes[..block.end]);
+                    if accepted {
+                        parsed.expect("ordinary CONNECT");
+                        let mut payload = block.bytes[block.end..].to_vec();
+                        reader.read_to_end(&mut payload).await.unwrap();
+                        assert_eq!(payload, b"LOST\r\n\r\nKEPT", "split={split}");
+                    } else {
+                        assert_eq!(parsed.unwrap_err(), "malformed-header", "split={split}");
+                    }
+                });
+            }
+        }
     }
 
     #[test]
@@ -410,8 +446,10 @@ mod tests {
             "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
             "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\nCoNtEnT-LeNgTh: 1\r\nTrAnSfEr-EnCoDiNg: chunked\r\n\r\n",
         ] {
+            // Match the production caller: only the acquired header reaches the parser.
+            let end = find_header_end(request.as_bytes(), 0).unwrap();
             assert_eq!(
-                parse_connect(request.as_bytes()).unwrap_err(),
+                parse_connect(&request.as_bytes()[..end]).unwrap_err(),
                 "connect-content-not-allowed",
                 "unexpected result for {request:?}"
             );
@@ -444,7 +482,7 @@ mod tests {
                 segments: VecDeque::from([wire[..split].to_vec(), wire[split..].to_vec()]),
             };
             let block = runtime
-                .block_on(read_bounded_header::<4_096, _>(&mut reader, wire.len()))
+                .block_on(read_bounded_header(&mut reader, wire.len()))
                 .unwrap_or_else(|error| panic!("split {split} failed: {error}"));
             assert_eq!(block.end, header.len(), "wrong end at split {split}");
             assert_eq!(

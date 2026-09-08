@@ -272,7 +272,7 @@ fn upload_limit_bounds_client_hello_inspection_before_forwarding() {
         .expect("valid test hostname")
         .allow_network("127.0.0.0/8".parse().expect("valid loopback test network"))
         .allow_port(port)
-        .max_upload_bytes(upload_limit as u64)
+        .max_tunnel_upload_bytes(upload_limit as u64)
         .require_tls_sni()
         .build()
         .expect("valid upload-limited TLS policy");

@@ -131,84 +131,6 @@ fn revocation_before_refusal_prevents_a_fallback_dial() {
 }
 
 #[test]
-fn upstream_proxy_refusal_falls_back_without_another_lookup() {
-    let first: SocketAddr = "192.0.2.1:443".parse().expect("first target");
-    let second: SocketAddr = "192.0.2.2:443".parse().expect("second target");
-    let (upstream_proxy, requests_rx, server) = start_refusing_upstream();
-
-    let (hostname_tx, hostname_rx) = mpsc::channel();
-    let resolver = Arc::new(CapturingAnswerResolver {
-        captured: hostname_tx,
-        answers: vec![first.ip(), second.ip()],
-    });
-    let proxy = Proxy::start_with_test_resolver(
-        ProxyConfig::default().with_upstream_proxy(upstream_proxy),
-        resolver,
-    )
-    .expect("start proxy");
-    let policy = Policy::builder()
-        .allow_host("fallback.test")
-        .expect("valid hostname")
-        .allow_network("192.0.2.0/24".parse().expect("test network"))
-        .allow_port(443)
-        .build()
-        .expect("valid policy");
-    let lease = proxy
-        .attach(
-            PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
-            policy,
-        )
-        .expect("attach localhost");
-    let mut client =
-        std::net::TcpStream::connect(lease.endpoint().socket_addr()).expect("connect guest");
-    std::io::Write::write_all(
-        &mut client,
-        b"CONNECT fallback.test:443 HTTP/1.1\r\nHost: fallback.test\r\n\r\n",
-    )
-    .expect("write guest CONNECT");
-    let mut response = [0_u8; 39];
-    std::io::Read::read_exact(&mut client, &mut response).expect("read CONNECT success");
-    assert_eq!(&response, CONNECT_SUCCESS_RESPONSE);
-    let mut greeting = [0_u8; 5];
-    std::io::Read::read_exact(&mut client, &mut greeting).expect("read greeting");
-    assert_eq!(&greeting, b"hello");
-    std::io::Write::write_all(&mut client, b"ping").expect("write tunnel upload");
-    let mut pong = [0_u8; 4];
-    std::io::Read::read_exact(&mut client, &mut pong).expect("read tunnel download");
-    assert_eq!(&pong, b"pong");
-    std::net::TcpStream::shutdown(&client, std::net::Shutdown::Write)
-        .expect("finish tunnel upload");
-    std::io::Read::read_to_end(&mut client, &mut Vec::new()).expect("read tunnel shutdown");
-    server.join().expect("join upstream proxy");
-
-    assert_eq!(
-        hostname_rx.recv().expect("receive lookup"),
-        "fallback.test."
-    );
-    assert!(hostname_rx.try_recv().is_err(), "unexpected second lookup");
-    assert_eq!(
-        requests_rx.recv().expect("receive CONNECT requests"),
-        vec![
-            format!("CONNECT {first} HTTP/1.1\r\nHost: {first}\r\n\r\n").into_bytes(),
-            format!("CONNECT {second} HTTP/1.1\r\nHost: {second}\r\n\r\n").into_bytes(),
-        ]
-    );
-    let usage = lease
-        .close(Instant::now() + Duration::from_secs(2))
-        .expect("certified close")
-        .usage();
-    assert_eq!(usage.accepted_connections, 1);
-    assert_eq!(usage.completed_connections, 1);
-    assert_eq!(usage.denied_connections, 0);
-    assert_eq!(usage.uploaded_bytes, 4);
-    assert_eq!(usage.downloaded_bytes, 9);
-    assert_eq!(usage.active_connections, 0);
-    proxy
-        .shutdown(Instant::now() + Duration::from_secs(2))
-        .expect("proxy shutdown");
-}
-
-#[test]
 fn dns_concurrency_is_bounded_and_queued_lookups_cancel_on_close() {
     const CLIENTS: usize = 5;
     const DNS_LIMIT: usize = 2;
@@ -971,7 +893,7 @@ fn failed_startup_joins_the_owned_runtime_thread() {
     let result = Proxy::start_with_test_resolver(
         ProxyConfig::default()
             .with_bind_address(address)
-            .with_upstream_proxy(address),
+            .with_dns_server(address),
         Arc::new(StartupDropProbe(Arc::clone(&dropped))),
     );
 

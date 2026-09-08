@@ -32,7 +32,6 @@ pub struct ProxyConfig {
     pub(crate) header_timeout: Duration,
     pub(crate) identity_reuse_quiet_period: Duration,
     pub(crate) diagnostics: Option<DiagnosticConfig>,
-    pub(crate) upstream_proxy: Option<SocketAddr>,
 }
 
 impl ProxyConfig {
@@ -108,26 +107,11 @@ impl ProxyConfig {
         {
             return Err("explicit DNS server must be a concrete unicast address");
         }
-        if self.upstream_proxy.is_some_and(|proxy| proxy.port() == 0) {
-            return Err("upstream proxy port must be nonzero");
-        }
-        if self
-            .upstream_proxy
-            .is_some_and(|proxy| !is_concrete_unicast(proxy))
-        {
-            return Err("upstream proxy must be a concrete unicast address");
-        }
         if self.dns_servers.iter().any(|server| match server {
             SocketAddr::V4(_) => false,
             SocketAddr::V6(server) => server.scope_id() != 0 || is_scoped_unicast(*server.ip()),
         }) {
             return Err("scoped IPv6 DNS servers are not supported");
-        }
-        if self.upstream_proxy.is_some_and(|proxy| match proxy {
-            SocketAddr::V4(_) => false,
-            SocketAddr::V6(proxy) => is_scoped_unicast(*proxy.ip()) && proxy.scope_id() == 0,
-        }) {
-            return Err("scoped IPv6 upstream proxy requires a zone ID");
         }
         Ok(())
     }
@@ -142,19 +126,6 @@ impl ProxyConfig {
     /// advertise an address reachable from each guest with the assigned port.
     pub fn with_bind_address(mut self, address: SocketAddr) -> Self {
         self.bind_address = address;
-        self
-    }
-
-    /// Route approved destinations through an operator-controlled HTTP CONNECT
-    /// proxy at a numeric socket address.
-    ///
-    /// Destination names are still resolved and checked locally. The upstream
-    /// proxy receives the approved numeric address, so it cannot perform a
-    /// second destination lookup. Authentication and TLS to the upstream proxy
-    /// are not provided by this configuration. Startup requires a concrete
-    /// unicast address; scoped IPv6 additionally requires a zone identifier.
-    pub fn with_upstream_proxy(mut self, address: SocketAddr) -> Self {
-        self.upstream_proxy = Some(address);
         self
     }
 
@@ -350,7 +321,6 @@ impl Default for ProxyConfig {
             header_timeout: Duration::from_secs(10),
             identity_reuse_quiet_period: Duration::from_millis(25),
             diagnostics: None,
-            upstream_proxy: None,
         }
     }
 }
@@ -486,26 +456,6 @@ mod tests {
     }
 
     #[test]
-    fn scoped_ipv6_upstream_proxy_requires_a_zone() {
-        let scoped = "fe80::1".parse().expect("valid link-local address");
-        let without_zone = SocketAddr::V6(std::net::SocketAddrV6::new(scoped, 3128, 0, 0));
-        let with_zone = SocketAddr::V6(std::net::SocketAddrV6::new(scoped, 3128, 0, 7));
-
-        assert!(
-            ProxyConfig::default()
-                .with_upstream_proxy(without_zone)
-                .validate()
-                .is_err()
-        );
-        assert!(
-            ProxyConfig::default()
-                .with_upstream_proxy(with_zone)
-                .validate()
-                .is_ok()
-        );
-    }
-
-    #[test]
     fn explicit_dns_server_requires_a_destination_port() {
         let server = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 0);
         assert!(
@@ -517,18 +467,7 @@ mod tests {
     }
 
     #[test]
-    fn upstream_proxy_requires_a_destination_port() {
-        let proxy = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 0);
-        assert!(
-            ProxyConfig::default()
-                .with_upstream_proxy(proxy)
-                .validate()
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn configured_remote_services_require_concrete_unicast_addresses() {
+    fn configured_dns_servers_require_concrete_unicast_addresses() {
         for address in [
             "0.0.0.0:53".parse().expect("unspecified IPv4"),
             "[::]:53".parse().expect("unspecified IPv6"),
@@ -545,19 +484,11 @@ mod tests {
                     .is_err(),
                 "accepted DNS server {address}"
             );
-            assert!(
-                ProxyConfig::default()
-                    .with_upstream_proxy(SocketAddr::new(address.ip(), 3128))
-                    .validate()
-                    .is_err(),
-                "accepted upstream proxy {}",
-                address.ip()
-            );
         }
     }
 
     #[test]
-    fn mapped_remote_services_follow_the_ipv4_unicast_boundary() {
+    fn mapped_dns_servers_follow_the_ipv4_unicast_boundary() {
         for address in [
             Ipv4Addr::UNSPECIFIED,
             Ipv4Addr::new(0, 0, 0, 1),
@@ -573,14 +504,6 @@ mod tests {
                     .is_err(),
                 "accepted mapped DNS server {mapped}"
             );
-            assert!(
-                ProxyConfig::default()
-                    .with_upstream_proxy(SocketAddr::new(mapped.ip(), 3128))
-                    .validate()
-                    .is_err(),
-                "accepted mapped upstream proxy {}",
-                mapped.ip()
-            );
         }
 
         for address in [Ipv4Addr::LOCALHOST, Ipv4Addr::new(192, 0, 2, 1)] {
@@ -591,14 +514,6 @@ mod tests {
                     .validate()
                     .is_ok(),
                 "rejected mapped DNS server {mapped}"
-            );
-            assert!(
-                ProxyConfig::default()
-                    .with_upstream_proxy(SocketAddr::new(mapped.ip(), 3128))
-                    .validate()
-                    .is_ok(),
-                "rejected mapped upstream proxy {}",
-                mapped.ip()
             );
         }
     }

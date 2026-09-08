@@ -7406,3 +7406,100 @@ enabled and verified. The actual crates.io upload stopped before uploading with
 The README therefore installs from the preview Git tag. The GitHub source
 preview can proceed independently; crates.io publication requires the
 maintainer's local `cargo login`. This does not change the open production gates.
+
+
+## 2026-09-08 — simplify direct egress and fix two reproduced bugs
+
+The owner explicitly approved removing upstream CONNECT chaining, fixing the
+review's two bugs, renaming the per-tunnel byte limits, and consolidating the
+documentation. The baseline is public-preview commit `919dd0a`; the candidate
+is on local branch `simplify-egress-core`. No dependency, version, CI budget,
+NAT64 policy, host adapter, or release acceptance threshold changed.
+
+Removed the upstream transport, response parser, configuration API, two
+benchmarks and feature-specific tests. The remaining connector returns a
+`TcpStream` directly; its injected test backend still exercises dial faults.
+The shared header reader now has one 4096-byte chunk size. Post-bind startup
+failure coverage remains through recursive DNS-server rejection, including its
+resource-recovery workload. The resource certificate now has eight lanes,
+removing only the deleted upstream-response occupancy lane.
+
+The HTTP framer and httparse previously disagreed on where an LF-terminated
+header ended. A later CRLF delimiter in tunnel data could swallow its prefix.
+Require the mature parser's consumed offset to equal the framed header length
+before policy resolution or dialing. The regression covers CRLF payload
+preservation and LF/mixed-ending rejection at every two-segment read split;
+a socket test proves 400 rejection with no destination dial or payload usage.
+Both failed before the fix. An existing message-framing-header unit test now
+passes only the framed header, matching the production caller, while retaining
+its specific Content-Length/Transfer-Encoding denial assertion.
+
+Cleanup could loop on an already-Closed lease after shutdown completed without
+its caller observing the reply. Return its final snapshot before attempting
+another quiet/drain cycle. Two deterministic tests failed before the fix:
+already-Closed state requested another drain, and dropping the lease retained
+two strong state references while the stopping proxy remained alive. Both now
+pass. A third test covers shutdown closing the state while a drain is pending.
+The five added tests include the positive payload/control paths, not just
+isolated denial assertions.
+
+Renamed `max_upload_bytes` / `max_download_bytes` to
+`max_tunnel_upload_bytes` / `max_tunnel_download_bytes` throughout the public
+builder, implementation, tests and current examples. Each tunnel still gets
+its own allowance; lease usage remains aggregate. There are no aliases.
+The changelog documents these preview-breaking changes and the raw resource
+script's removed eighth argument. Configuration, testing, performance,
+complexity and scope guides now have distinct jobs. Historical performance
+and complexity ledgers are linked at the exact alpha.1 source commit, while
+this engineering log and the founding documents retain their history.
+
+Validation used Rust 1.97.1 on macOS arm64 and a dedicated
+`CARGO_TARGET_DIR=target/simplify-core`. Raw candidate evidence is under
+`target/simplify-evidence/`, including failing-first logs and the initial
+Clippy rejection of identical match arms (corrected before the final check).
+
+- `./scripts/check.sh`: passed 216 ordinary tests, seven doctests, eleven
+  benchmark smokes, formatting, Clippy, docs, package and dependency policy.
+- `./scripts/test-conformance.sh`: passed 215 cases across its selected targets.
+- Resource evaluator controls (eight) and release evaluator controls (six)
+  passed; `./scripts/build-host-fixture.sh` built the separate consumer.
+- `cargo check --locked --all-targets --target x86_64-unknown-linux-gnu` passed.
+  This is compilation evidence, not a fresh Linux runtime/host-boundary run.
+- `python3 scripts/certify-resources.py --output target/simplify-evidence/resources.json`
+  passed all eight lanes with a stable dirty-source fingerprint. Defaults:
+  four batches, 250 churn iterations per batch, 64 occupied connections,
+  16 management workers, eight backpressure runs per batch, 180 seconds per
+  lane. Budgets remain 131072 KiB sampled peak RSS and 8192 KiB post-warmup
+  growth; observed maxima were 18816 KiB and 160 KiB. File descriptors and
+  threads recovered. The earlier nine-lane baseline peaked at 18896 KiB with
+  160 KiB growth; removing one workload precludes a whole-suite equivalence
+  claim.
+- `./scripts/measure-complexity.sh` on baseline and candidate: Rust code lines
+  14238 -> 13418, structural estimate 964 -> 919, cognitive estimate
+  2719 -> 2610. These totals include tests and benchmarks; feature deletion
+  explains the reduction, with no attempt to tune a target score.
+
+Performance evidence uses the same surviving workloads as the review baseline,
+with compilation complete and lanes run sequentially. `./scripts/bench.sh`
+passed all eleven remaining cases. Before/after point estimates were direct
+loopback setup 31.853/38.085 microseconds, allowed CONNECT 98.951/119.95
+microseconds, default empty attach/close 27.036/27.799 milliseconds, and the
+zero-quiet control 1.2659/1.3264 milliseconds. Setup is slower in this sample,
+including its direct TCP control; this does not establish either a regression
+or a speedup in the library. Three `./scripts/measure-throughput.sh 128 8 both`
+runs passed exact accounting: candidate upload 3136.9, 3503.9, 3251.9 MiB/s;
+download 3744.3, 2539.4, 3390.0 MiB/s. Review-baseline upload was 2367.2,
+3135.9, 2827.6; download 3450.9, 2782.3, 3244.8 MiB/s. The spread remains
+unsuitable for a release acceptance claim. Baseline logs and Criterion
+estimates remain in the September 8 review workspace's `review-evidence/`.
+Removing two benchmarks also changes the release driver's benchmark contract;
+a reviewed baseline for the reduced suite is still needed.
+
+`cargo test --locked --release --test management_load -- --ignored --nocapture`
+failed its existing competing-traffic requirement in three unknown-identity
+samples. Maximum attach was 283 microseconds and close 30.060 milliseconds,
+both within the unchanged one-second latency budget. This matches the recorded
+failure category, but does not prove the root cause or resolve it. Keep the
+raw failure; do not rerun until green or relax the overlap assertion. The
+management-overlap and performance-calibration release gates remain open.
+The requested code fixes are verified; this is not production certification.

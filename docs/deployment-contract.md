@@ -22,9 +22,9 @@ The division of responsibility is exact:
 - Sandbox Egress revokes tracked work and certifies final counters with
   `Lease::close`. The host fences the old guest first and reuses its source
   address only after close succeeds.
-- Sandbox Egress can exempt its upstream sockets from the host egress cage. The
-  host prevents the guest and its sidecars from creating equivalent exempt
-  sockets.
+- The host permits the proxy's destination sockets through its egress cage and
+  prevents the guest and its sidecars from obtaining equivalent exemptions.
+  The library does not install firewall rules or socket-mark exemptions.
 
 Proxy environment variables are application configuration, not confinement.
 They can help ordinary software discover `Lease::endpoint()`, but an untrusted
@@ -49,7 +49,7 @@ A common integration uses a guest-specific virtual interface or namespace path
 whose firewall permits TCP only to the shared proxy listener. The exact host
 mechanism is deployment-specific. Whatever mechanism is chosen must also cover
 IPv4 and IPv6, reject forwarding around the listener, and keep the proxy's own
-upstream path unavailable to the guest. The normative generation, readiness,
+destination path unavailable to the guest. The normative generation, readiness,
 restore, reconciliation, and kernel-capacity sequence is in the
 [host network integration contract](host-integration.md). Firecracker is one
 consumer of that contract, not a required runtime or test dependency.
@@ -84,7 +84,7 @@ all of the following and require failure:
 - guest-chosen proxy environment overrides;
 - unrelated loopback and host IPC endpoints;
 - inherited or deliberately passed connected sockets;
-- direct access to the proxy's upstream route or recursive resolver;
+- direct access to the proxy's destination route or recursive resolver;
 - source-address reuse before a failed or incomplete close is recovered.
 
 Those tests belong at the integration boundary because the library cannot

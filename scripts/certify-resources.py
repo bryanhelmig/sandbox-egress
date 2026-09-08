@@ -22,7 +22,6 @@ LANES = {
     "concurrent_idle_expiry_releases_process_resources": "idle_soak",
     "concurrent_partial_client_hellos_release_process_resources": "tls_soak",
     "concurrent_partial_headers_release_process_resources": "header_soak",
-    "concurrent_partial_upstream_responses_release_process_resources": "upstream_soak",
     "repeated_bidirectional_backpressure_releases_process_resources": "backpressure_soak",
     "terminal_connection_churn_releases_process_resources": "connection_soak",
 }
@@ -126,7 +125,6 @@ def main():
         "SANDBOX_EGRESS_IDLE_CONNECTIONS": args.connections,
         "SANDBOX_EGRESS_TLS_CONNECTIONS": args.connections,
         "SANDBOX_EGRESS_HEADER_CONNECTIONS": args.connections,
-        "SANDBOX_EGRESS_UPSTREAM_CONNECTIONS": args.connections,
         "SANDBOX_EGRESS_BACKPRESSURE_RUNS": 8,
         "SANDBOX_EGRESS_BACKPRESSURE_BATCHES": args.batches,
         "SANDBOX_EGRESS_TERMINAL_RUNS": args.runs_per_batch,

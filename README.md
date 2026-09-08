@@ -14,6 +14,8 @@ cargo add sandbox-egress --git https://github.com/bryanhelmig/sandbox-egress --t
 
 This preview is for evaluation and controlled integration. The API may change
 between previews. Read the host boundary below before connecting a sandbox.
+The documentation in this checkout describes the current source; see the
+[changelog](CHANGELOG.md#unreleased) for changes since the tagged preview.
 
 ## Three objects
 
@@ -113,15 +115,18 @@ both `CAP_NET_ADMIN` and `CAP_NET_RAW` from untrusted workloads.
   services, while network denials still win. Direct IP literals require a
   network grant.
 - Byte ceilings apply per tunnel; live/final usage aggregates the lease.
+  The setters are `max_tunnel_upload_bytes` and `max_tunnel_download_bytes`;
+  opening another tunnel gives it a separate allowance.
 - TLS/SNI inspection is opt-in. It can verify visible SNI, with explicit ECH
   handling, but cannot enforce an application authority inside encrypted TLS.
 - Invalid process ceilings fail startup; requested limits are never silently
   enlarged or reduced. Defaults remain bounded and diagnostics/cache opt-in.
 
 The [configuration reference](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/configuration.md)
-covers timeouts, rates, diagnostics, DNS, NAT64, TLS inspection, and numeric
-upstream CONNECT chaining. Plain HTTP forwarding, MITM, credential injection,
-transparent interception, and VMM management are outside the core.
+covers timeouts, rates, diagnostics, DNS, NAT64, and TLS inspection. Destinations
+are dialed directly after their numeric addresses pass policy. Upstream proxy
+chaining, plain HTTP forwarding, MITM, credential injection, transparent
+interception, and VMM management are outside the core.
 
 ## Development and release evidence
 
@@ -145,6 +150,11 @@ The [architecture](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/
 [performance record](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/performance.md),
 and [prior art](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/prior-art.md)
 explain the design and its evidence.
+
+Each guide has one job: the deployment contract defines host obligations;
+architecture explains ownership; security invariants define enforcement;
+testing maps those invariants to executable checks. Dated experiments remain
+in the engineering log, and release certification owns the readiness verdict.
 
 ## Status
 

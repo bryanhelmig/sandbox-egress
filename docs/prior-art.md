@@ -1,7 +1,9 @@
 # Prior art
 
 Reviewed through 2026-09-02. Commit pins make future comparisons reproducible;
-links remain upstream-owned and are not vendored.
+links remain upstream-owned and are not vendored. These are dated comparison
+notes, including experiments later removed. The [scope review](simplicity-review.md)
+defines the current feature boundary.
 
 | Project | Reviewed commit | What to learn | Gap this crate targets |
 | --- | --- | --- | --- |
@@ -304,35 +306,14 @@ approved numeric address to the corporate proxy so it cannot perform a second
 destination lookup. Its hostname CONNECT escape hatch deliberately transfers
 that authority to the upstream proxy and is not adopted here.
 
-Sandbox Egress implements the small common transport core: one process-wide
-numeric HTTP proxy address, a bounded parsed CONNECT response, sequential
-validated-address fallback, and lease-owned cancellation. It does not yet
-import OpenShell's HTTPS proxy transport, CA bundles, credential files, or
-resolution-aware bypass rules. Those features introduce separate secret and
-trust-root contracts and remain explicit follow-up work rather than ambient
-`HTTP_PROXY`, `HTTPS_PROXY`, or `NO_PROXY` behavior a guest could influence.
-
-OpenShell separately proves that refusal of one validated numeric CONNECT
-target falls through to the next locally approved address. Sandbox Egress pins
-the same behavior through its shared listener and lease boundary: exactly one
-absolute hostname lookup returns two approved addresses, the upstream proxy
-sees only those two numeric authorities in order, and a refusal followed by a
-successful tunnel remains one accepted and completed guest connection. This
-does not adopt OpenShell's hostname-target escape hatch.
-
-The comparison also exposes a lifecycle phase absent from direct-only resource
-tests: an operator proxy can accept TCP and then hold an incomplete CONNECT
-response indefinitely. Sandbox Egress therefore keeps a concurrent resource
-lane with 128 such negotiations. Lease close must cancel all response parsing,
-terminate both guest and upstream sockets, and return exact final ownership and
-counters without waiting for either peer.
-
-Smokescreen's instrumented connection records the byte count returned by each
-Go `Read` or `Write` even when that operation also returns an error. Sandbox
-Egress additionally enforces per-tunnel byte ceilings, so it pins the adjacent
-ordering explicitly: an exact-boundary transport error is not relabeled as a
-policy denial, while a successfully observed excess byte is counted and denied
-before any later transport error.
+The alpha.1 experiment implemented a narrow numeric CONNECT route, sequential
+fallback and cancellation/resource tests. That route was removed after the
+2026-09-08 consumer review: the initial sandbox service controls its outbound
+network and does not need corporate proxy composition. This remains useful
+prior art if a concrete future consumer justifies revisiting that scope; it is
+not a supported transport or a planned authentication feature. The
+[original comparison](https://github.com/bryanhelmig/sandbox-egress/blob/919dd0aa5ab4187ae0659de7aa02c1551cb0bdf3/docs/prior-art.md)
+preserves the earlier implementation observations.
 
 ## Protocol-scope comparison
 

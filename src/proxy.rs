@@ -30,7 +30,6 @@ use crate::resolver::{ResolverBackend, build_system_resolver};
 #[cfg(test)]
 use crate::resolver::{TestResolver, apply_resolver_cache_options};
 use crate::tls::{ClientHelloError, read_client_hello};
-use crate::upstream::{ConnectedStream, connect_via};
 use crate::usage::Counters;
 use crate::{
     AttachError, CloseError, CloseErrorKind, EchPolicy, Endpoint, FinalUsage, PeerIdentity, Policy,
@@ -603,32 +602,16 @@ impl Drop for Admission {
 
 enum ConnectorBackend {
     Direct,
-    Upstream(SocketAddr),
     #[cfg(test)]
     Test(Arc<dyn TestConnector>),
 }
 
 impl ConnectorBackend {
-    async fn connect(&self, address: SocketAddr) -> io::Result<ConnectedStream> {
+    async fn connect(&self, address: SocketAddr) -> io::Result<TcpStream> {
         match self {
-            Self::Direct => TcpStream::connect(address)
-                .await
-                .map(ConnectedStream::direct),
-            Self::Upstream(proxy) => connect_via(*proxy, address).await,
+            Self::Direct => TcpStream::connect(address).await,
             #[cfg(test)]
-            Self::Test(connector) => connector
-                .connect(address)
-                .await
-                .map(ConnectedStream::direct),
-        }
-    }
-
-    const fn failure_reason(&self) -> &'static str {
-        match self {
-            Self::Direct => "dial-failed",
-            Self::Upstream(_) => "upstream-proxy-failed",
-            #[cfg(test)]
-            Self::Test(_) => "dial-failed",
+            Self::Test(connector) => connector.connect(address).await,
         }
     }
 }
@@ -808,10 +791,7 @@ async fn run_proxy(
             }
         },
     };
-    let system_connector = config
-        .upstream_proxy
-        .map_or(ConnectorBackend::Direct, ConnectorBackend::Upstream);
-    let connector = connector.unwrap_or(system_connector);
+    let connector = connector.unwrap_or(ConnectorBackend::Direct);
     let listener = match TcpListener::bind(config.bind_address).await {
         Ok(listener) => listener,
         Err(error) => {
@@ -827,15 +807,6 @@ async fn run_proxy(
         }
     };
     config.bind_address = endpoint.socket_addr();
-    if config
-        .upstream_proxy
-        .is_some_and(|proxy| is_proxy_endpoint(proxy, config.bind_address))
-    {
-        let _ = ready.send(Err(
-            "upstream proxy must not be the Sandbox Egress listener".to_owned(),
-        ));
-        return;
-    }
     if config
         .dns_servers
         .iter()
@@ -1052,6 +1023,9 @@ async fn quiesce_after_identity_quiet(
     drain_sender: Option<&tokio_mpsc::UnboundedSender<Command>>,
 ) -> Result<FinalUsage, CloseErrorKind> {
     loop {
+        if let Some(usage) = state.closed_snapshot() {
+            return Ok(usage);
+        }
         if let Some(usage) = state.quiesced_snapshot() {
             if let Some(drain_sender) = drain_sender {
                 drain_accept_queue(drain_sender).await?;
@@ -1133,7 +1107,7 @@ async fn serve_connect(
     let buffered_upload = header.bytes.len() - header.end;
     if state
         .policy
-        .max_upload_bytes
+        .max_tunnel_upload_bytes
         .is_some_and(|limit| buffered_upload as u64 > limit)
     {
         state.counters.record_upload(buffered_upload as u64);
@@ -1167,7 +1141,7 @@ async fn serve_connect(
         Err(denial) => return deny(&mut client, state, denial, deadline).await,
     };
     let Some(upstream) = upstream else {
-        let denial = Denial::new(502, connector.failure_reason());
+        let denial = Denial::new(502, "dial-failed");
         return deny(&mut client, state, denial, deadline).await;
     };
 
@@ -1253,7 +1227,7 @@ where
         client,
         Arc::clone(&state.counters),
         Direction::Upload,
-        state.policy.max_upload_bytes,
+        state.policy.max_tunnel_upload_bytes,
         buffered_upload as u64,
         activity_sender.clone(),
     );
@@ -1261,7 +1235,7 @@ where
         upstream,
         Arc::clone(&state.counters),
         Direction::Download,
-        state.policy.max_download_bytes,
+        state.policy.max_tunnel_download_bytes,
         0,
         activity_sender,
     );
@@ -1326,7 +1300,7 @@ async fn dial_approved_addresses(
     connector: &ConnectorBackend,
     cancel: &CancellationToken,
     handshake_deadline: TokioInstant,
-) -> Option<ConnectedStream> {
+) -> Option<TcpStream> {
     let mut addresses = addresses.into_iter();
     while let Some(address) = addresses.next() {
         if cancel.is_cancelled() {
@@ -1358,7 +1332,7 @@ async fn dial_with_budget(
     permits: &Semaphore,
     cancel: &CancellationToken,
     handshake_deadline: TokioInstant,
-) -> Result<Option<ConnectedStream>, Denial> {
+) -> Result<Option<TcpStream>, Denial> {
     let permit = complete_before_deadline(handshake_deadline, permits.acquire())
         .await
         .ok_or(Denial::DIAL_CAPACITY)?
@@ -1415,7 +1389,7 @@ async fn inspect_tls_tunnel(
     state.counters.record_upload(initial_len as u64);
     let max_bytes = state
         .policy
-        .max_upload_bytes
+        .max_tunnel_upload_bytes
         .map_or(configured_max, |limit| {
             configured_max.min(usize::try_from(limit).unwrap_or(usize::MAX))
         });
@@ -1423,7 +1397,7 @@ async fn inspect_tls_tunnel(
         client,
         Arc::clone(&state.counters),
         Direction::Upload,
-        state.policy.max_upload_bytes,
+        state.policy.max_tunnel_upload_bytes,
         initial_len as u64,
         None,
     );
@@ -1498,9 +1472,7 @@ async fn read_connect_header<R>(
 where
     R: AsyncRead + Unpin,
 {
-    match complete_before_deadline(deadline, read_bounded_header::<4_096, _>(client, max_bytes))
-        .await
-    {
+    match complete_before_deadline(deadline, read_bounded_header(client, max_bytes)).await {
         Some(Ok(header)) => Ok(header),
         Some(Err(error)) if error.kind() == io::ErrorKind::InvalidData => {
             Err(Denial::HEADER_TOO_LARGE)

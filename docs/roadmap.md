@@ -32,16 +32,17 @@
 - [ ] Application-authority research and tests without overstating what is
   enforceable without TLS termination.
 
-## M3 — upstream composition
+## M3 — supervisor integration
 
-- [x] Host-configured, unauthenticated HTTP CONNECT chaining with locally
-  validated numeric targets and lease-owned cancellation.
+Upstream proxy chaining was removed after the first consumer review. Keep
+direct checked-address dialing as the library boundary.
+
 - [ ] Prove the library boundary in at least one external sandbox integration.
 - [ ] Exercise the same implementation through a resource-capped executable.
 
 ## Deferred breadth, not `0.1` commitments
 
-Plain HTTP forwarding, authenticated or TLS upstream proxies, transparent
+Proxy chaining, plain HTTP forwarding, transparent
 interception, identities beyond source IP, arbitrary resolver backends,
 configurable destination-range tables, and production metrics may be useful in
 some deployments. They do not become core roadmap commitments without passing
@@ -54,11 +55,9 @@ The [recorded release evidence and open gates](release-certification.md#recorded
 identify the evaluated commit and remaining management/performance work. A
 passing ordinary factory alone is not the complete release verdict.
 
-The source can become public after its permanent repository URL is known, that
-URL is added to package metadata and README links, private vulnerability
-reporting is configured, and the first hosted CI run passes. The full Git
-history already has a clean secret scan; its author name and email must be
-treated as intentionally public.
+The source is public and `v0.1.0-alpha.1` is a GitHub prerelease. This is separate
+from crates.io publication and a stable-release verdict. See the current
+[changelog](../CHANGELOG.md) for breaking changes since that preview.
 
 Before publishing a preview crate: choose the prerelease version, turn the
 Unreleased changelog into release notes, run `cargo publish --locked --dry-run`,

@@ -5,6 +5,34 @@ Changelog and versions follow Semantic Versioning. The finer-grained design,
 measurement, and rejected-experiment history lives in the
 [engineering log](docs/engineering-log.md).
 
+## Unreleased
+
+### Changed
+
+- **Breaking:** remove `ProxyConfig::with_upstream_proxy` and HTTP CONNECT
+  chaining. Approved destinations are dialed directly; there is no replacement
+  proxy-routing or authentication API.
+- **Breaking:** rename `PolicyBuilder::max_upload_bytes` and
+  `max_download_bytes` to `max_tunnel_upload_bytes` and
+  `max_tunnel_download_bytes`. Semantics remain per tunnel; lease usage remains
+  aggregate. Update call sites; no compatibility aliases are retained.
+- Reduce the resource certificate from nine to eight lanes by removing only
+  the deleted upstream-response workload. Keep post-bind failed-startup
+  coverage through recursive-DNS-server rejection. The raw resource script's
+  former eighth upstream-connection argument is removed; failed-start settings
+  are now arguments eight and nine.
+- Consolidate configuration, testing, performance and scope documentation;
+  preserve the dated engineering history and existing open release gates.
+
+### Fixed
+
+- Reject disagreement between CONNECT framing and the HTTP parser before DNS
+  or dialing, preventing LF headers from silently swallowing tunnel payload.
+  The removed upstream response parser no longer carries the same defect.
+- Recognize already-closed lease state during cleanup after failed or
+  unobserved proxy shutdown, preventing retained reapers and repeated listener
+  drains. Add deterministic ownership, race and framing regressions.
+
 ## 0.1.0-alpha.1 — 2026-09-05
 
 First public preview for API evaluation and controlled host integration. It is
@@ -27,6 +55,21 @@ required before a stable release.
   its competing-traffic requirement.
 - Center the README on `Proxy / Policy / Lease`, certified close, and the host
   boundary; preserve advanced examples as tested configuration documentation.
+
+- Make successful lease shutdown the only public constructor of `FinalUsage`;
+  it no longer implements `Default`.
+- Keep resolver caching disabled by default, cap optional cache storage at 64
+  responses, default DNS concurrency to 32, and default global connection
+  admission to 256 after resource and capacity measurements.
+- Deduplicate immutable policy rules and approved DNS answers, store policy in
+  its existing shared lease state, incrementally scan CONNECT headers, drain
+  buffered TLS records before reading again, and avoid redundant handshake
+  copies.
+- Isolate the resolver and conformance modules from the lifecycle core while
+  preserving the public API and measured behavior.
+- Adopt the Sandbox Egress package identity and document its deliberately
+  excluded scope, integration model, security boundary, reproducible factory,
+  performance evidence, and contribution process.
 
 ### Added
 
@@ -102,20 +145,3 @@ required before a stable release.
 - Document the exact authority promise: CONNECT authority plus visible outer
   SNI when enabled, without claiming that SNI inspection enforces hidden
   application authority or defeats domain fronting.
-
-### Changed
-
-- Make successful lease shutdown the only public constructor of `FinalUsage`;
-  it no longer implements `Default`.
-- Keep resolver caching disabled by default, cap optional cache storage at 64
-  responses, default DNS concurrency to 32, and default global connection
-  admission to 256 after resource and capacity measurements.
-- Deduplicate immutable policy rules and approved DNS answers, store policy in
-  its existing shared lease state, incrementally scan CONNECT headers, drain
-  buffered TLS records before reading again, and avoid redundant handshake
-  copies.
-- Isolate the resolver and conformance modules from the lifecycle core while
-  preserving the public API and measured behavior.
-- Adopt the Sandbox Egress package identity and document its deliberately
-  excluded scope, integration model, security boundary, reproducible factory,
-  performance evidence, and contribution process.

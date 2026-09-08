@@ -10,9 +10,9 @@ A rejected optimization or a disproved concern is useful evidence.
 | --- | --- | --- |
 | Core semantics still hold | `./scripts/check.sh` and security-sensitive `./scripts/test-conformance.sh` | Existing denial, cancellation, accounting, and reuse cases stay green |
 | A host can replace one run without restarting its shared proxy | `scripts/test-linux-host-boundary.sh` in disposable Linux | Same process/listener, different destination grant, fenced old namespace, old grant denied, unrelated single tunnel continues with exact accounting |
-| Management progresses while unrelated clients churn | `cargo test --locked --release --test management_load -- --ignored --nocapture` | Both known and unknown source cases complete; every sample overlaps observed terminal traffic; each attach/close meets the explicit workload budget; quiet lease counters remain zero |
+| Management progresses while unrelated clients churn | `cargo test --locked --release --test management_load -- --ignored --nocapture` | Both known and unknown source cases complete; every combined attach/close cycle overlaps observed terminal traffic; each attach/close meets the explicit workload budget; quiet lease counters remain zero |
 | Default lifecycle cost is visible | `cargo bench --locked --bench lifecycle -- attach_close_empty_lease --noplot` | Record both default-quiet and historical zero-quiet control; do not reduce the guard to win a benchmark |
-| Resource regression is bounded | `python3 scripts/certify-resources.py` | All nine Rust lanes pass, measurements exist, sampled RSS and post-warmup growth stay within stated budgets |
+| Resource regression is bounded | `python3 scripts/certify-resources.py` | All eight Rust lanes pass, measurements exist, sampled RSS and post-warmup growth stay within stated budgets |
 | Complexity comparisons are comparable | `./scripts/measure-complexity.sh` | SCC 4.0.0 required; explain changed responsibilities instead of optimizing the aggregate score |
 
 Keep hosted CI as one ordinary Linux job. These heavier lanes run locally or on
@@ -86,10 +86,13 @@ and stops churn before handling failure, including a stuck synchronous attach.
 
 The knobs are `SANDBOX_EGRESS_MANAGEMENT_WORKERS`,
 `SANDBOX_EGRESS_MANAGEMENT_CYCLES`, and `SANDBOX_EGRESS_MANAGEMENT_MAX_MS`.
-Every reported sample must overlap completed competitor connections; socket
+Every combined attach/close cycle must overlap completed competitor connections; socket
 timeouts do not count as evidence of useful churn. The fixture bounds workers
 to 128 and cycles to 1,000. Results print the configuration, observed exchanges,
 maximum attach latency, and maximum close latency.
+Competitor counters are sampled before attach and after close, so a passing
+cycle does not independently establish traffic during each operation. No
+per-operation overlap or arbitrary-saturation guarantee is claimed.
 
 Per-cycle counters distinguish connection attempts, successful connects, terminal
 outcomes, and connect/read errors. The overlap assertion remains mandatory;
@@ -136,23 +139,14 @@ or show a repeatable measured benefit. Preserve negative results in the
 engineering log. Update only the canonical current contract and link to it;
 do not duplicate the same explanation in every document.
 
-## Feature decisions reserved for the owner
+## Scope decisions
 
-No feature is removed in this pass. These are candidates to justify before
-expansion, not defects or automatic deletion instructions:
+Upstream CONNECT chaining was removed after the first consumer review. The
+library dials checked destination addresses directly; it has no corporate
+proxy negotiation, credentials, or bypass configuration.
 
-- **Corporate upstream CONNECT chaining.** It adds another TCP setup and
-  response-parser phase, numeric-target fallback semantics, and cross-feature
-  cancellation/accounting tests. Establish that a real consumer needs it before
-  adding TLS, authentication, credential handling, or bypass configuration.
-- **Operator-specific NAT64 prefixes.** Six RFC 6052 layouts plus overlap and
-  denial-equivalence behavior expand the policy matrix. This is necessary when
-  the host actually routes those translations; it may be speculative for an
-  IPv4-only first consumer. Removing recognition while allowing such routes
-  would weaken SSRF protection, so any simplification needs an explicit
-  deployment-scope decision. Keep mapped-address and ordinary destination guards.
-
-The outer-SNI/ECH compatibility option also deserves deliberate consumer choice,
-but its implementation is small; it is not a strong code-size deletion target.
-Keep the core lease state machine, owning runtime, and mature protocol parsers.
-They carry the component's defining guarantees.
+Operator-specific NAT64 prefixes remain because removing recognition while
+routing those translations would weaken SSRF protection. A future reduction
+requires an explicit host-topology decision. The small outer-SNI/ECH option
+remains an opt-in compatibility tradeoff. Keep the core lease state machine,
+owned runtime, and maintained protocol parsers.

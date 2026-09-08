@@ -20,7 +20,7 @@ synchronous caller
 The production proxy runtime is kept in `src/proxy.rs`; its white-box phase,
 race, and failure-injection cases live under `src/proxy/tests/`. Keeping that
 evidence colocated as a child module preserves private-boundary tests without
-mixing roughly 2,800 lines of test machinery into the runtime implementation.
+mixing test machinery into the runtime implementation.
 DNS, address-policy, and dial proofs have their own `routing` child; lifecycle
 and ownership-race proofs remain in the test root.
 
@@ -71,6 +71,10 @@ state closed before joining the runtime thread. A surviving lease handle reads
 that immutable closed snapshot locally; runtime loss alone cannot hide an
 already-committed certificate.
 
+A failed shutdown can leave some leases already closed while the proxy remains
+stopping. Reaping or closing those states consumes their final snapshot without
+starting another quiet interval or listener drain.
+
 The proxy-wide stopping state is irreversible. The listener owner disables its
 ordinary accept branch, rejects every attachment command, and services shutdown
 retries. A drain barrier may still accept queued sockets solely to refuse them
@@ -97,11 +101,10 @@ backend or another public core object.
 The listener uses the socket peer address as host-supplied identity. Lease
 attachment and socket acceptance canonicalize an IPv4-mapped IPv6 peer to the
 equivalent IPv4 identity before registry lookup. Admission is reserved before
-a task is spawned. One internal incremental framer enforces the byte ceiling
-and terminator boundary for both guest CONNECT requests and upstream-proxy
-responses; a compile-time chunk size lets the two callers retain distinct
-limits and exact read-buffer footprints without duplicating source.
-`httparse` parses each bounded header block. HTTP/1.1 requires
+a task is spawned. An incremental reader acquires a bounded CONNECT header
+using a 4 KiB read buffer. `httparse` must consume exactly that header boundary;
+a disagreement is rejected before policy or DNS, so a later payload delimiter
+cannot hide an earlier parser boundary. HTTP/1.1 requires
 one valid Host field consistent with the CONNECT request-target, but only the
 request-target supplies authority to policy, DNS, and dialing. The policy then
 checks hostname denials, grants, and port before DNS. Hickory performs one
@@ -113,13 +116,8 @@ including RFC 6052 decoding under host-configured network-specific NAT64
 prefixes. Explicit destination denials take priority over grants and default
 public-address handling. The actual listener endpoint is also rejected before
 any explicit grant, preventing recursive CONNECT chains through the proxy
-itself. Tokio then dials a selected checked IP directly. When the host
-configures an upstream HTTP proxy, the same connector instead dials that
-numeric proxy address and sends CONNECT for the selected checked `SocketAddr`;
-the destination hostname never crosses that boundary for another lookup. A
-bounded mature-parser response phase remains inside the dial and absolute
-handshake budgets, and any bytes coalesced after its successful header are
-retained for the tunnel.
+itself. Tokio then dials a selected checked IP directly. There is no upstream
+proxy negotiation or intermediate response buffer.
 Approved addresses are tried sequentially. Each receives
 a fair share of the remaining absolute handshake budget so a pending first
 address cannot consume all fallback time or create parallel socket
