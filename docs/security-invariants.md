@@ -501,7 +501,7 @@ ClientHello inspection happens after the CONNECT destination has resolved and
 the checked socket has connected. This preserves an accurate HTTP 502 on dial
 failure. A conventional proxy client waits for 200 before sending TLS; an
 inspect-before-dial mode would have to send optimistic success and later close
-the tunnel on dial failure. This preview deliberately retains the current
+the tunnel on dial failure. The proxy deliberately retains the current
 ordering. A denied ClientHello sends zero tunnel bytes upstream, but the
 upstream TCP connection has already occurred.
 

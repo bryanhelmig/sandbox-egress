@@ -87,21 +87,22 @@ Budgets remain 15% setup, 5% close, and 20% throughput per direction. Reject
 nonfinite/incomplete/noisy measurements; never enlarge a tolerance to pass.
 These measurements guide engineering and do not assert a service SLO.
 
-## Cutting a preview
+## Cutting a release
 
 Update both package lockfiles, Cargo version, README install tag, and CHANGELOG.
 Keep current documentation to the five integration/design guides under docs/;
 retain durable decisions there and use Git history for removed chronology.
 Verify `cargo package --list` and `cargo publish --locked --dry-run` before
-publishing. A Git preview and a crates.io upload are separate outcomes; report
-which happened. Never move an existing tag or imply production certification
-from a preview release.
+publishing. A GitHub release and a crates.io upload are separate outcomes;
+report which happened. Never move an existing tag or imply production
+certification from a version designation.
 
 Attach a source-bound evidence summary to the release, including any failed
-required lane and all untested host boundaries. A prerelease may be offered
-for controlled integration with an explicit incomplete certificate; it must
-not be described as a fully certified release. Stable release readiness also
-needs independent API/threat-model review and the integrating host's own tests.
+required lane and all untested host boundaries. Version 0.1.0 is the official
+release of the reviewed implementation with the macOS management-overlap gap
+disclosed; it must not be described as fully certified. The release designation
+does not change certificate requirements. Production readiness also needs independent
+API/threat-model review and the integrating host's own tests.
 
 ## Remaining bounded work
 

@@ -150,7 +150,7 @@ bytes are not forwarded.
 This ordering is deliberate: dial failures can return HTTP 502 before CONNECT
 success. A normal TLS client waits for HTTP 200 before sending ClientHello.
 Inspect-before-dial would require optimistic 200, after which dial failure can
-only close the tunnel. This preview retains dial-before-inspection and does
+only close the tunnel. The proxy retains dial-before-inspection and does
 not expose an additional ordering switch. SNI matching is not client identity
 authentication or inspection of the encrypted application authority.
 

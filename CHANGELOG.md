@@ -3,6 +3,21 @@
 All notable changes will be documented here. The format follows Keep a
 Changelog and versions follow Semantic Versioning. Git history preserves prior design reviews and experiment records.
 
+## 0.1.0 — 2026-09-19
+
+First official release, promoting the reviewed alpha.3 implementation without
+runtime or public API changes. Includes proxy-wide denied networks, the pooled
+namespace reset contract and executable negative controls, and kernel capability
+preflight that preserves independent host-boundary coverage on Docker Desktop.
+See alpha.2 below for migration from alpha.1.
+
+This release retains the known macOS management-pressure overlap gap: some
+samples miss completed competing traffic even when attach/close deadlines pass.
+Publication does not turn the incomplete full certificate into a pass. Required
+assertions, recorded failures, and host integration obligations are unchanged;
+performance calibration remains advisory. Source-bound evidence is attached to
+the release.
+
 ## 0.1.0-alpha.3 — 2026-09-19
 
 This preview updates host conformance and integration guidance. The Rust

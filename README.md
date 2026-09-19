@@ -7,11 +7,12 @@ owning `Lease`. The host supplies a source IP the guest cannot spoof, and forces
 all guest egress through the proxy.
 
 ```sh
-cargo add sandbox-egress --git https://github.com/bryanhelmig/sandbox-egress --tag v0.1.0-alpha.3
+cargo add sandbox-egress --git https://github.com/bryanhelmig/sandbox-egress --tag v0.1.0
 ```
 
-This is a preview with a changing API. [Upgrading from alpha.1](CHANGELOG.md)
+Version 0.1.0 is the first official release. [Upgrading from alpha.1](CHANGELOG.md)
 includes renamed byte-limit methods and removal of upstream proxy chaining.
+The API may change in subsequent 0.x releases.
 
 ```rust,no_run
 use sandbox_egress::{PeerIdentity, Policy, Proxy, ProxyConfig};
@@ -105,10 +106,12 @@ The independent host-boundary lane runs first and reports success. If socket
 destruction is unsupported, the pooled preflight then exits 78; the first
 lane's coverage is retained, including on Docker Desktop.
 
-Correctness, resource bounds, and supported host-boundary checks are release
-gates. Performance calibration is reported separately and does not determine
-release eligibility. Missing management-pressure overlap remains missing
-correctness evidence; an advisory timing result cannot excuse it.
+The full release certificate requires correctness, resource bounds, and
+supported host-boundary checks. Performance calibration is reported separately.
+Version 0.1.0 publishes the reviewed implementation with one known certificate
+gap: macOS management-pressure samples can miss competing-traffic overlap even
+when deadlines pass. The full certificate remains incomplete; its assertions
+and failed verdict are unchanged. See the [release evidence](https://github.com/bryanhelmig/sandbox-egress/releases/tag/v0.1.0).
 
 A passing Linux fixture certifies its tested topology, not a complete
 Firecracker deployment. See [CONTRIBUTING.md](CONTRIBUTING.md) for the factory,

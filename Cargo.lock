@@ -1036,7 +1036,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-egress"
-version = "0.1.0-alpha.3"
+version = "0.1.0"
 dependencies = [
  "criterion",
  "hickory-resolver",
