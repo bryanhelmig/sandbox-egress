@@ -116,7 +116,7 @@ cancellation and cannot replace host verification.
 
 ## What the host harness proves
 
-Docker Desktop is not a supported runner for this lane: the reviewed LinuxKit
+Docker Desktop is not a supported runner for the pooled lane: the reviewed LinuxKit
 7.0.12 kernel lacks `CONFIG_INET_DIAG_DESTROY`, even with `CONFIG_INET_DIAG=y`.
 `--privileged` cannot supply a missing kernel feature. Use a Linux host or VM
 whose kernel enables socket destruction, with `CAP_NET_ADMIN` available.
@@ -126,11 +126,17 @@ docker build -f Dockerfile.host-boundary -t sandbox-egress-host .
 docker run --rm --network=none --privileged sandbox-egress-host
 ```
 
-Before either host scenario, the image opens a loopback TCP pair, observes one
+The image first runs `test-linux-host-boundary.sh`, which does not need socket
+destruction, and prints its success summary. This preserves its coverage on
+Docker Desktop. A failure in this independent lane stops the command with its
+own failure status before the pooled preflight can run.
+
+Next, before the pooled scenarios, the image opens a loopback TCP pair, observes one
 exact tuple, requests its destruction with `ss -K`, and independently verifies
 its disappearance while the handles remain open. A silent no-op exits **78**
 with `kernel lacks CONFIG_INET_DIAG_DESTROY; pooled lane cannot run here`.
-This is an unsupported environment, never a passing certificate or a failed
+Exit 78 means the pooled lane is unsupported here; the preceding host-boundary
+success remains visible. It is never a passing full certificate or a failed
 reset negative control. Tool, permission, and enumeration errors remain errors.
 The pooled script also runs this check before its standalone scenarios; use
 `python3 scripts/test-linux-pooled-boundary.py --preflight-only` for just the

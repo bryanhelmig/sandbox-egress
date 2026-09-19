@@ -37,9 +37,11 @@ unresolved workload/evidence gap, not an established starvation bug. Preserve
 that failure until a demonstrated workload repair resolves it; do not accept a
 lucky retry or silently weaken the overlap assertion.
 
-The host image first proves socket destruction on a live loopback pair. Missing
-kernel support exits 78 before any scenario; it does not pass the certificate.
-Docker Desktop is not a supported runner; see the host guide for kernel requirements.
+The host image first runs the independent host-boundary lane and reports its
+success, then proves socket destruction on a live loopback pair. Missing kernel
+support exits 78 before the pooled scenarios; it does not pass the full certificate.
+Docker Desktop can run the first lane, but its reviewed kernel cannot run the
+pooled lane. See the host guide for kernel requirements.
 The host fixture uses local controlled peers. Its pooled lane then proves
 that each omitted reset operation prevents reuse, then proves the complete
 sequence, unchanged slot identity, exact client-port reuse, full replacement

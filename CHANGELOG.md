@@ -3,14 +3,22 @@
 All notable changes will be documented here. The format follows Keep a
 Changelog and versions follow Semantic Versioning. Git history preserves prior design reviews and experiment records.
 
-## Unreleased
+## 0.1.0-alpha.3 — 2026-09-19
+
+This preview updates host conformance and integration guidance. The Rust
+runtime and public API are unchanged from alpha.2. It remains a Git preview;
+the previously recorded macOS management-overlap gap is not resolved by these
+harness changes.
 
 ### Fixed
 
-- Preflight actual TCP socket destruction before host scenarios, including the
+- Preflight actual TCP socket destruction before pooled scenarios, including the
   documented Docker command. A silent `ss -K` no-op now reports missing
   `CONFIG_INET_DIAG_DESTROY` and exits 78 instead of failing the wrong negative
   control. Keep permission/tool failures distinct and add portable regressions.
+- Run the independent host-boundary lane before that preflight, preserving its
+  coverage and success output on unsupported kernels. Keep exit 78 for the
+  unsupported pooled lane and preserve failures from the first lane.
 - Document Docker Desktop's unsupported LinuxKit kernel and require an
   independently empty socket inventory after every host reset.
 

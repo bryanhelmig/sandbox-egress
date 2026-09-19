@@ -7,7 +7,7 @@ owning `Lease`. The host supplies a source IP the guest cannot spoof, and forces
 all guest egress through the proxy.
 
 ```sh
-cargo add sandbox-egress --git https://github.com/bryanhelmig/sandbox-egress --tag v0.1.0-alpha.2
+cargo add sandbox-egress --git https://github.com/bryanhelmig/sandbox-egress --tag v0.1.0-alpha.3
 ```
 
 This is a preview with a changing API. [Upgrading from alpha.1](CHANGELOG.md)
@@ -96,10 +96,14 @@ The [architecture](docs/architecture.md) explains ownership;
 ./scripts/check.sh
 ./scripts/test-conformance.sh
 python3 scripts/certify-resources.py
-# Disposable privileged Linux with CONFIG_INET_DIAG_DESTROY (not Docker Desktop):
+# Disposable privileged Linux; the pooled lane needs CONFIG_INET_DIAG_DESTROY:
 docker build -f Dockerfile.host-boundary -t sandbox-egress-host .
 docker run --rm --network=none --privileged sandbox-egress-host
 ```
+
+The independent host-boundary lane runs first and reports success. If socket
+destruction is unsupported, the pooled preflight then exits 78; the first
+lane's coverage is retained, including on Docker Desktop.
 
 Correctness, resource bounds, and supported host-boundary checks are release
 gates. Performance calibration is reported separately and does not determine

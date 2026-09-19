@@ -3,8 +3,11 @@
 import contextlib
 import importlib.util
 import io
+import json
+import os
 from pathlib import Path
 import subprocess
+import tempfile
 import unittest
 from unittest import mock
 
@@ -85,6 +88,58 @@ class PreflightTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "Operation not permitted"):
                     pooled.preflight_socket_destroy()
             self.assertEqual(commands.call_count, 2)
+
+
+class EntrypointTests(unittest.TestCase):
+    def run_entrypoint(self, host_exit=0, preflight_exit=0):
+        dockerfile = Path(__file__).resolve().parent.parent / "Dockerfile.host-boundary"
+        command = json.loads(next(line[4:] for line in dockerfile.read_text().splitlines()
+                                  if line.startswith("CMD ")))
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "scripts").mkdir()
+            (root / "bin").mkdir()
+            stubs = {
+                "scripts/test-linux-host-boundary.sh":
+                    'echo host >> "$PREFLIGHT_TRACE"\n'
+                    'if [ "$HOST_EXIT" != 0 ]; then exit "$HOST_EXIT"; fi\n'
+                    'echo "host-boundary lane passed"\n',
+                "bin/python3":
+                    'if [ "$2" = --preflight-only ]; then\n'
+                    '  echo preflight >> "$PREFLIGHT_TRACE"\n'
+                    '  exit "$PREFLIGHT_EXIT"\n'
+                    'fi\n'
+                    'echo pooled >> "$PREFLIGHT_TRACE"\n',
+                "bin/cut": 'echo fixture-hash\n',
+                "bin/timeout": 'shift\nexec "$@"\n',
+            }
+            for name, body in stubs.items():
+                path = root / name
+                path.write_text("#!/bin/sh\n" + body)
+                path.chmod(0o755)
+            environment = dict(os.environ, PATH=str(root / "bin") + os.pathsep + os.environ["PATH"],
+                               PREFLIGHT_TRACE=str(root / "trace"), HOST_EXIT=str(host_exit),
+                               PREFLIGHT_EXIT=str(preflight_exit))
+            result = subprocess.run(command, cwd=root, env=environment, text=True,
+                                    capture_output=True, timeout=5)
+            return result, (root / "trace").read_text().splitlines()
+
+    def test_unsupported_pooled_lane_preserves_host_coverage_and_exit_78(self):
+        result, trace = self.run_entrypoint(preflight_exit=78)
+        self.assertEqual(result.returncode, 78)
+        self.assertEqual(trace, ["host", "preflight"])
+        self.assertIn("host-boundary lane passed", result.stdout)
+
+    def test_host_failure_stops_before_preflight_and_preserves_its_status(self):
+        result, trace = self.run_entrypoint(host_exit=17)
+        self.assertEqual(result.returncode, 17)
+        self.assertEqual(trace, ["host"])
+        self.assertNotIn("host-boundary lane passed", result.stdout)
+
+    def test_supported_kernel_runs_both_lanes_in_order(self):
+        result, trace = self.run_entrypoint()
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(trace, ["host", "preflight", "pooled"])
 
 
 if __name__ == "__main__":

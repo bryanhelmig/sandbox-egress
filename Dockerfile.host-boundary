@@ -21,4 +21,4 @@ RUN artifacts=$(cargo test --locked --release --test management_load --no-run --
 
 ENV SANDBOX_EGRESS_HOST_FIXTURE=/usr/local/bin/linux_host_proxy
 
-CMD ["sh", "-c", "python3 scripts/test-linux-pooled-boundary.py --preflight-only && export SANDBOX_EGRESS_HOST_FIXTURE_SHA256=$(cut -d ' ' -f 1 /usr/local/bin/linux_host_proxy.sha256) && ./scripts/test-linux-host-boundary.sh && exec timeout 90 python3 scripts/test-linux-pooled-boundary.py"]
+CMD ["sh", "-c", "export SANDBOX_EGRESS_HOST_FIXTURE_SHA256=$(cut -d ' ' -f 1 /usr/local/bin/linux_host_proxy.sha256) && ./scripts/test-linux-host-boundary.sh && python3 scripts/test-linux-pooled-boundary.py --preflight-only && exec timeout 90 python3 scripts/test-linux-pooled-boundary.py"]
