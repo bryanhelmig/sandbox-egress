@@ -407,6 +407,9 @@ fn explicit_dns_server_retries_truncated_udp_over_tcp() {
 #[test]
 fn lease_close_stops_real_dns_retries_after_late_failure() {
     const INITIAL_QUERIES: usize = 2;
+    // Receiving both queries triggers close; these are only stuck-fixture guards.
+    // Leave scheduling headroom when multiple test binaries share a busy host.
+    const FIXTURE_TIMEOUT: Duration = Duration::from_secs(30);
 
     let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
         .expect("bind late-response TCP DNS server");
@@ -416,10 +419,29 @@ fn lease_close_stops_real_dns_retries_after_late_failure() {
     let dns_address = listener.local_addr().expect("late-response DNS address");
     let socket = std::net::UdpSocket::bind(dns_address).expect("bind late-response UDP DNS server");
     socket
-        .set_read_timeout(Some(Duration::from_secs(2)))
+        .set_read_timeout(Some(FIXTURE_TIMEOUT))
         .expect("set initial DNS timeout");
-    let (ready_tx, ready_rx) = mpsc::channel();
-    let (release_tx, release_rx) = mpsc::channel();
+    let proxy = Proxy::start(
+        ProxyConfig::default()
+            .with_header_timeout(FIXTURE_TIMEOUT)
+            .with_dns_server(dns_address)
+            .with_dns_cache(0, Duration::ZERO),
+    )
+    .expect("start explicit DNS proxy");
+    let policy = Policy::builder()
+        .allow_host("cancel-wire.test")
+        .expect("valid test hostname")
+        .allow_port(443)
+        .dns_timeout(FIXTURE_TIMEOUT)
+        .handshake_timeout(FIXTURE_TIMEOUT)
+        .build()
+        .expect("valid DNS cancellation policy");
+    let lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+            policy,
+        )
+        .expect("attach DNS lease");
     let server = thread::spawn(move || {
         let mut packet = [0_u8; 2_048];
         let mut requests = Vec::with_capacity(INITIAL_QUERIES);
@@ -427,10 +449,18 @@ fn lease_close_stops_real_dns_retries_after_late_failure() {
             let (length, peer) = socket.recv_from(&mut packet).expect("receive DNS query");
             requests.push((packet[..length].to_vec(), peer));
         }
-        ready_tx.send(()).expect("report initial DNS queries");
-        release_rx
-            .recv_timeout(Duration::from_secs(2))
-            .expect("release late DNS responses");
+        // Close in the reader thread: no second scheduling handoff may delay
+        // cancellation while the resolver waits for these withheld responses.
+        let final_usage = lease
+            .close(Instant::now() + FIXTURE_TIMEOUT)
+            .expect("close DNS-bound lease");
+        let final_usage = final_usage.usage();
+        assert_eq!(final_usage.accepted_connections, 1);
+        assert_eq!(final_usage.active_connections, 0);
+        assert_eq!(
+            final_usage.denied_connections, 0,
+            "close must cancel the lookup before a DNS or handshake timeout"
+        );
         for (query, peer) in &requests {
             socket
                 .send_to(&local_servfail_response(query), peer)
@@ -458,44 +488,21 @@ fn lease_close_stops_real_dns_retries_after_late_failure() {
         retries
     });
 
-    let proxy = Proxy::start(
-        ProxyConfig::default()
-            .with_dns_server(dns_address)
-            .with_dns_cache(0, Duration::ZERO),
-    )
-    .expect("start explicit DNS proxy");
-    let lease = proxy
-        .attach(
-            PeerIdentity::SourceIp(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
-            hostname_policy("cancel-wire.test", 443),
-        )
-        .expect("attach DNS lease");
-    let mut client = std::net::TcpStream::connect(lease.endpoint().socket_addr())
+    let mut client = std::net::TcpStream::connect(proxy.endpoint().socket_addr())
         .expect("connect explicit DNS proxy");
     std::io::Write::write_all(
         &mut client,
         b"CONNECT cancel-wire.test:443 HTTP/1.1\r\nHost: cancel-wire.test\r\n\r\n",
     )
     .expect("write DNS-bound CONNECT");
-    ready_rx
-        .recv_timeout(Duration::from_secs(1))
-        .expect("observe initial wire queries");
-
-    let final_usage = lease
-        .close(Instant::now() + Duration::from_secs(1))
-        .expect("close DNS-bound lease");
-    let final_usage = final_usage.usage();
-    assert_eq!(final_usage.accepted_connections, 1);
-    assert_eq!(final_usage.active_connections, 0);
-    release_tx.send(()).expect("release late DNS failures");
-    assert_client_stopped(client);
     assert_eq!(
         server.join().expect("join late-response DNS server"),
         0,
         "cancelled lookup must not retry after a late DNS failure"
     );
+    assert_client_stopped(client);
     proxy
-        .shutdown(Instant::now() + Duration::from_secs(1))
+        .shutdown(Instant::now() + FIXTURE_TIMEOUT)
         .expect("shutdown explicit DNS proxy");
 }
 
