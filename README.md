@@ -7,10 +7,11 @@ owning `Lease`. The host supplies a source IP the guest cannot spoof, and forces
 all guest egress through the proxy.
 
 ```sh
-cargo add sandbox-egress --git https://github.com/bryanhelmig/sandbox-egress --tag v0.1.1
+cargo add sandbox-egress --git https://github.com/bryanhelmig/sandbox-egress --tag v0.1.2
 ```
 
-Version 0.1.1 adds optional DNS address-family selection with unchanged defaults.
+Version 0.1.2 hardens a DNS cancellation test under load. Runtime behavior and
+the public API are unchanged from 0.1.1.
 [Upgrading from alpha.1](CHANGELOG.md) includes renamed byte-limit methods and
 removal of upstream proxy chaining.
 The API may change in subsequent 0.x releases.
@@ -111,10 +112,10 @@ lane's coverage is retained, including on Docker Desktop.
 
 The full release certificate requires correctness, resource bounds, and
 supported host-boundary checks. Performance calibration is reported separately.
-Version 0.1.1 retains one known certificate gap: macOS management-pressure
+Version 0.1.2 retains one known certificate gap: macOS management-pressure
 samples can miss competing-traffic overlap even
 when deadlines pass. The full certificate remains incomplete; its assertions
-and failed verdict are unchanged. See the [release evidence](https://github.com/bryanhelmig/sandbox-egress/releases/tag/v0.1.1).
+and failed verdict are unchanged. See the [release evidence](https://github.com/bryanhelmig/sandbox-egress/releases/tag/v0.1.2).
 
 A passing Linux fixture certifies its tested topology, not a complete
 Firecracker deployment. See [CONTRIBUTING.md](CONTRIBUTING.md) for the factory,

@@ -3,6 +3,22 @@
 All notable changes will be documented here. The format follows Keep a
 Changelog and versions follow Semantic Versioning. Git history preserves prior design reviews and experiment records.
 
+## 0.1.2 — 2026-09-19
+
+### Fixed
+
+- Make the real-DNS cancellation test tolerant of parallel test-runner load.
+  The DNS reader closes the lease immediately after receiving both queries,
+  removing the extra thread handoff before sending late failures. Test-only
+  watchdogs allow 30 seconds of scheduling headroom; a new assertion requires
+  zero timeout denials so an expired lookup cannot masquerade as cancellation.
+  The zero-retry assertion and its observation window are unchanged.
+
+This is a test-fixture repair. Runtime behavior, public APIs, dependencies,
+and production timeout defaults are unchanged from 0.1.1. The existing macOS
+management-pressure overlap gap remains open; this patch does not claim a new
+passing full certificate.
+
 ## 0.1.1 — 2026-09-19
 
 ### Added
