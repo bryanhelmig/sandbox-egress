@@ -3,6 +3,29 @@
 All notable changes will be documented here. The format follows Keep a
 Changelog and versions follow Semantic Versioning. Git history preserves prior design reviews and experiment records.
 
+## 0.1.1 — 2026-09-19
+
+### Added
+
+- `ProxyConfig::with_dns_address_family(DnsAddressFamily::{Ipv4Only, Ipv6Only, Both})`
+  selects hostname resolution before answer-size and destination checks. The
+  default remains dual-stack with unchanged lookup ordering. Literal CONNECT
+  destinations and recursive DNS transport keep their existing rules.
+- Deterministic local DNS and routing tests cover query families, cached answers
+  across lease reuse, pre-check filtering, retained-answer limits, translated
+  addresses, whole-answer denial, and literal-address enforcement.
+
+### Documentation
+
+- Explain that one denied address rejects the entire DNS answer. Show IPv4-only
+  resolution together with an IPv6 destination denial for IPv4-only hosts.
+- Show the host `run_id` ↔ `Lease::id()` mapping used to correlate diagnostics
+  through `DiagnosticEvent::lease_id`, scoped to the proxy instance and lifetime.
+
+No default policy or lifecycle behavior changes. The existing macOS
+management-pressure overlap gap remains open; this patch does not claim a new
+passing full certificate.
+
 ## 0.1.0 — 2026-09-19
 
 First official release, promoting the reviewed alpha.3 implementation without

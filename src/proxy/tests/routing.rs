@@ -1,5 +1,7 @@
 use super::*;
 
+mod dns_family;
+
 #[test]
 fn invalid_host_port_is_denied_before_dns_or_dial() {
     let (lookups, observed) = mpsc::channel();

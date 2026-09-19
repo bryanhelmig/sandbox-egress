@@ -19,7 +19,7 @@ mod usage;
 #[doc = include_str!("../docs/configuration.md")]
 mod configuration_examples {}
 
-pub use config::ProxyConfig;
+pub use config::{DnsAddressFamily, ProxyConfig};
 pub use diagnostic::{DenialReason, DiagnosticEvent};
 pub use error::{
     AttachError, CloseError, CloseErrorKind, PolicyError, ProxyError, ShutdownError,

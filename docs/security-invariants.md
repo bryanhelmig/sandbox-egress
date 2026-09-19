@@ -142,8 +142,9 @@ closing or replacing one lease does not replenish it.
 
 ## DNS and dialing
 
-Hostname policy is checked before DNS. Every resolved address is checked after
-DNS. Only those checked `SocketAddr` values are passed to `TcpStream::connect`;
+Hostname policy is checked before DNS. Every resolved address retained by the
+host's DNS family selection is checked after DNS. Only those checked
+`SocketAddr` values are passed to `TcpStream::connect`;
 the dial path never receives the hostname. System lookups append a terminal dot
 and therefore cannot apply a local search suffix to the policy authority.
 Controlled test resolvers receive that same absolute name, so conformance
@@ -183,9 +184,16 @@ work. Every returned address, including a cache hit after identity reuse, is
 rechecked under the current lease's immutable policy before it can reach the
 connector.
 
-DNS address cardinality is process-configured and has a hard upper bound. The
-system resolver collects at most one entry beyond that ceiling, solely to
-detect overflow. An oversized answer is rejected as a whole before address
+The immutable `DnsAddressFamily` option selects A-only, AAAA-only, or the
+unchanged dual-stack default. Selection occurs before answer checking, in both
+the query strategy and result collection. It uses the original address family,
+before mapped-address canonicalization; retained translated forms still receive
+the same destination checks. Excluded families are never a fallback. The option
+does not govern literal CONNECT addresses or recursive DNS transport.
+
+DNS address cardinality is process-configured and has a hard upper bound. After
+family selection, the system resolver collects at most one entry beyond that
+ceiling, solely to detect overflow. An oversized answer is rejected as a whole before address
 policy or dialing; response ordering cannot select a truncated subset for the
 dialer. This bounds the proxy's collected address vector and dial attempts, not
 the resolver decoder's temporary capacity: Hickory 0.26.1 reserves record

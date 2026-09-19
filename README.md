@@ -7,11 +7,12 @@ owning `Lease`. The host supplies a source IP the guest cannot spoof, and forces
 all guest egress through the proxy.
 
 ```sh
-cargo add sandbox-egress --git https://github.com/bryanhelmig/sandbox-egress --tag v0.1.0
+cargo add sandbox-egress --git https://github.com/bryanhelmig/sandbox-egress --tag v0.1.1
 ```
 
-Version 0.1.0 is the first official release. [Upgrading from alpha.1](CHANGELOG.md)
-includes renamed byte-limit methods and removal of upstream proxy chaining.
+Version 0.1.1 adds optional DNS address-family selection with unchanged defaults.
+[Upgrading from alpha.1](CHANGELOG.md) includes renamed byte-limit methods and
+removal of upstream proxy chaining.
 The API may change in subsequent 0.x releases.
 
 ```rust,no_run
@@ -78,6 +79,8 @@ cleanup also keeps the slot quarantined, under the supervisor's ownership.
   Cartesian product. IP literals need explicit network grants.
 - Every DNS answer is checked before dialing an approved numeric address.
   Proxy-wide network denials and per-policy denials override policy grants.
+  A denied address rejects the whole answer. Use `with_dns_address_family`
+  to select IPv4-only or IPv6-only resolution before those checks.
 - Byte ceilings apply to each tunnel; usage totals aggregate the lease.
 - Optional SNI inspection checks the visible `ClientHello` against CONNECT.
   It happens after the upstream TCP dial, and forwards no rejected hello.
@@ -108,10 +111,10 @@ lane's coverage is retained, including on Docker Desktop.
 
 The full release certificate requires correctness, resource bounds, and
 supported host-boundary checks. Performance calibration is reported separately.
-Version 0.1.0 publishes the reviewed implementation with one known certificate
-gap: macOS management-pressure samples can miss competing-traffic overlap even
+Version 0.1.1 retains one known certificate gap: macOS management-pressure
+samples can miss competing-traffic overlap even
 when deadlines pass. The full certificate remains incomplete; its assertions
-and failed verdict are unchanged. See the [release evidence](https://github.com/bryanhelmig/sandbox-egress/releases/tag/v0.1.0).
+and failed verdict are unchanged. See the [release evidence](https://github.com/bryanhelmig/sandbox-egress/releases/tag/v0.1.1).
 
 A passing Linux fixture certifies its tested topology, not a complete
 Firecracker deployment. See [CONTRIBUTING.md](CONTRIBUTING.md) for the factory,

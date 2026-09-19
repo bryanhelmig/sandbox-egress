@@ -277,7 +277,9 @@ impl std::fmt::Debug for Lease {
 }
 
 impl Lease {
-    /// Return the unique process-local sequence for correlating host diagnostics.
+    /// Return this proxy's unique lease sequence for correlating host diagnostics.
+    /// Scope persistent log mappings to the proxy instance and its lifetime;
+    /// another proxy can reuse the same sequence values.
     pub const fn id(&self) -> u64 {
         self.id
     }
@@ -1532,7 +1534,11 @@ async fn resolve_addresses(
         .map_err(|_| Denial::DNS_CAPACITY)?;
     let lookup = complete_before_deadline(
         dns_deadline,
-        resolver.lookup(&hostname, config.max_resolved_addresses),
+        resolver.lookup(
+            &hostname,
+            config.max_resolved_addresses,
+            config.dns_address_family,
+        ),
     )
     .await;
     drop(dns_permit);

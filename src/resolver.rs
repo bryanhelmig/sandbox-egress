@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use hickory_resolver::TokioResolver;
 
-use crate::ProxyConfig;
+use crate::{DnsAddressFamily, ProxyConfig};
 
 pub(crate) enum ResolverBackend {
     System(Box<TokioResolver>),
@@ -38,6 +38,11 @@ pub(crate) fn build_system_resolver(config: &ProxyConfig) -> Result<TokioResolve
         );
         builder.options_mut().use_hosts_file = hickory_resolver::config::ResolveHosts::Never;
         builder
+    };
+    builder.options_mut().ip_strategy = match config.dns_address_family {
+        DnsAddressFamily::Both => hickory_resolver::config::LookupIpStrategy::default(),
+        DnsAddressFamily::Ipv4Only => hickory_resolver::config::LookupIpStrategy::Ipv4Only,
+        DnsAddressFamily::Ipv6Only => hickory_resolver::config::LookupIpStrategy::Ipv6Only,
     };
     apply_resolver_cache_options(builder.options_mut(), config);
     builder.build().map_err(|error| error.to_string())
@@ -66,23 +71,38 @@ impl ResolverBackend {
         &self,
         hostname: &str,
         max_addresses: usize,
+        family: DnsAddressFamily,
     ) -> io::Result<Vec<IpAddr>> {
         let absolute_hostname = format!("{hostname}.");
         match self {
             Self::System(resolver) => resolver
                 .lookup_ip(&absolute_hostname)
                 .await
-                .map(|lookup| {
-                    lookup
-                        .iter()
-                        .take(max_addresses.saturating_add(1))
-                        .collect()
-                })
+                .map(|lookup| collect_addresses(lookup.iter(), max_addresses, family))
                 .map_err(io::Error::other),
             #[cfg(test)]
-            Self::Test(resolver) => resolver.lookup(&absolute_hostname).await,
+            Self::Test(resolver) => resolver
+                .lookup(&absolute_hostname)
+                .await
+                .map(|addresses| collect_addresses(addresses, max_addresses, family)),
         }
     }
+}
+
+fn collect_addresses(
+    addresses: impl IntoIterator<Item = IpAddr>,
+    max_addresses: usize,
+    family: DnsAddressFamily,
+) -> Vec<IpAddr> {
+    addresses
+        .into_iter()
+        .filter(|ip| match family {
+            DnsAddressFamily::Both => true,
+            DnsAddressFamily::Ipv4Only => ip.is_ipv4(),
+            DnsAddressFamily::Ipv6Only => ip.is_ipv6(),
+        })
+        .take(max_addresses.saturating_add(1))
+        .collect()
 }
 
 #[cfg(test)]

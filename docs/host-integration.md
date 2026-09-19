@@ -28,6 +28,24 @@ policy, with host state prepared before resume. Connections saved in guest
 memory must reconnect. Host identity, conntrack, and NAT allocations are not
 snapshot authority.
 
+## Correlating diagnostics with runs
+
+After attachment, log the trusted host `run_id` together with `Lease::id()`
+once. Join later `DiagnosticEvent::lease_id` values to that mapping. Each
+denial then needs only the lease ID, the static `reason`, and
+`suppressed_before`; guest hostnames, headers, and payloads stay out of the log.
+
+```text
+lease-attached: proxy_instance=... run_id=... lease_id=...
+egress-denied: proxy_instance=... lease_id=... reason=... suppressed_before=...
+```
+
+Scope that mapping to one proxy instance and supervisor lifetime: a new proxy
+can restart its lease sequence. Do not join by source IP alone, since pooled
+slots reuse it. Retain the mapping for queued events that may be consumed after
+close. The diagnostic channel is bounded and lossy; use final lease usage for
+authoritative totals, not the number of delivered events.
+
 ## Shutdown: two boundaries
 
 1. **Fence:** stop the old VM/process and block every old packet-producing

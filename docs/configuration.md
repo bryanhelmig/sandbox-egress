@@ -17,6 +17,7 @@ changing rules requires certified close and a new attachment.
 | Listener | `127.0.0.1:0` | Host chooses the guest-facing bind and reachable advertised address |
 | Concurrent connections | 256 per proxy; 64 per lease | Fail-fast admission before task creation |
 | Concurrent DNS / dials | 32 / 256 | Shared phase budgets; permits are released when the phase ends |
+| DNS address family | `DnsAddressFamily::Both` | A and AAAA; opt into `Ipv4Only` or `Ipv6Only` before answer checking |
 | Resolved addresses | 64 | Oversized answers are rejected as a whole; configurable up to 1,024 |
 | CONNECT header / ClientHello bytes | 32 KiB / 64 KiB | Each configurable from 1 KiB to 1 MiB |
 | Header / handshake timeout | 10 s / 10 s | Absolute deadlines starting at socket acceptance |
@@ -71,8 +72,12 @@ let config = ProxyConfig::default()
 Use the actual networks for your host. No per-run grant overrides this floor.
 It rejects matching literal destinations and DNS answers, including mapped,
 compatible, and configured NAT64 forms of denied IPv4 addresses. A mixed DNS
-answer containing a forbidden address is rejected before any dial. Denials
-report `proxy-network-denied`. Explicit recursive DNS servers are trusted
+answer containing a forbidden address is rejected **as a whole** before any
+dial: one denied address poisons the answer, even if another address is allowed.
+This is not a filter that discards only denied addresses. In particular,
+`with_denied_network("::/0".parse()?)` alone rejects dual-stack answers; choose
+the DNS family below to resolve only IPv4. Denials report `proxy-network-denied`.
+Explicit recursive DNS servers are trusted
 process infrastructure and are not filtered by this guest-destination floor.
 The scope is one `Proxy`; configure every instance when a process has several.
 Host topology changes require updated configuration or firewall enforcement.
@@ -95,6 +100,30 @@ closes when it observes excess input. Coalesced upload and TLS inspection have
 earlier fail-closed boundaries described in the security invariants.
 
 ## DNS and NAT64
+
+`with_dns_address_family` selects hostname resolution at proxy startup:
+`DnsAddressFamily::Ipv4Only` queries A, `Ipv6Only` queries AAAA, and the default
+`Both` preserves the existing parallel lookup and address ordering. Family
+selection precedes answer-size and destination-policy checks, including for
+cache and hosts-file results. There is no fallback to the excluded family.
+Every retained address must still pass policy; a denied retained address still
+rejects the complete answer.
+
+For an IPv4-only destination path, select A records and deny IPv6 literals:
+
+```rust,no_run
+# use sandbox_egress::{DnsAddressFamily, ProxyConfig};
+let config = ProxyConfig::default()
+    .with_dns_address_family(DnsAddressFamily::Ipv4Only)
+    .with_denied_network("::/0".parse()?);
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+The family setting controls hostname results, not literal CONNECT addresses,
+listener binding, guest identity, or the transport used to reach a recursive
+DNS server. It classifies addresses before canonicalization: IPv4-mapped and
+NAT64 AAAA results remain IPv6 for this selection and still receive translated
+destination checks if retained. Host firewall enforcement remains necessary.
 
 By default the resolver snapshots host configuration at startup. Supplying an
 explicit server avoids both the hosts file and the system resolver config;

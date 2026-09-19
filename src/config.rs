@@ -13,6 +13,18 @@ pub(crate) const MAX_DNS_CACHE_ENTRIES: u64 = 64;
 pub(crate) const MAX_DNS_CACHE_TTL: Duration = Duration::from_secs(86_400);
 pub(crate) const MAX_DNS_SERVERS: usize = 8;
 
+/// Address families used when resolving CONNECT hostnames.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum DnsAddressFamily {
+    /// Resolve both A and AAAA records, preserving the default lookup ordering.
+    #[default]
+    Both,
+    /// Resolve only A records (IPv4).
+    Ipv4Only,
+    /// Resolve only AAAA records (IPv6).
+    Ipv6Only,
+}
+
 /// Process-wide proxy configuration.
 #[derive(Clone, Debug)]
 #[must_use]
@@ -25,6 +37,7 @@ pub struct ProxyConfig {
     pub(crate) dns_cache_entries: u64,
     pub(crate) dns_cache_max_ttl: Duration,
     pub(crate) dns_servers: Vec<SocketAddr>,
+    pub(crate) dns_address_family: DnsAddressFamily,
     pub(crate) max_resolved_addresses: usize,
     pub(crate) max_header_bytes: usize,
     pub(crate) max_client_hello_bytes: usize,
@@ -42,6 +55,8 @@ impl ProxyConfig {
     /// literals and DNS answers, including translated IPv4 destinations under
     /// configured NAT64 prefixes. The host supplies its own interface, NAT,
     /// tenant, and control-plane networks; they are not discovered implicitly.
+    /// A match rejects the whole DNS answer, not just the matching address.
+    /// Use [`Self::with_dns_address_family`] to select a resolver family first.
     /// This does not restrict explicitly configured recursive DNS servers.
     pub fn with_denied_network(mut self, network: IpNet) -> Self {
         if !self.denied_networks.contains(&network) {
@@ -214,10 +229,22 @@ impl ProxyConfig {
         self
     }
 
+    /// Select the address family for hostname resolution before answer checks.
+    ///
+    /// Defaults to [`DnsAddressFamily::Both`]. This selects DNS record families,
+    /// not the listener, recursive DNS transport, or literal CONNECT addresses.
+    /// Use destination denials to also forbid literals of the unwanted family.
+    /// Every retained address still has to pass the proxy and lease policies.
+    pub fn with_dns_address_family(mut self, family: DnsAddressFamily) -> Self {
+        self.dns_address_family = family;
+        self
+    }
+
     /// Set the maximum IP addresses accepted from one DNS lookup.
     ///
-    /// Startup rejects values outside `1..=1024`. An answer over the configured ceiling
-    /// is rejected as a whole rather than partially dialed.
+    /// Startup rejects values outside `1..=1024`. The ceiling applies after DNS
+    /// family selection. An oversized answer is rejected as a whole rather than
+    /// partially dialed.
     pub fn with_max_resolved_addresses(mut self, max: usize) -> Self {
         self.max_resolved_addresses = max;
         self
@@ -329,6 +356,7 @@ impl Default for ProxyConfig {
             dns_cache_entries: 0,
             dns_cache_max_ttl: Duration::ZERO,
             dns_servers: Vec::new(),
+            dns_address_family: DnsAddressFamily::Both,
             max_resolved_addresses: 64,
             max_header_bytes: 32 * 1_024,
             max_client_hello_bytes: 64 * 1_024,
