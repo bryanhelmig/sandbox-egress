@@ -59,6 +59,9 @@ controlled integration, not certification of an arbitrary sandbox deployment.
 
 ### Fixed
 
+- Raise the Rustls minimum to 0.23.45 for
+  [RUSTSEC-2026-0285](https://rustsec.org/advisories/RUSTSEC-2026-0285), found by
+  the release factory's fresh advisory scan. Update both consumer lockfiles.
 - Reject disagreement between CONNECT framing and the HTTP parser before DNS
   or dialing, preventing LF headers from silently swallowing tunnel payload.
   The removed upstream response parser no longer carries the same defect.
