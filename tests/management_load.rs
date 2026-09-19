@@ -88,7 +88,7 @@ fn churn(endpoint: SocketAddr, stop: &AtomicBool, traffic: &Traffic) {
 }
 
 #[test]
-#[ignore = "progress workload is opt-in; see docs/factory-pressure.md"]
+#[ignore = "progress workload is opt-in; see CONTRIBUTING.md"]
 fn management_progress_during_attributed_and_unknown_connection_churn() {
     let workers = setting("SANDBOX_EGRESS_MANAGEMENT_WORKERS", 8);
     let cycles = setting("SANDBOX_EGRESS_MANAGEMENT_CYCLES", 32);

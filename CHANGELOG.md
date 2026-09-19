@@ -1,11 +1,40 @@
 # Changelog
 
 All notable changes will be documented here. The format follows Keep a
-Changelog and versions follow Semantic Versioning. The finer-grained design,
-measurement, and rejected-experiment history lives in the
-[engineering log](docs/engineering-log.md).
+Changelog and versions follow Semantic Versioning. Git history preserves prior design reviews and experiment records.
 
-## Unreleased
+## 0.1.0-alpha.2 — 2026-09-19
+
+### Integration recipe
+
+Fence the guest, close its lease, clean host TCP and conntrack/NAT state,
+verify both empty, then attach the next run. Destroy/recreate and pooled reset
+must meet the same postconditions. Close certifies library-owned tasks and
+socket handles; it does not erase kernel orphans. A reset failure keeps the
+supervisor's slot quarantined even after a successful close.
+
+### Added
+
+- `ProxyConfig::with_denied_network(IpNet)`: a destination floor no policy can
+  override, for literals, DNS answers, cache hits, and translated IPv4 forms.
+  Trusted recursive DNS endpoints remain separate. Denial reason:
+  `proxy-network-denied`.
+- Privileged Linux pooled-host coverage with unacknowledged download bytes,
+  guest death before close, retained namespace/IP, socket and conntrack reset,
+  exact source-port reuse, full new-lease capacity, policy replacement, and
+  bystander continuity. Omitting either reset operation must prevent reuse.
+- Explicit README explanation of the 25 ms minimum quiet interval and the
+  separate host cleanup boundary. Arrivals can restart the interval.
+
+### Release evidence
+
+The release evaluator now separates required correctness/resource/host lanes
+from advisory comparative performance. Schema 2 uses `release_eligible` and
+retains each measurement's status; `--baseline` is optional. Missing required
+measurements and missing management-pressure overlap still fail the gate.
+Historical reports keep their original verdict. This remains a preview for
+controlled integration, not certification of an arbitrary sandbox deployment.
+
 
 ### Changed
 
@@ -21,8 +50,12 @@ measurement, and rejected-experiment history lives in the
   coverage through recursive-DNS-server rejection. The raw resource script's
   former eighth upstream-connection argument is removed; failed-start settings
   are now arguments eight and nine.
-- Consolidate configuration, testing, performance and scope documentation;
-  preserve the dated engineering history and existing open release gates.
+- Keep five focused guides plus README. Move durable maintainer instructions
+  into CONTRIBUTING/AGENTS; remove historical reviews and the engineering log
+  from the current tree and package. Git history retains their provenance.
+- Keep dial-before-SNI inspection deliberately: failed upstream dials return
+  HTTP 502 before CONNECT success. Optional reset-on-cancel and pre-dial SNI
+  modes are deferred; the host reset contract works with graceful sockets.
 
 ### Fixed
 
@@ -38,7 +71,7 @@ measurement, and rejected-experiment history lives in the
 First public preview for API evaluation and controlled host integration. It is
 not a production-readiness certificate. Management-pressure overlap and
 unchanged-source performance calibration remain unresolved; see the
-[release evidence](docs/release-certification.md#preview-launch-evidence).
+[release evidence](https://github.com/bryanhelmig/sandbox-egress/blob/v0.1.0-alpha.1/docs/release-certification.md#preview-launch-evidence).
 Independent API/threat-model review and a real sandbox integration are still
 required before a stable release.
 

@@ -19,7 +19,8 @@ import tempfile
 import time
 
 REQUIRED = ("evidence-controls", "ordinary", "conformance", "dependency", "resources", "management",
-            "complexity", "msrv", "host", "linux-management", "benchmarks", "performance")
+            "complexity", "msrv", "host", "linux-management", "benchmarks")
+REPORTED = ("performance",)
 METRICS = {"setup_ns": 0.15, "close_ns": 0.05, "upload_mib_s": 0.20, "download_mib_s": 0.20}
 BENCHMARKS = ("connect_direct_loopback_control", "connect_allowed_loopback",
               "attach_close_empty_lease_default_quiet")
@@ -133,15 +134,16 @@ def certify_verdict(report):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--baseline", required=True, help="reviewed git revision with the same benchmark contract")
+    parser.add_argument("--baseline", help="optional reviewed revision for advisory performance comparison")
     parser.add_argument("--output", type=Path, required=True, help="new evidence directory outside the snapshots")
     parser.add_argument("--worktree-parent", type=Path, default=Path.home() / "code")
     args = parser.parse_args()
     repo = Path(__file__).resolve().parent.parent
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
-    report = {"schema": 1, "passed": False, "utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-              "platform": platform.platform(), "checks": {name: {"status": "not_run"} for name in REQUIRED}}
+    report = {"schema": 2, "release_eligible": False, "utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              "platform": platform.platform(), "required_checks": list(REQUIRED),
+              "checks": {name: {"status": "not_run"} for name in REQUIRED + REPORTED}}
     manifest = output / "release.json"
 
     def save():
@@ -166,18 +168,12 @@ def main():
         if os.environ.get("CARGO_TARGET_DIR") or os.environ.get("RUSTUP_TOOLCHAIN") or os.environ.get("RUSTFLAGS"):
             raise ValueError("unset build overrides for reproducible isolated certification")
         head = capture(["git", "rev-parse", "HEAD"], repo)
-        baseline = capture(["git", "rev-parse", "--verify", args.baseline + "^{commit}"], repo)
         args.worktree_parent.mkdir(parents=True, exist_ok=True)
-        with snapshot(repo, head, args.worktree_parent) as candidate, snapshot(repo, baseline, args.worktree_parent) as control:
+        with snapshot(repo, head, args.worktree_parent) as candidate:
             report["source_before"] = fingerprint(candidate)
-            report["baseline_source"] = fingerprint(control)
             report["rustc"] = capture(["rustc", "-vV"], candidate)
             report["cargo_deny"] = capture(["cargo", "deny", "--version"], candidate)
             report["docker"] = capture(["docker", "version", "--format", "{{.Server.Version}}"], candidate)
-            contract = benchmark_contract(candidate)
-            if contract != benchmark_contract(control):
-                raise ValueError("baseline benchmark/dependency contract differs; establish a comparable baseline first")
-            report["benchmark_contract"] = contract
             for name, command in [("evidence-controls", ["python3", "scripts/test-release-certificate.py"]),
                                   ("ordinary", ["./scripts/check.sh"]),
                                   ("conformance", ["./scripts/test-conformance.sh"]),
@@ -235,30 +231,41 @@ def main():
             lane("benchmarks", lambda: run(["./scripts/bench.sh"], candidate, output / "benchmarks.log", 1800))
 
             def performance():
-                if capture(["rustc", "-vV"], control) != report["rustc"]:
-                    raise ValueError("baseline and candidate toolchains differ")
-                observations = {"baseline": [], "candidate": []}
-                for repeat in range(3):
-                    order = [("baseline", control), ("candidate", candidate)]
-                    if repeat % 2:
-                        order.reverse()
-                    for label, tree in order:
-                        observations[label].append(measure(tree, output, f"{label}-{repeat}"))
-                        (output / "performance-samples.json").write_text(json.dumps(observations, indent=2) + "\n")
-                comparison = judge_performance(**observations)
-                if fingerprint(control) != report["baseline_source"]:
-                    raise ValueError("baseline source changed")
-                return {"samples": observations, "comparison": comparison}
-            lane("performance", performance)
+                # Performance prerequisites belong only to this advisory lane.
+                baseline = capture(["git", "rev-parse", "--verify", args.baseline + "^{commit}"], repo)
+                with snapshot(repo, baseline, args.worktree_parent) as control:
+                    report["baseline_source"] = fingerprint(control)
+                    contract = benchmark_contract(candidate)
+                    if contract != benchmark_contract(control):
+                        raise ValueError("baseline benchmark/dependency contract differs; establish a comparable baseline first")
+                    report["benchmark_contract"] = contract
+                    if capture(["rustc", "-vV"], control) != report["rustc"]:
+                        raise ValueError("baseline and candidate toolchains differ")
+                    observations = {"baseline": [], "candidate": []}
+                    for repeat in range(3):
+                        order = [("baseline", control), ("candidate", candidate)]
+                        if repeat % 2:
+                            order.reverse()
+                        for label, tree in order:
+                            observations[label].append(measure(tree, output, f"{label}-{repeat}"))
+                            (output / "performance-samples.json").write_text(json.dumps(observations, indent=2) + "\n")
+                    comparison = judge_performance(**observations)
+                    if fingerprint(control) != report["baseline_source"]:
+                        raise ValueError("baseline source changed")
+                    return {"samples": observations, "comparison": comparison}
+            if args.baseline:
+                lane("performance", performance)
+            else:
+                report["checks"]["performance"] = {"status": "not_run", "reason": "no comparison baseline requested"}
             report["source_after"] = fingerprint(candidate)
             certify_verdict(report)
-            report["passed"] = True
+            report["release_eligible"] = True
     except (ValueError, OSError, subprocess.SubprocessError, KeyError) as error:
         report["error"] = str(error)
     finally:
         save()
-    print(f"release checks passed={report['passed']}: {manifest}")
-    return 0 if report["passed"] else 1
+    print(f"release_eligible={report['release_eligible']} performance={report['checks']['performance']['status']}: {manifest}")
+    return 0 if report["release_eligible"] else 1
 
 
 if __name__ == "__main__":

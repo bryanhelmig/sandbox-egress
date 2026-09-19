@@ -14,6 +14,15 @@ spec.loader.exec_module(certificate)
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_performance_is_reported_without_deciding_release_eligibility(self):
+        source = {"commit": "candidate", "dirty": "", "sha256": "source"}
+        for status in ("failed", "not_run", "running"):
+            report = {"source_before": source, "source_after": source,
+                      "checks": {name: {"status": "passed"} for name in certificate.REQUIRED}}
+            report["checks"]["performance"] = {"status": status}
+            with self.subTest(status=status):
+                certificate.certify_verdict(report)
+
     def test_runner_rejects_failure_and_timeout_but_keeps_logs(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

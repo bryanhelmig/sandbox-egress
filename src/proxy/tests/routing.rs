@@ -1210,3 +1210,180 @@ fn equivalent_dns_address_spellings_produce_one_dial_attempt() {
         .shutdown(Instant::now() + Duration::from_secs(1))
         .expect("proxy shutdown");
 }
+
+fn proxy_floor_request(proxy: &Proxy, authority: &str) -> String {
+    use std::io::{Read, Write};
+    let mut client = std::net::TcpStream::connect(proxy.endpoint().socket_addr()).unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    write!(
+        client,
+        "CONNECT {authority}:443 HTTP/1.1\r\nHost: {authority}\r\n\r\n"
+    )
+    .unwrap();
+    let mut response = String::new();
+    client.read_to_string(&mut response).unwrap();
+    response
+}
+
+fn proxy_floor_policy() -> Policy {
+    Policy::builder()
+        .allow_host("floor.test")
+        .unwrap()
+        .allow_network("0.0.0.0/0".parse().unwrap())
+        .allow_network("::/0".parse().unwrap())
+        .allow_port(443)
+        .build()
+        .unwrap()
+}
+
+#[test]
+fn proxy_network_floor_overrides_broad_grants_and_identity_reuse_before_dial() {
+    let dials = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let proxy = Proxy::start_with_test_backends(
+        ProxyConfig::default()
+            .with_denied_network("93.184.216.34/32".parse().unwrap())
+            .with_denied_network("2001:db8:1::/48".parse().unwrap())
+            .with_nat64_prefix("2001:db8:122::/96".parse().unwrap()),
+        Arc::new(FixedAnswerResolver(vec!["93.184.216.34".parse().unwrap()])),
+        Arc::new(RejectingConnector(Arc::clone(&dials))),
+    )
+    .unwrap();
+    let authorities = [
+        "floor.test",
+        "93.184.216.34",
+        "[::ffff:93.184.216.34]",
+        "[::93.184.216.34]",
+        "[64:ff9b::5db8:d822]",
+        "[2001:db8:122::5db8:d822]",
+        "[2001:db8:1::5]",
+    ];
+    for _ in 0..2 {
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(std::net::Ipv4Addr::LOCALHOST.into()),
+                proxy_floor_policy(),
+            )
+            .unwrap();
+        for authority in authorities {
+            let response = proxy_floor_request(&proxy, authority);
+            assert!(
+                response.starts_with("HTTP/1.1 403"),
+                "{authority}: {response}"
+            );
+            assert!(response.contains("proxy-network-denied"), "{response}");
+        }
+        let usage = lease
+            .close(Instant::now() + Duration::from_secs(2))
+            .unwrap()
+            .usage();
+        assert_eq!(usage.accepted_connections, authorities.len() as u64);
+        assert_eq!(usage.denied_connections, authorities.len() as u64);
+        assert_eq!(usage.active_connections, 0);
+    }
+    assert_eq!(dials.load(Ordering::Acquire), 0);
+    let lease = proxy
+        .attach(
+            PeerIdentity::SourceIp(std::net::Ipv4Addr::LOCALHOST.into()),
+            proxy_floor_policy(),
+        )
+        .unwrap();
+    assert!(proxy_floor_request(&proxy, "93.184.216.35").contains("dial-failed"));
+    assert_eq!(
+        dials.load(Ordering::Acquire),
+        1,
+        "neighboring allowed IP reaches connector"
+    );
+    lease
+        .close(Instant::now() + Duration::from_secs(2))
+        .unwrap();
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(2))
+        .unwrap();
+}
+
+#[test]
+fn proxy_network_floor_checks_every_dns_answer_before_any_dial() {
+    for blocked in [
+        "93.184.216.34",
+        "::ffff:93.184.216.34",
+        "64:ff9b::5db8:d822",
+        "2001:db8:122::5db8:d822",
+    ] {
+        for blocked_first in [false, true] {
+            let mut answers = vec!["93.184.216.35".parse().unwrap(), blocked.parse().unwrap()];
+            if blocked_first {
+                answers.reverse();
+            }
+            let dials = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let proxy = Proxy::start_with_test_backends(
+                ProxyConfig::default()
+                    .with_denied_network("93.184.216.34/32".parse().unwrap())
+                    .with_nat64_prefix("2001:db8:122::/96".parse().unwrap()),
+                Arc::new(FixedAnswerResolver(answers)),
+                Arc::new(RejectingConnector(Arc::clone(&dials))),
+            )
+            .unwrap();
+            let lease = proxy
+                .attach(
+                    PeerIdentity::SourceIp(std::net::Ipv4Addr::LOCALHOST.into()),
+                    proxy_floor_policy(),
+                )
+                .unwrap();
+            assert!(proxy_floor_request(&proxy, "floor.test").contains("proxy-network-denied"));
+            lease
+                .close(Instant::now() + Duration::from_secs(2))
+                .unwrap();
+            assert_eq!(dials.load(Ordering::Acquire), 0);
+            proxy
+                .shutdown(Instant::now() + Duration::from_secs(2))
+                .unwrap();
+        }
+    }
+}
+
+fn local_cache_floor_response(query: &[u8]) -> Vec<u8> {
+    let end = local_dns_question_end(query);
+    if u16::from_be_bytes([query[end - 4], query[end - 3]]) == 1 {
+        local_a_response(query)
+    } else {
+        let mut response = local_nxdomain_response(query);
+        response[3] = 0x80; // NODATA with a cacheable SOA for the AAAA question.
+        response
+    }
+}
+
+#[test]
+fn proxy_network_floor_applies_to_cached_answers_after_reuse_but_not_trusted_dns() {
+    let (dns, server) = start_local_dns(2, local_cache_floor_response);
+    let dials = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let proxy = Proxy::start_with_test_connector(
+        ProxyConfig::default()
+            .with_dns_server(dns)
+            .with_dns_cache(8, Duration::from_secs(60))
+            .with_denied_network("127.0.0.0/8".parse().unwrap()),
+        Arc::new(RejectingConnector(Arc::clone(&dials))),
+    )
+    .unwrap();
+    let mut server = Some(server);
+    for _ in 0..2 {
+        let lease = proxy
+            .attach(
+                PeerIdentity::SourceIp(std::net::Ipv4Addr::LOCALHOST.into()),
+                proxy_floor_policy(),
+            )
+            .unwrap();
+        assert!(proxy_floor_request(&proxy, "floor.test").contains("proxy-network-denied"));
+        lease
+            .close(Instant::now() + Duration::from_secs(2))
+            .unwrap();
+        if let Some(server) = server.take() {
+            server.join().unwrap(); // No DNS server remains for the second lease.
+        }
+    }
+    assert_eq!(dials.load(Ordering::Acquire), 0);
+    proxy
+        .shutdown(Instant::now() + Duration::from_secs(2))
+        .unwrap();
+}

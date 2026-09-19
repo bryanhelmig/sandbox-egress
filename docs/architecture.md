@@ -1,5 +1,11 @@
 # Architecture
 
+The intended consumer is a Rust supervisor for short-lived sandboxes, including
+warmvm/Firecracker-style services. It already owns guest launch and the host
+network lifecycle. The crate supplies the shared egress core without an async
+rewrite of that supervisor. One implementation serves the library, thin CLI,
+and external conformance consumer. Preserve that small boundary.
+
 The crate is split by responsibility, not protocol fashion:
 
 ```text
@@ -51,6 +57,13 @@ quiesced snapshot immediately; it does not rerun the quiet-period barrier.
 
 `Lease` is intentionally not `Clone`. `close(self, deadline)` either produces
 `FinalUsage` or a `CloseError` containing the still-owning lease.
+
+There are two cleanup boundaries. The lease destroys library-owned work and
+socket handles. The supervisor then destroys or resets the slot's kernel TCP
+and conntrack/NAT state and verifies it is empty. Kernel orphans can outlive a
+closed handle, including in a proxy namespace outside a destroyed guest.
+The supervisor keeps the slot quarantined until both boundaries succeed.
+Pooling changes how the host cleans a slot, not the meaning of a lease.
 
 The management command channel is an unbounded trusted-control-plane queue;
 guest sockets cannot enqueue into it. Retaining that shape is deliberate:
@@ -118,6 +131,10 @@ public-address handling. The actual listener endpoint is also rejected before
 any explicit grant, preventing recursive CONNECT chains through the proxy
 itself. Tokio then dials a selected checked IP directly. There is no upstream
 proxy negotiation or intermediate response buffer.
+`ProxyConfig::with_denied_network` adds an immutable floor for all leases on
+that proxy. It uses the same translated-address matching as policy denials,
+applies to literal and resolved destinations, and cannot be overridden by a
+policy. Trusted recursive DNS endpoints remain a separate host choice.
 Approved addresses are tried sequentially. Each receives
 a fair share of the remaining absolute handshake budget so a pending first
 address cannot consume all fallback time or create parallel socket

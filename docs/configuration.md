@@ -22,6 +22,7 @@ changing rules requires certified close and a new attachment.
 | Header / handshake timeout | 10 s / 10 s | Absolute deadlines starting at socket acceptance |
 | DNS timeout | 3 s | Includes waiting for DNS capacity; capped by handshake deadline |
 | Identity quiet period | 25 ms | Close/reuse guard after revocation; does not authenticate delayed packets |
+| Proxy-wide denied networks | Empty | Immutable floor for every lease on this proxy; grants cannot override it |
 | Attempt-rate buckets | Disabled | Optional per-proxy and per-lease rate/burst limits |
 | Tunnel upload/download ceilings | Disabled | A fresh allowance for each tunnel, not an aggregate run quota |
 | Tunnel idle timeout | Disabled | Either direction's traffic resets the clock |
@@ -56,6 +57,25 @@ before any numeric address is dialed directly. Explicit CIDR grants may permit
 private services; CIDR denials still win. Direct IP literals require a network
 grant. The library does not chain through another proxy or inherit ambient
 proxy environment settings for its outbound route.
+
+Set host, tenant, public/NAT, and control-plane exclusions once at startup:
+
+```rust,no_run
+# use sandbox_egress::ProxyConfig;
+let config = ProxyConfig::default()
+    .with_denied_network("10.20.0.0/16".parse()?)
+    .with_denied_network("2001:db8:1234::/48".parse()?);
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Use the actual networks for your host. No per-run grant overrides this floor.
+It rejects matching literal destinations and DNS answers, including mapped,
+compatible, and configured NAT64 forms of denied IPv4 addresses. A mixed DNS
+answer containing a forbidden address is rejected before any dial. Denials
+report `proxy-network-denied`. Explicit recursive DNS servers are trusted
+process infrastructure and are not filtered by this guest-destination floor.
+The scope is one `Proxy`; configure every instance when a process has several.
+Host topology changes require updated configuration or firewall enforcement.
 
 ```rust,no_run
 # use sandbox_egress::Policy;
@@ -126,6 +146,13 @@ that hostname requirement. `TlsAuthority::RequireVisibleSni` with
 name. Neither mode terminates TLS or checks encrypted application authority.
 The destination TCP connection occurs before inspection; rejected ClientHello
 bytes are not forwarded.
+
+This ordering is deliberate: dial failures can return HTTP 502 before CONNECT
+success. A normal TLS client waits for HTTP 200 before sending ClientHello.
+Inspect-before-dial would require optimistic 200, after which dial failure can
+only close the tunnel. This preview retains dial-before-inspection and does
+not expose an additional ordering switch. SNI matching is not client identity
+authentication or inspection of the encrypted application authority.
 
 `with_diagnostic_channel(sender, max_events_per_second)` accepts a caller-owned
 bounded synchronous channel. Events have static reasons and lease attribution;

@@ -70,6 +70,14 @@ The required lifecycle order is:
 6. remove run-owned conntrack/NAT and interface state, then reuse the guest
    identity only after certified close and teardown verification.
 
+Step 6 may destroy and recreate the network slot or reset a pooled slot while
+retaining its namespace and source IP. Both require zero old host TCP entries
+and zero run-owned conntrack/NAT entries before reuse. Destroy state in its
+owning namespace: deleting the guest namespace alone cannot remove sockets
+owned by the shared proxy elsewhere. The host-integration guide gives the
+reset operations and failure handling. A successful lease close is not a
+certificate that the kernel has removed orphaned TCP state.
+
 Failure at step 5 retains lease ownership. Do not reuse the identity or treat
 partial cleanup as success.
 
@@ -91,6 +99,9 @@ Those tests belong at the integration boundary because the library cannot
 observe a bypass that never reaches its listener. The repository ships a first
 privileged Linux namespace certificate in
 `scripts/test-linux-host-boundary.sh`. It proves proxy-only TCP routing,
-fenced close, source-IP reuse, and named-resource cleanup. IPv6, UDP, DNS,
-inherited descriptors, and NAT-port recovery remain deployment-level follow-up
-work rather than implied coverage.
+fenced close, source-IP reuse, and named-resource cleanup. The companion
+`scripts/test-linux-pooled-boundary.py` proves a retained SNAT namespace's
+conntrack reset, host socket destruction, exact port reuse, and full new-lease
+capacity, with negative controls for either omitted reset operation. IPv6,
+UDP/DNS and inherited-descriptor bypasses, and other NAT topologies remain
+deployment-level follow-up work rather than implied coverage.

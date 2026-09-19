@@ -2,7 +2,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::mpsc::SyncSender;
 use std::time::{Duration, Instant};
 
-use ipnet::Ipv6Net;
+use ipnet::{IpNet, Ipv6Net};
 
 use crate::DiagnosticEvent;
 use crate::diagnostic::DiagnosticConfig;
@@ -29,12 +29,27 @@ pub struct ProxyConfig {
     pub(crate) max_header_bytes: usize,
     pub(crate) max_client_hello_bytes: usize,
     pub(crate) nat64_prefixes: Vec<Ipv6Net>,
+    pub(crate) denied_networks: Vec<IpNet>,
     pub(crate) header_timeout: Duration,
     pub(crate) identity_reuse_quiet_period: Duration,
     pub(crate) diagnostics: Option<DiagnosticConfig>,
 }
 
 impl ProxyConfig {
+    /// Deny a destination network for every lease attached to this proxy.
+    ///
+    /// No policy grant can override this startup-time floor. It applies to
+    /// literals and DNS answers, including translated IPv4 destinations under
+    /// configured NAT64 prefixes. The host supplies its own interface, NAT,
+    /// tenant, and control-plane networks; they are not discovered implicitly.
+    /// This does not restrict explicitly configured recursive DNS servers.
+    pub fn with_denied_network(mut self, network: IpNet) -> Self {
+        if !self.denied_networks.contains(&network) {
+            self.denied_networks.push(network);
+        }
+        self
+    }
+
     pub(crate) fn validate(&self) -> Result<(), &'static str> {
         if !is_bindable_listener(self.bind_address) {
             return Err("listener must be a unicast or wildcard address with any required zone");
@@ -318,6 +333,7 @@ impl Default for ProxyConfig {
             max_header_bytes: 32 * 1_024,
             max_client_hello_bytes: 64 * 1_024,
             nat64_prefixes: Vec::new(),
+            denied_networks: Vec::new(),
             header_timeout: Duration::from_secs(10),
             identity_reuse_quiet_period: Duration::from_millis(25),
             diagnostics: None,

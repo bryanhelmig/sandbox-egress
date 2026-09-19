@@ -1,208 +1,161 @@
-# Host network integration
+# Host integration: a clean slot for every run
 
-Sandbox Egress owns the proxy lease. A sandbox supervisor must separately own
-the operating-system resources that make the lease meaningful. Treat those
-resources as one run-generation record, even if the production implementation
-gives that record a different name.
+The library owns a lease. Your supervisor owns the network slot around it.
+A slot is the namespace/interfaces, source IP, firewall/NAT state, and guest
+attachment that your host assigns to a run. It may be disposable or pooled.
 
-This is an integration contract, not a fourth core crate object. The public
-library remains `Proxy / Policy / Lease`; it does not create sandboxes, network
-namespaces, virtual interfaces, firewall rules, or NAT state.
+The rule is the same for both:
 
-## One host record per run generation
+**Fence → close → clean → verify → reuse.**
 
-The supervisor's durable record should bind at least:
+## Ownership and startup
 
-- an unambiguous run ID and monotonically increasing generation;
-- the source IP passed to `Proxy::attach`;
-- the namespace or guest network, virtual interfaces, routes, and firewall rule
-  handles;
-- the NAT/conntrack zone or other state needed to find and remove old flows;
-- the sandbox process or VM, cgroup, and host traffic-shaping configuration;
-- the in-process `Lease` owner or enough state to mark the identity unavailable
-  after a supervisor restart.
+Keep one authoritative slot record with a generation, the source IP observed
+by the proxy, kernel resource identifiers, conntrack namespace/zone, guest
+owner, and lease owner. A pooled slot can retain a fixed name; its ownership
+must still change atomically with a fresh generation. Keep it reserved until
+cleanup succeeds. Reconcile orphaned records and kernel resources after a
+supervisor restart; a missing in-process lease is not evidence of cleanup.
 
-Resource names should include the generation or another collision-resistant
-token. A fixed slot number alone is insufficient when a crashed supervisor can
-leave its old namespace or firewall objects behind. Write the ownership record
-before enabling traffic, and remove it only after every cleanup check succeeds.
+Install the network path deny-first. Prove that the proxy is reachable and
+that direct TCP/UDP/DNS, host services, neighboring slots, and alternate proxy
+paths are blocked. Attach the policy before launching or resuming the guest.
+The attached IP is what the listener observes, including any host SNAT, not
+necessarily the address configured inside the VM.
 
-The attached source IP is specifically the peer address the shared proxy
-listener observes. It need not equal the address configured inside a guest.
-Snapshot pools may safely reuse one baked guest-visible address inside isolated
-namespaces only when routing or SNAT translates it to a unique, host-owned
-source before the shared listener and conntrack boundary. Attach that observed
-translated address; never derive identity from guest configuration metadata.
+Do not restore a lease from a VM snapshot. Clones receive a new generation and
+policy, with host state prepared before resume. Connections saved in guest
+memory must reconnect. Host identity, conntrack, and NAT allocations are not
+snapshot authority.
 
-## Fail-closed startup
+## Shutdown: two boundaries
 
-Use this order:
+1. **Fence:** stop the old VM/process and block every old packet-producing
+   path. Account for queued packets in the host adapter. Keep the slot locked.
+2. **Close:** call `Lease::close(deadline)`. Success means all library-owned
+   tasks and socket handles are gone and counters are final. On failure,
+   retain `error.into_lease()`, keep the slot quarantined, and retry.
+3. **Clean:** destroy the old network resources or reset the retained slot,
+   as described below.
+4. **Verify:** no old host TCP entries or slot conntrack/NAT entries remain.
+   Enumeration errors and unsupported cleanup are failures, not empty results.
+5. **Reuse:** attach the next immutable policy before enabling the new guest.
 
-1. reserve a fresh generation and source IP;
-2. create the guest network path in a deny-first state;
-3. install routing, DNS confinement, proxy-only firewall rules, NAT/conntrack
-   isolation, and VM-level bandwidth limits;
-4. actively prove that the proxy endpoint is reachable and controlled direct
-   TCP, UDP, DNS, host-service, and alternate-proxy probes are not;
-5. attach the immutable `Policy` to the host-observed source IP;
-6. only then launch or resume untrusted guest code.
+After successful close the library no longer owns the lease. If host cleanup
+fails, the supervisor's slot record must still prevent reassignment. Never
+release the slot merely because the Rust lease has been consumed.
 
-A missing binary, unavailable nftables hook, failed rule transaction, ambiguous
-interface, readiness timeout, or unavailable proxy is a launch failure. Logging
-and continuing would silently turn a policy request into unrestricted egress.
-Pooled sandboxes and service-mesh sidecars need their own profile: both can
-pre-create or rewrite the same network path before a per-run policy exists.
+The 25 ms default close quiet interval drains queued old accepts under the
+revoking identity. It can restart on arrivals. It is separate from kernel
+cleanup and cannot distinguish arbitrary delayed packets after reuse.
 
-## Certified shutdown and reuse
+## Pattern A: destroy and recreate
 
-Use the reverse ownership order:
+After fence and successful close, remove run-owned namespace, interfaces,
+routes, firewall rules, shaping, and conntrack/NAT state. Verify cleanup, then
+create and prove the next deny-first path before attaching its lease.
 
-1. stop the guest vCPUs or otherwise prevent new guest packets;
-2. sever or deny the old guest network path;
-3. call `Lease::close` and retain the returned lease on failure;
-4. verify that no host-side proxy socket, pending host dial, or run-owned
-   conntrack/NAT state remains;
-5. delete the run's firewall, route, interface, namespace, and shaping state;
-6. mark the source IP reusable only after every preceding step succeeds.
+Destroy state **where it is owned**. If the shared proxy lives in another
+namespace, its accepted TCP sockets can leave kernel-owned orphans there after
+close. Deleting the guest namespace alone does not erase them. Apply the
+socket cleanup below whenever the surviving proxy namespace can retain old
+connections. The postconditions are required regardless of the teardown method.
 
-The host fence is load-bearing. TCP has no sandbox generation field. A delayed
-packet from a disconnected old namespace is distinguishable only because that
-namespace no longer has a path, not because the shared listener can infer its
-origin. A local socket table in a fenced guest may continue to display stale
-TCP state because the guest cannot receive the final FIN or RST; certification
-is the absence of a host-owned path and proxy work, not a cooperative guest
-state transition.
+## Pattern B: reset a pooled slot
 
-## Restored and pooled sandboxes
+Keep the namespace, slot IP, and reusable network setup. While the guest stays
+fenced, perform these host operations:
 
-Never serialize or restore a `Lease`. A restored or reassigned sandbox receives
-a fresh host generation, fresh network path, fresh immutable policy, and fresh
-proxy lease before it resumes. Guest connection state must not become authority
-to reuse an old host identity.
+1. In the namespace owning the proxy sockets, destroy TCP connections whose
+   peer is the slot's exclusive, proxy-observed source IP. Include kernel
+   orphans without a process owner; do not filter only by proxy PID or ESTABLISHED.
+2. Flush run-owned conntrack/NAT entries in every namespace/zone that tracks
+   them. Perform the final flush after socket destruction so teardown traffic
+   cannot recreate state after the flush.
+3. Independently enumerate both kinds of state and require zero matching
+   entries before making the slot available.
 
-Firecracker is one important consumer of this rule: its snapshot documentation
-warns that network and vsock packet loss is expected after loading a snapshot
-in another process and does not guarantee connection survival. Other VM,
-container, and process sandboxes should follow the same fresh-lease rule unless
-their host boundary can prove a stronger generation-preserving contract.
-
-For a snapshot taken from a running VM:
-
-- pause the VM, create the snapshot, and decide whether the original run will
-  continue or be destroyed;
-- if it is destroyed, fence and close its lease exactly as for ordinary
-  shutdown;
-- never package the source-IP allocation, proxy lease, host conntrack state, or
-  NAT mappings as snapshot state;
-- before clone resume, install and prove the clone's deny-first path and attach
-  its own lease;
-- require connections present in guest memory at snapshot time to reconnect;
-  do not route them into a replacement run's authority.
-
-The opt-in namespace lane below preserves a live old tunnel while fencing its
-veth, certifies zero host-side proxy work, proves the still-live old namespace
-has no egress device, and only then recreates the same source IP for a fresh
-lease on the same running proxy. A different destination grant and an unrelated
-continuous echo tunnel pin policy replacement and isolation. It models the host ownership transition without coupling the crate to a
-particular sandbox or VMM. A concrete sandbox integration can wrap this same
-contract with its own launch, restore, and teardown checks.
-
-For a prebuilt network pool, "available" kernel state still needs an owner.
-Keep slot ownership in one authoritative ledger, park each prebuilt slot under
-a unique sentinel owner, and transfer it atomically to a run rather than using
-a free-then-claim window. On release, destroy the namespace/interfaces first
-and mark the slot free last. After restart, reconcile stale owners and orphaned
-kernel objects before refilling the pool. The ledger's persistence lifetime
-must match the kernel objects it describes; durable ownership that outlives a
-host reboot can resurrect claims for resources that no longer exist.
-
-## Two rate-control planes
-
-The controls complement one another:
-
-- `ProxyConfig::with_connection_attempt_rate` and
-  `PolicyBuilder::connection_attempt_rate` bound source-attributed inbound TCP
-  churn before header parsing or task creation. Concurrent connection limits
-  still bound live proxy work.
-- Linux traffic control, VMM device limits such as Firecracker virtio-net token
-  buckets, or an equivalent host mechanism bound packets and bandwidth before
-  one sandbox can become a noisy neighbor. The proxy intentionally does not
-  emulate a packet shaper.
-
-Connection-attempt limits help reduce upstream socket and conntrack churn, but
-they do not make conntrack or ephemeral ports infinite. Capacity planning must
-measure the host kernel, choose per-run/fleet ceilings below its safe operating
-range, and verify recovery after a run ends.
-
-## East-west isolation is a separate boundary
-
-Source identity selects one lease; it does not make other sandbox addresses
-unreachable from the proxy process. The default policy floor rejects private
-destinations, but an explicit network grant can deliberately override that
-floor. If a run needs selected private services, pair the narrow grant with
-explicit denials for every tenant, slot, and host-control subnet; policy
-denials take priority over grants. Keep a host firewall drop between sandbox
-networks as the independent enforcement layer, because inherited sockets or a
-direct path would bypass the library entirely. Readiness and reuse checks
-should probe neighboring slot addresses as well as metadata and host services.
-
-## Kernel evidence
-
-On Linux, wrap a deterministic load or soak command with:
+For a dedicated slot namespace and an IPv4 source address, the operations are:
 
 ```sh
-scripts/measure-linux-network-state.sh \
-  env SANDBOX_EGRESS_LOAD_CONNECTIONS=100000 cargo test --release --test load -- --ignored
+# Trusted host code, after fence and successful Lease::close.
+# Names/IP must come from the supervisor's exclusive slot record.
+ip netns exec "$proxy_namespace" ss -Ktan dst "$slot_source_ip"
+ip netns exec "$slot_namespace" conntrack -F
+
+# Capture/check command status before inspecting output; failure is not empty.
+ip netns exec "$proxy_namespace" ss -Htan dst "$slot_source_ip"
+ip netns exec "$slot_namespace" conntrack -L -f ipv4
+ip netns exec "$slot_namespace" conntrack -L -f ipv6
+# Require empty results. Otherwise quarantine the slot.
 ```
 
-The wrapper records baseline, peak, and final conntrack entries, TCP sockets,
-TIME_WAIT sockets, UDP sockets, allocated files, and the host conntrack limit.
-Set `SANDBOX_EGRESS_REQUIRE_KERNEL_RECOVERY=1` to fail when conntrack does not
-return to the configured baseline plus
-`SANDBOX_EGRESS_KERNEL_RECOVERY_SLACK` before the recovery deadline. These are
-host-global signals, so run release evidence on an otherwise quiet worker.
+These are the operations, not a complete production reset script. The
+executable test in `scripts/test-linux-pooled-boundary.py` demonstrates the
+failure checks for its isolated IPv4 topology. Include all address families,
+translation spellings, and conntrack owners used by your actual deployment.
 
-## Opt-in Linux boundary certificate
+A whole-table conntrack flush is appropriate only when that namespace belongs
+exclusively to the slot. Shared namespaces need slot-specific deletion or
+conntrack zones, including original and reply/NAT tuple attribution. Never
+flush an unrelated tenant's state. The source-IP socket filter similarly
+requires an exclusive identity until reset ends.
 
-The ordinary crate factory is unprivileged and cross-platform. The separate
-lane requires a disposable privileged Linux environment:
+TCP destruction needs `CONFIG_INET_DIAG_DESTROY` and host `CAP_NET_ADMIN` in
+the applicable namespace. Test support during host readiness. `ss --kill`
+can silently skip unsupported sockets; always verify with a separate all-state
+listing. A remaining FIN_WAIT, TIME_WAIT, or other matching entry keeps the
+slot unavailable. Use a bounded cleanup deadline and quarantine or rebuild
+when the kernel cannot satisfy the postcondition.
+
+This crate intentionally leaves privileged resets with the supervisor. Normal
+TCP EOF/half-close behavior remains graceful. A future abortive-close option
+could reduce leftovers, but cannot reach sockets already orphaned before
+cancellation and cannot replace host verification.
+
+## What the host harness proves
 
 ```sh
-docker build -f Dockerfile.host-boundary \
-  -t sandbox-egress-host-boundary:local .
-docker run --rm --privileged sandbox-egress-host-boundary:local
+docker build -f Dockerfile.host-boundary -t sandbox-egress-host .
+docker run --rm --network=none --privileged sandbox-egress-host
 ```
 
-It creates isolated host and guest network namespaces, installs a deny-first
-nftables input chain, proves the allowed CONNECT path and a blocked direct TCP
-decoy, holds and fences a live tunnel, requires final zero-active accounting,
-reuses the source address only in a fresh namespace, and removes named orphan
-resources. It uses no public network and no randomized input generation.
+The image uses the external public-API consumer, built and hashed from the
+candidate source. It runs the existing namespace replacement lane and a pooled
+lane with a disposable guest namespace behind a retained SNAT slot. The latter
+models guest death without destroying the slot containing conntrack state.
 
-This certificate is intentionally narrower than a complete deployment matrix.
-It does not exercise IPv6, prove UDP/DNS and inherited-descriptor denial, or
-measure NAT port recovery. Those checks belong in the generic host-boundary
-backlog and in each concrete sandbox integration rather than being implied by
-one namespace test.
+The pooled lane proves:
 
-## Examples behind the boundary
+- unacknowledged download data leaves a host TCP orphan after certified close;
+- omitting socket destruction or conntrack flush fails the reuse check;
+- reset leaves zero slot conntrack entries and zero host TCP entries to the IP;
+- the slot namespace inode, uplink, IP, proxy process, and listener survive;
+- the next lease uses the old source ports, rejects the old destination, and
+  receives its full simultaneous connection budget; one extra tunnel is denied;
+- an unrelated lease keeps one continuous tunnel with exact usage accounting.
 
-- [Firecracker design](https://github.com/firecracker-microvm/firecracker/blob/main/docs/design.md)
-  assigns host networking and traffic filtering to the integrator and exposes
-  virtio-net rate limiting for resource fairness.
-- [Firecracker production host setup](https://github.com/firecracker-microvm/firecracker/blob/main/docs/prod-host-setup.md)
-  explicitly requires host firewalling of untrusted guest egress.
-- [Firecracker snapshot support](https://github.com/firecracker-microvm/firecracker/blob/main/docs/snapshotting/snapshot-support.md)
-  documents packet loss and the absence of a connection-survival guarantee.
-- [n8n's Firecracker runner](https://github.com/n8n-io/n8n-sandbox-service/blob/main/internal/runner/runtime/firecracker.ee/README.md)
-  is a concrete per-slot namespace/TAP/veth/NAT design.
-- [CubeSandbox's network design](https://github.com/TencentCloud/CubeSandbox/blob/master/docs/blog/posts/2026-06-23-cubesandbox-network-deep-dive.md)
-  demonstrates host-owned TAP allocation, L4/L7 separation, and pooled network
-  resource setup.
-- [PandaStack's NATID implementation](https://github.com/pandastack-io/pandastack-ai/blob/1147f535f303296de45d0b51fb58644dfcf79e14/agent/internal/netns/netns.go)
-  shows shared snapshot identity translated to a unique host-visible source;
-  its network and slot-store packages document pooled ownership and restart
-  reconciliation.
-- [SNAS](https://arxiv.org/pdf/2606.17533) reports production experience with
-  bandwidth fairness, connection-rate controls, conntrack, and port exhaustion
-  across a defense-in-depth sandbox egress system.
+The test uses local peers and a 90-second outer timeout. It does not launch
+Firecracker, prove all TCP states are destroyable on every kernel, certify
+IPv6/UDP/DNS/inherited-descriptor bypass prevention, authenticate arbitrary
+delayed packets, or cover every NAT topology. Add these checks to your actual
+host adapter before claiming its complete security boundary.
+
+## Host capacity and bypasses
+
+The proxy's concurrent and attempt-rate limits complement host/VMM packet and
+bandwidth limits. They do not bound all kernel conntrack or ephemeral-port
+usage. Measure those resources on the deployment host. The optional
+`scripts/measure-linux-network-state.sh` wrapper reports kernel capacity and
+recovery; its host-wide measurements need an otherwise quiet worker.
+
+Private service grants must remain narrower than the host's tenant/control
+boundary. Put fixed forbidden networks in `ProxyConfig::with_denied_network`
+and retain independent host firewall isolation. A direct or inherited socket
+never crosses the proxy's checks. Mark-based exemptions require removing both
+`CAP_NET_ADMIN` and `CAP_NET_RAW` from every untrusted workload and sidecar.
+
+References: [Linux ss](https://man7.org/linux/man-pages/man8/ss.8.html),
+[conntrack](https://netfilter.org/projects/conntrack-tools/conntrack-manpage.html),
+[Firecracker host setup](https://github.com/firecracker-microvm/firecracker/blob/main/docs/prod-host-setup.md),
+[Firecracker snapshots](https://github.com/firecracker-microvm/firecracker/blob/main/docs/snapshotting/snapshot-support.md).

@@ -316,6 +316,13 @@ impl Lease {
 
     /// Revoke this lease and wait for all of its tracked work to be destroyed.
     ///
+    /// Fence the guest first. Success certifies library-owned tasks and socket
+    /// handles, not the removal of kernel TCP or conntrack/NAT state. Before
+    /// reusing the source IP, the host must destroy or reset that state and
+    /// verify it is gone, even when a pooled namespace is retained. Keep the
+    /// slot quarantined if host cleanup fails after this method succeeds.
+    /// The default quiet interval is 25 ms and restarts on old arrivals.
+    ///
     /// # Errors
     ///
     /// On timeout or runtime failure, the returned [`CloseError`] retains the
@@ -1452,6 +1459,7 @@ impl Denial {
     const IP_LITERAL_DENIED: Self = Self::new(403, "ip-literal-denied");
     const PORT_DENIED: Self = Self::new(403, "port-denied");
     const PROXY_ENDPOINT_DENIED: Self = Self::new(403, "proxy-endpoint-denied");
+    const PROXY_NETWORK_DENIED: Self = Self::new(403, "proxy-network-denied");
     const RESOLVED_ADDRESS_DENIED: Self = Self::new(403, "resolved-address-denied");
     const HEADER_EOF: Self = Self::new(400, "header-eof");
     const HEADER_READ_FAILED: Self = Self::new(400, "header-read-failed");
@@ -1492,6 +1500,13 @@ async fn resolve_addresses(
     handshake_deadline: TokioInstant,
 ) -> Result<Vec<SocketAddr>, Denial> {
     if let Ok(ip) = request.host.parse::<IpAddr>() {
+        if crate::policy::address_matches_networks(
+            &config.denied_networks,
+            ip,
+            &config.nat64_prefixes,
+        ) {
+            return Err(Denial::PROXY_NETWORK_DENIED);
+        }
         let address = SocketAddr::new(ip.to_canonical(), request.port);
         if is_proxy_endpoint(address, config.bind_address) {
             return Err(Denial::PROXY_ENDPOINT_DENIED);
@@ -1536,6 +1551,13 @@ async fn resolve_addresses(
     let mut seen = HashSet::with_capacity(addresses.len());
     let mut approved = Vec::with_capacity(addresses.len());
     for ip in addresses {
+        if crate::policy::address_matches_networks(
+            &config.denied_networks,
+            ip,
+            &config.nat64_prefixes,
+        ) {
+            return Err(Denial::PROXY_NETWORK_DENIED);
+        }
         let address = SocketAddr::new(ip.to_canonical(), request.port);
         if is_proxy_endpoint(address, config.bind_address) {
             return Err(Denial::PROXY_ENDPOINT_DENIED);

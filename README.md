@@ -1,171 +1,114 @@
 # Sandbox Egress
 
-Run-scoped network access for untrusted sandboxes.
+Network policy and reliable per-run cleanup for Rust sandbox supervisors.
 
-An embeddable Rust CONNECT proxy for sandbox supervisors. Give each run an
-immutable network policy, bounded connection work, usage counters, and an
-explicit shutdown boundary. One shared runtime serves many runs.
-
-## Try the preview
+One shared `Proxy` serves many runs. Each run gets an immutable `Policy` and an
+owning `Lease`. The host supplies a source IP the guest cannot spoof, and forces
+all guest egress through the proxy.
 
 ```sh
-cargo add sandbox-egress --git https://github.com/bryanhelmig/sandbox-egress --tag v0.1.0-alpha.1
+cargo add sandbox-egress --git https://github.com/bryanhelmig/sandbox-egress --tag v0.1.0-alpha.2
 ```
 
-This preview is for evaluation and controlled integration. The API may change
-between previews. Read the host boundary below before connecting a sandbox.
-The documentation in this checkout describes the current source; see the
-[changelog](CHANGELOG.md#unreleased) for changes since the tagged preview.
-
-## Three objects
-
-- `Proxy` owns the listener, resolver, runtime, and process-wide budgets.
-- `Policy` defines immutable destination rules and limits for one run.
-- `Lease` owns the run's host-observed identity, admitted work, accounting,
-  cancellation, and certified cleanup.
+This is a preview with a changing API. [Upgrading from alpha.1](CHANGELOG.md)
+includes renamed byte-limit methods and removal of upstream proxy chaining.
 
 ```rust,no_run
-use std::net::IpAddr;
-use std::time::{Duration, Instant};
 use sandbox_egress::{PeerIdentity, Policy, Proxy, ProxyConfig};
+use std::time::{Duration, Instant};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let proxy = Proxy::start(ProxyConfig::default())?;
+    let proxy = Proxy::start(
+        ProxyConfig::default()
+            // Supply your actual host/control/tenant networks here.
+            .with_denied_network("10.20.0.0/16".parse()?),
+    )?;
     let policy = Policy::builder()
         .allow_host("api.example.com")?
         .allow_port(443)
         .max_connections(8)?
         .build()?;
-
-    // Use the source address enforced by your host network boundary.
-    let source_ip: IpAddr = "127.0.0.1".parse()?;
-    let lease = proxy.attach(PeerIdentity::SourceIp(source_ip), policy)?;
+    let lease = proxy.attach(
+        PeerIdentity::SourceIp("127.0.0.1".parse()?), // host-observed run IP
+        policy,
+    )?;
     println!("HTTPS_PROXY={}", lease.endpoint());
 
-    // Run the workload, then fence its network path before closing the lease.
+    // Launch the guest. When finished, stop it and fence its network first.
     let usage = lease.close(Instant::now() + Duration::from_secs(2))?.usage();
     println!("final usage: {usage:?}");
+    // The host must now clear and verify kernel network state before IP reuse.
     proxy.shutdown(Instant::now() + Duration::from_secs(2))?;
     Ok(())
 }
 ```
 
 The management API is synchronous. The proxy owns one Tokio runtime; callers
-do not need an async rewrite or a runtime per run. A wildcard listener reports
-`0.0.0.0` or `::` in its endpoint; the host chooses the guest-reachable address
-and combines it with the assigned port.
+need no async rewrite or runtime per lease. A wildcard listener reports its
+wildcard address; the host supplies the address reachable from the guest.
 
-## Close is a certificate
+## The reuse rule
 
-Successful `Lease::close` means admission is closed, tracked headers/DNS/dials/
-tunnels are gone, sockets have stopped, and usage is final. It does not wait
-for a cooperative remote peer. Failure returns the owning lease and keeps its
-identity unavailable. `Drop` begins best-effort cancellation and never certifies
-cleanup.
+**Fence the old guest → close its lease → clean the host's network state →
+verify it is empty → attach the next run.**
 
-A supervisor should keep a failed owner in its quarantine/retry path:
+You can destroy and recreate a network slot, or reset a pooled slot in place.
+Both must leave the same clean result. Destroying a VM or its guest namespace
+alone does not necessarily remove connections owned by the shared host proxy.
 
-```rust,no_run
-use std::time::{Duration, Instant};
-use sandbox_egress::{CloseError, FinalUsage, Lease};
+`Lease::close` certifies that library-owned tasks and socket handles are gone
+and counters are final. The kernel can still retain TCP or conntrack/NAT state.
+The host owns that second cleanup boundary. See the [integration recipe](docs/host-integration.md)
+for both patterns, failure handling, and the executable Linux pooled test.
 
-// The caller has already fenced the guest. A second failure still returns
-// ownership to that caller; it must keep the source address quarantined.
-fn close_fenced_run(lease: Lease) -> Result<FinalUsage, CloseError> {
-    match lease.close(Instant::now() + Duration::from_secs(2)) {
-        Ok(final_usage) => Ok(final_usage),
-        Err(error) => {
-            eprintln!("close needs retry: {:?}", error.kind());
-            error.into_lease().close(Instant::now() + Duration::from_secs(2))
-        }
-    }
-}
+Close retains the identity for a **25 ms default quiet interval** so already
+queued old sockets cannot enter the next run's policy. Each observed old
+arrival restarts that interval, so total close latency can be longer. This
+wait neither cleans kernel state nor authenticates delayed packets.
+
+A failed close returns the owning lease through `CloseError::into_lease()`;
+keep the slot quarantined and retry. Successful close followed by failed host
+cleanup also keeps the slot quarantined, under the supervisor's ownership.
+`Drop` is best-effort cancellation and never certifies cleanup.
+
+## Policy and host responsibilities
+
+- Hostnames, networks, and ports start denied. Host and port grants form a
+  Cartesian product. IP literals need explicit network grants.
+- Every DNS answer is checked before dialing an approved numeric address.
+  Proxy-wide network denials and per-policy denials override policy grants.
+- Byte ceilings apply to each tunnel; usage totals aggregate the lease.
+- Optional SNI inspection checks the visible `ClientHello` against CONNECT.
+  It happens after the upstream TCP dial, and forwards no rejected hello.
+  It does not inspect encrypted application authority. This ordering preserves
+  HTTP 502 errors for failed dials; there is no promise of zero pre-SNI dials.
+- `HTTPS_PROXY` is configuration, not confinement. The host must prevent direct
+  TCP/UDP/DNS, inherited-socket, and host-IPC bypasses, and source-IP spoofing.
+
+Read the [deployment contract](docs/deployment-contract.md) and
+[configuration reference](docs/configuration.md) before embedding.
+The [architecture](docs/architecture.md) explains ownership;
+[security invariants](docs/security-invariants.md) define enforcement.
+
+## Verification and release scope
+
+```sh
+./scripts/check.sh
+./scripts/test-conformance.sh
+python3 scripts/certify-resources.py
+# Disposable privileged Linux only:
+docker build -f Dockerfile.host-boundary -t sandbox-egress-host .
+docker run --rm --network=none --privileged sandbox-egress-host
 ```
 
-`Proxy::shutdown` has the same ownership rule through
-`ShutdownError::into_proxy`. Once shutdown begins, new attachments are refused.
-A lease held after successful proxy shutdown can consume its final counters
-without a live runtime.
+Correctness, resource bounds, and supported host-boundary checks are release
+gates. Performance calibration is reported separately and does not determine
+release eligibility. Missing management-pressure overlap remains missing
+correctness evidence; an advisory timing result cannot excuse it.
 
-## The host owns the jail
-
-This crate controls traffic that reaches its listener. The host must prevent
-direct TCP/UDP/DNS, inherited-socket, and host-IPC bypasses, and must establish
-a source identity the guest cannot spoof. Setting `HTTPS_PROXY` alone does not
-create a security boundary.
-
-The lifecycle is: install and prove a deny-first network path; attach the
-policy; run the guest; fence the old guest; certify close; remove its network/
-conntrack state; only then reuse the source address. TCP carries no run
-generation, so listener draining cannot authenticate a delayed old packet
-after address reassignment.
-
-Read the [deployment contract](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/deployment-contract.md)
-and [host integration guide](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/host-integration.md)
-before embedding. They cover namespace/NAT ownership, restore, bypass testing,
-and capability boundaries. In particular, mark-based exemptions require dropping
-both `CAP_NET_ADMIN` and `CAP_NET_RAW` from untrusted workloads.
-
-## Deliberate policy semantics
-
-- Every rule dimension starts denied. A hostname grant does not grant a port.
-  Host and port grants form a Cartesian product, not endpoint pairs.
-- Hostname denials override grants. Every DNS answer is checked before dialing
-  an approved numeric address; explicit network grants can permit private
-  services, while network denials still win. Direct IP literals require a
-  network grant.
-- Byte ceilings apply per tunnel; live/final usage aggregates the lease.
-  The setters are `max_tunnel_upload_bytes` and `max_tunnel_download_bytes`;
-  opening another tunnel gives it a separate allowance.
-- TLS/SNI inspection is opt-in. It can verify visible SNI, with explicit ECH
-  handling, but cannot enforce an application authority inside encrypted TLS.
-- Invalid process ceilings fail startup; requested limits are never silently
-  enlarged or reduced. Defaults remain bounded and diagnostics/cache opt-in.
-
-The [configuration reference](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/configuration.md)
-covers timeouts, rates, diagnostics, DNS, NAT64, and TLS inspection. Destinations
-are dialed directly after their numeric addresses pass policy. Upstream proxy
-chaining, plain HTTP forwarding, MITM, credential injection, transparent
-interception, and VMM management are outside the core.
-
-## Development and release evidence
-
-```text
-./scripts/check.sh                       ordinary Cargo factory
-./scripts/test-conformance.sh            hostile lifecycle/protocol cases
-./scripts/bench.sh                       Criterion measurements
-python3 scripts/certify-resources.py     bounded RSS/FD/thread evidence
-./scripts/measure-complexity.sh          source/decision trend report
-./scripts/build-host-fixture.sh          compile the external public-API consumer
-```
-
-Tests use local peers. Cargo/tool setup may fetch locked dependencies. Hosted
-CI remains one cached Linux job; heavy resource, performance, MSRV, and privileged
-host checks are explicit maintainer work. See [factory pressure](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/factory-pressure.md)
-and [release certification](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/release-certification.md).
-
-Start contributions with [AGENTS.md](https://github.com/bryanhelmig/sandbox-egress/blob/main/AGENTS.md).
-The [architecture](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/architecture.md),
-[security invariants](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/security-invariants.md),
-[performance record](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/performance.md),
-and [prior art](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/prior-art.md)
-explain the design and its evidence.
-
-Each guide has one job: the deployment contract defines host obligations;
-architecture explains ownership; security invariants define enforcement;
-testing maps those invariants to executable checks. Dated experiments remain
-in the engineering log, and release certification owns the readiness verdict.
-
-## Status
-
-`0.1.0-alpha.1` is a preview, with no stable API promise. Correctness, resource,
-and Linux host-fixture checks have passed, but the full release certificate
-remains failed: repeatable management-pressure overlap and performance
-calibration are unresolved. See the [release evidence](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/release-certification.md#preview-launch-evidence).
-
-Passing factory checks does not replace independent API/threat-model review or a
-real integrating sandbox's security certification. The
-[roadmap](https://github.com/bryanhelmig/sandbox-egress/blob/main/docs/roadmap.md)
-separates public-source, preview-crate, and production-readiness gates.
+A passing Linux fixture certifies its tested topology, not a complete
+Firecracker deployment. See [CONTRIBUTING.md](CONTRIBUTING.md) for the factory,
+release commands, evidence limits, and remaining gaps. Hosted CI is one bounded
+Linux job; heavier checks run explicitly for releases.
 
 Licensed under MIT.

@@ -1,89 +1,60 @@
 # Working agreement
 
-Before doing substantive work, read `docs/founding-context.md` and
-`docs/design-brief.md` in full. They preserve the durable founding input and
-must survive context compaction. Then read `docs/security-invariants.md` and
-`docs/architecture.md` before changing lifecycle, identity, DNS, or tunnelling
-code.
-
-For ongoing hardening, select work from `docs/hardening-backlog.md`, read the
-recent tail of `docs/engineering-log.md`, and search that append-only log for
-the proposed idea before repeating an experiment. Load the relevant entries,
-not the entire long-running record. Record negative results; do not keep
-unmeasured optimizations.
+Read README.md, docs/architecture.md, and docs/security-invariants.md before
+substantive work. For host adapters, also read docs/deployment-contract.md and
+docs/host-integration.md. CONTRIBUTING.md maps claims to factory commands.
 
 ## Product boundary
 
-This repository is an embeddable Rust library for sandbox supervisors, with a
-thin executable around the same implementation. It is not a sandbox, service
-mesh, general-purpose proxy framework, credential broker, or async rewrite
-requirement for its caller.
+This is an embeddable Rust library for sandbox supervisors, with a thin
+executable using the same implementation. Keep the `Proxy / Policy / Lease`
+model: one shared runtime, immutable rules per run, one owning lease per
+host-observed identity. Privileged guest fencing, kernel reset, and slot
+ownership belong to the integrating host. Simplicity is a feature.
 
-The stable mental model is `Proxy / Policy / Lease`:
+## Invariants
 
-- `Proxy`: shared listener, owned runtime, resolver, and global budgets.
-- `Policy`: immutable rules for exactly one sandbox run.
-- `Lease`: exclusive ownership of the run identity, all admitted work, usage,
-  cancellation, and certified shutdown.
+1. Reserve global and lease admission before spawning connection work.
+2. Snapshot exactly one immutable policy for each connection.
+3. Close admission before cancellation; track headers, DNS, ClientHello, dial,
+   and tunnel work through destruction.
+4. Dial only exact checked addresses, with no second DNS resolution.
+5. Successful close means no library-owned task or socket handle remains and
+   usage is final. Host TCP/conntrack cleanup is a separate required boundary.
+6. Failed close retains the lease and forbids identity reuse. Drop never
+   certifies cleanup. The host quarantines a slot after any reset failure.
+7. Identity comes from the host boundary, never guest headers.
+8. Proxy-wide destination denials cannot be overridden by a policy.
+9. Fail closed and test the adversarial boundary, including cancellation,
+   timeout, identity reuse, and resource recovery where relevant.
 
-## Non-negotiable invariants
+Change the design and public claim explicitly before changing an invariant.
+Do not silently weaken a contract to make a test green.
 
-1. No task is spawned before global and lease admission are reserved.
-2. A connection snapshots exactly one immutable policy and never changes runs.
-3. Revocation closes admission before it signals or aborts existing work.
-4. Every phase is lease-owned: headers, DNS, ClientHello, dial, and tunnel.
-5. A DNS result may only dial the exact checked address; never resolve again.
-6. Successful close means no tracked task or socket remains and usage is final.
-7. Failed close retains the `Lease`; identity reuse remains impossible.
-8. `Drop` may initiate cancellation but can never claim successful cleanup.
-9. Identity comes from the host boundary, never from a guest assertion.
-10. Security behavior fails closed and is tested at the adversarial boundary.
+## Test first
 
-If a design cannot make one of these statements true, stop and update the
-design documents before adding code. Do not weaken an invariant silently.
-
-## How to work
-
-- Rotate ongoing cycles through performance evidence, simplification,
-  prior-art comparison, and feature or security hardening, then repeat. The
-  order is a guard against tunnel vision, not permission to force a change:
-  discard unsupported candidates and record what was learned.
+- Write or identify a deterministic failing test before implementing a fix.
+  Preserve failed evidence and negative controls. No randomized generators.
 - Prefer the smallest vertical slice that strengthens a named invariant.
-- Write or identify the failing test first. Include the phase and race in the
-  test name.
-- Use deterministic conformance matrices and controlled inputs. Do not add
-  randomized input-generation tooling to this project.
-- Use mature protocol parsers. Do not hand-roll HTTP or TLS grammar.
-- Keep policy values immutable and public structs' fields private.
-- Use typed errors with actionable, non-secret diagnostics.
-- Keep unsafe code forbidden. Any future exception requires a dedicated design
-  record, tests, and narrowly scoped lint allowance.
-- Do not introduce a runtime per lease. Blocking management APIs marshal onto
-  the proxy-owned runtime.
-- Do not add a dependency without documenting why the standard library and
-  existing dependencies are insufficient.
-- Do not log payloads, credentials, full query strings, or unbounded
-  attacker-controlled strings.
-- Preserve cross-platform compilation. Put OS enforcement integrations behind
-  small adapters and target-specific tests.
+- Use mature protocol parsers, typed errors, private public-struct fields, and
+  immutable policy values. Keep unsafe code forbidden.
+- A new dependency needs a reason existing dependencies or the standard
+  library are insufficient. Keep OS enforcement in small host adapters.
+- Never log secrets, payloads, or unbounded guest-provided text.
+- Record decisions and reasons in current docs. Git history preserves old
+  experiments; do not recreate an append-only engineering diary in the crate.
 
-## Definition of done
+## Done means verified
 
-Run `./scripts/check.sh`. Security-sensitive changes also run
-`./scripts/test-conformance.sh`; performance-sensitive changes run
-`./scripts/bench.sh` and record the before/after command and result in the PR.
+Run ./scripts/check.sh. Security changes also run ./scripts/test-conformance.sh.
+Resource/ownership changes run python3 scripts/certify-resources.py; missing
+measurements fail. Lifecycle changes run the opt-in management_load target.
+Host changes run Dockerfile.host-boundary, including pooled negative controls.
+Structural changes run ./scripts/measure-complexity.sh and explain the change.
+Performance changes run ./scripts/bench.sh and retain comparable measurements.
 
-A passing attractive-path test is not enough. Add the corresponding denial,
-cancellation, timeout, identity-reuse, and resource-bound case where relevant.
-Structural changes should run `./scripts/measure-complexity.sh` and explain a
-material increase or decrease rather than optimizing blindly for the score.
-
-
-Changes to allocation, buffering, task ownership, or resource limits also run
-`python3 scripts/certify-resources.py`; record the workload, budgets, and result.
-Missing required measurements fail that certificate. Do not raise a budget to
-make a candidate pass without independent evidence explaining the new bound.
-Changes to lifecycle or identity coordination additionally run the opt-in
-`management_load` target. Host-adapter changes run the Linux host-boundary lane.
-The commands, limits of each claim, and next bounded tasks are in
-`docs/factory-pressure.md`. Keep these heavier checks out of per-push hosted CI.
+Keep correctness, resource, host, and real management-pressure evidence
+blocking. Report performance calibration separately; never widen budgets or
+relax workload overlap merely to pass. Keep hosted CI small; heavy release
+checks are explicit maintainer work. See CONTRIBUTING.md for commands and
+exact certificate scope.

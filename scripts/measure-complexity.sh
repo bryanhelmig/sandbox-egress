@@ -2,7 +2,7 @@
 set -eu
 
 if ! command -v scc >/dev/null 2>&1; then
-    echo "error: scc 4.0.0 is required; see docs/complexity.md" >&2
+    echo "error: scc 4.0.0 is required; see CONTRIBUTING.md" >&2
     exit 2
 fi
 

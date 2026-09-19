@@ -124,7 +124,7 @@ impl Policy {
     }
 }
 
-fn address_matches_networks(
+pub(crate) fn address_matches_networks(
     networks: &[IpNet],
     address: IpAddr,
     nat64_prefixes: &[Ipv6Net],

@@ -1,6 +1,6 @@
 [package]
 name = "sandbox-egress"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 edition = "2024"
 rust-version = "1.88"
 description = "Embeddable, run-scoped egress proxy for Rust sandbox supervisors"
@@ -15,7 +15,11 @@ include = [
     "tests/**",
     "benches/**",
     "examples/**",
-    "docs/**",
+    "docs/architecture.md",
+    "docs/security-invariants.md",
+    "docs/deployment-contract.md",
+    "docs/host-integration.md",
+    "docs/configuration.md",
     "scripts/*.sh",
     "scripts/*.py",
     ".cargo/**",

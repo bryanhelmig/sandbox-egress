@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use sandbox_egress::{PeerIdentity, Policy, Proxy, ProxyConfig, Usage};
+use sandbox_egress::{Lease, PeerIdentity, Policy, Proxy, ProxyConfig, Usage};
 
 fn echo_connection(mut stream: TcpStream) {
     let mut buffer = [0_u8; 8 * 1_024];
@@ -55,6 +55,20 @@ fn policy(port: u16) -> Result<Policy, sandbox_egress::PolicyError> {
         .allow_network("127.0.0.0/8".parse().expect("fixture CIDR"))
         .allow_port(port)
         .build()
+}
+
+const POOLED_CONNECTIONS: usize = 4;
+
+fn run_policy(port: u16, pooled: bool) -> Result<Policy, sandbox_egress::PolicyError> {
+    if pooled {
+        Policy::builder()
+            .allow_network("127.0.0.0/8".parse().expect("fixture CIDR"))
+            .allow_port(port)
+            .max_connections(POOLED_CONNECTIONS)?
+            .build()
+    } else {
+        policy(port)
+    }
 }
 
 fn print_final(generation: u8, usage: Usage) {
@@ -120,13 +134,42 @@ fn start_bystander(
     })
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn arguments() -> Result<(SocketAddr, IpAddr, bool), Box<dyn std::error::Error>> {
     let mut arguments = std::env::args().skip(1);
     let bind_address: SocketAddr = arguments.next().ok_or("missing bind address")?.parse()?;
     let peer_ip: IpAddr = arguments.next().ok_or("missing peer source IP")?.parse()?;
-    if arguments.next().is_some() || bind_address.ip() == peer_ip {
-        return Err("usage: linux_host_proxy BIND_ADDRESS DISTINCT_PEER_IP".into());
+    let mode = arguments.next();
+    let pooled = mode.as_deref() == Some("pooled");
+    if (mode.is_some() && !pooled) || arguments.next().is_some() || bind_address.ip() == peer_ip {
+        return Err("usage: linux_host_proxy BIND_ADDRESS DISTINCT_PEER_IP [pooled]".into());
     }
+    Ok((bind_address, peer_ip, pooled))
+}
+
+fn finish_bystander(
+    bystander: Lease,
+    stopping: &AtomicBool,
+    worker: thread::JoinHandle<()>,
+    exchanges: &AtomicU64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    stopping.store(true, Ordering::Release);
+    worker.join().map_err(|_| "bystander tunnel failed")?;
+    let usage = bystander
+        .close(Instant::now() + Duration::from_secs(3))?
+        .usage();
+    let bytes = exchanges.load(Ordering::Acquire) * 6;
+    assert_eq!(usage.accepted_connections, 1);
+    assert_eq!(usage.completed_connections, 1);
+    assert_eq!(usage.denied_connections, 0);
+    assert_eq!(usage.active_connections, 0);
+    assert_eq!(usage.uploaded_bytes, bytes);
+    assert_eq!(usage.downloaded_bytes, bytes);
+    println!("BYSTANDER exchanges={} exact_bytes={bytes}", bytes / 6);
+    Ok(())
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let (bind_address, peer_ip, pooled) = arguments()?;
 
     let first = TcpListener::bind("127.0.0.1:0")?;
     let second = TcpListener::bind("127.0.0.1:0")?;
@@ -138,9 +181,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let servers =
         [first, second, bypass].map(|listener| spawn_echo(listener, Arc::clone(&stopping)));
 
-    let proxy = Proxy::start(ProxyConfig::default().with_bind_address(bind_address))?;
+    let proxy = Proxy::start(
+        ProxyConfig::default()
+            .with_bind_address(bind_address)
+            .with_max_connections(POOLED_CONNECTIONS + 2),
+    )?;
     let identity = PeerIdentity::SourceIp(peer_ip);
-    let old = proxy.attach(identity.clone(), policy(first_address.port())?)?;
+    let old = proxy.attach(identity.clone(), run_policy(first_address.port(), pooled)?)?;
     let old_id = old.id();
     let bystander = proxy.attach(
         PeerIdentity::SourceIp(bind_address.ip()),
@@ -163,6 +210,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("PROXY_PID={}", std::process::id());
     io::stdout().flush()?;
 
+    if pooled {
+        command("occupied")?;
+        assert_eq!(old.usage().active_connections, POOLED_CONNECTIONS as u64);
+        println!("OCCUPIED generation=1 active={POOLED_CONNECTIONS}");
+        io::stdout().flush()?;
+    }
+
     command("close")?; // The host fences the old guest first.
     let before = exchanges.load(Ordering::Acquire);
     let error = old
@@ -184,7 +238,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     print_final(1, old_usage);
     wait_for_progress(&exchanges, before);
     command("attach")?; // Only after old host resources have been removed.
-    let replacement = proxy.attach(identity, policy(second_address.port())?)?;
+    let replacement = proxy.attach(identity, run_policy(second_address.port(), pooled)?)?;
     assert_ne!(replacement.id(), old_id);
     assert_eq!(replacement.usage(), Usage::default());
     println!(
@@ -193,31 +247,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     io::stdout().flush()?;
 
+    if pooled {
+        command("capacity")?;
+        assert_eq!(replacement.usage().active_connections, POOLED_CONNECTIONS as u64);
+        println!("CAPACITY generation=2 active={POOLED_CONNECTIONS}");
+        io::stdout().flush()?;
+    }
+
     command("finish")?;
     let before = exchanges.load(Ordering::Acquire);
     let new_usage = replacement
         .close(Instant::now() + Duration::from_secs(3))?
         .usage();
     assert_eq!(
-        new_usage.denied_connections, 1,
-        "old destination must be denied"
+        new_usage.denied_connections, if pooled { 2 } else { 1 },
+        "old destination and pooled overflow must be denied"
     );
     assert!(new_usage.uploaded_bytes > 0 && new_usage.downloaded_bytes > 0);
     print_final(2, new_usage);
     wait_for_progress(&exchanges, before);
-    bystander_stop.store(true, Ordering::Release);
-    worker.join().map_err(|_| "bystander tunnel failed")?;
-    let usage = bystander
-        .close(Instant::now() + Duration::from_secs(3))?
-        .usage();
-    let bytes = exchanges.load(Ordering::Acquire) * 6;
-    assert_eq!(usage.accepted_connections, 1);
-    assert_eq!(usage.completed_connections, 1);
-    assert_eq!(usage.denied_connections, 0);
-    assert_eq!(usage.active_connections, 0);
-    assert_eq!(usage.uploaded_bytes, bytes);
-    assert_eq!(usage.downloaded_bytes, bytes);
-    println!("BYSTANDER exchanges={} exact_bytes={bytes}", bytes / 6);
+    finish_bystander(bystander, &bystander_stop, worker, &exchanges)?;
     proxy.shutdown(Instant::now() + Duration::from_secs(3))?;
     stopping.store(true, Ordering::Release);
     for server in servers {

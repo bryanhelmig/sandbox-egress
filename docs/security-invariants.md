@@ -68,7 +68,16 @@ so the host-side fencing order is load-bearing:
 
 1. prevent the old guest from creating traffic;
 2. close the lease successfully;
-3. only then assign the address to a new guest and attach a new lease.
+3. remove and verify the old host TCP and conntrack/NAT state, by destroying
+   its owning resources or resetting the fenced slot;
+4. only then assign the address to a new guest and attach a new lease.
+
+Close certifies library-owned tasks, socket handles, and final counters. It
+does not certify that the kernel has removed TCP state after a handle closes.
+A graceful close to a dead guest can leave an orphan in FIN_WAIT. Destroying
+only the guest namespace does not destroy sockets in the proxy's namespace.
+The host must keep the slot quarantined through kernel cleanup and verify the
+postconditions before reattachment, including when the namespace is pooled.
 
 An integration that cannot guarantee that ordering must use unique per-run
 source addresses or a stronger host-authenticated transport identity.
@@ -227,6 +236,13 @@ configuration therefore fails toward the narrower authority: a denied address
 cannot reach the connector through a broader grant or a different authority
 spelling. IPv4 denials also match mapped, compatible, well-known NAT64, and
 host-configured RFC 6052 forms of the same effective destination.
+
+The proxy's immutable startup configuration may also deny destination CIDRs.
+This floor is checked before any lease grant on both literal and DNS-result
+paths, using the same translated-address matcher. It applies across leases
+and cache hits; any forbidden member rejects a complete DNS answer set before
+the connector runs. No policy can weaken it. Trusted configured DNS servers
+remain outside this guest-destination floor.
 
 Resolver-followed aliases do not transfer trust from the allowed original
 hostname to their target addresses. Real-wire conformance follows an allowed
@@ -482,9 +498,12 @@ inside the encrypted tunnel. Documentation and diagnostics must not imply
 otherwise.
 
 ClientHello inspection happens after the CONNECT destination has resolved and
-the checked socket has connected, because a conventional proxy client waits
-for the 200 response before sending TLS. A denied ClientHello sends zero tunnel
-bytes upstream, but the upstream TCP connection has already occurred.
+the checked socket has connected. This preserves an accurate HTTP 502 on dial
+failure. A conventional proxy client waits for 200 before sending TLS; an
+inspect-before-dial mode would have to send optimistic success and later close
+the tunnel on dial failure. This preview deliberately retains the current
+ordering. A denied ClientHello sends zero tunnel bytes upstream, but the
+upstream TCP connection has already occurred.
 
 ## Diagnostics
 

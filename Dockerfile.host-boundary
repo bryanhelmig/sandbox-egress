@@ -3,7 +3,7 @@ FROM rust:1.88.0-alpine
 ENV RUSTUP_TOOLCHAIN=1.88.0
 ENV CARGO_PROFILE_DEV_DEBUG=0
 
-RUN apk add --no-cache iproute2 nftables netcat-openbsd musl-dev
+RUN apk add --no-cache iproute2 nftables netcat-openbsd musl-dev python3 conntrack-tools
 
 WORKDIR /workspace
 COPY . .
@@ -20,4 +20,4 @@ RUN artifacts=$(cargo test --locked --release --test management_load --no-run --
 
 ENV SANDBOX_EGRESS_HOST_FIXTURE=/usr/local/bin/linux_host_proxy
 
-CMD ["sh", "-c", "export SANDBOX_EGRESS_HOST_FIXTURE_SHA256=$(cut -d ' ' -f 1 /usr/local/bin/linux_host_proxy.sha256); exec ./scripts/test-linux-host-boundary.sh"]
+CMD ["sh", "-c", "export SANDBOX_EGRESS_HOST_FIXTURE_SHA256=$(cut -d ' ' -f 1 /usr/local/bin/linux_host_proxy.sha256); ./scripts/test-linux-host-boundary.sh && exec timeout 90 python3 scripts/test-linux-pooled-boundary.py"]
