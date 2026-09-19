@@ -96,7 +96,7 @@ The [architecture](docs/architecture.md) explains ownership;
 ./scripts/check.sh
 ./scripts/test-conformance.sh
 python3 scripts/certify-resources.py
-# Disposable privileged Linux only:
+# Disposable privileged Linux with CONFIG_INET_DIAG_DESTROY (not Docker Desktop):
 docker build -f Dockerfile.host-boundary -t sandbox-egress-host .
 docker run --rm --network=none --privileged sandbox-egress-host
 ```

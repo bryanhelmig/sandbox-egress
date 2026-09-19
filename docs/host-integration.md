@@ -103,8 +103,9 @@ requires an exclusive identity until reset ends.
 
 TCP destruction needs `CONFIG_INET_DIAG_DESTROY` and host `CAP_NET_ADMIN` in
 the applicable namespace. Test support during host readiness. `ss --kill`
-can silently skip unsupported sockets; always verify with a separate all-state
-listing. A remaining FIN_WAIT, TIME_WAIT, or other matching entry keeps the
+can exit successfully on kernels that cannot destroy sockets: hosts must verify
+the socket list is empty after destruction, as the fixture does, using a separate
+all-state listing. A remaining FIN_WAIT, TIME_WAIT, or other matching entry keeps the
 slot unavailable. Use a bounded cleanup deadline and quarantine or rebuild
 when the kernel cannot satisfy the postcondition.
 
@@ -115,10 +116,25 @@ cancellation and cannot replace host verification.
 
 ## What the host harness proves
 
+Docker Desktop is not a supported runner for this lane: the reviewed LinuxKit
+7.0.12 kernel lacks `CONFIG_INET_DIAG_DESTROY`, even with `CONFIG_INET_DIAG=y`.
+`--privileged` cannot supply a missing kernel feature. Use a Linux host or VM
+whose kernel enables socket destruction, with `CAP_NET_ADMIN` available.
+
 ```sh
 docker build -f Dockerfile.host-boundary -t sandbox-egress-host .
 docker run --rm --network=none --privileged sandbox-egress-host
 ```
+
+Before either host scenario, the image opens a loopback TCP pair, observes one
+exact tuple, requests its destruction with `ss -K`, and independently verifies
+its disappearance while the handles remain open. A silent no-op exits **78**
+with `kernel lacks CONFIG_INET_DIAG_DESTROY; pooled lane cannot run here`.
+This is an unsupported environment, never a passing certificate or a failed
+reset negative control. Tool, permission, and enumeration errors remain errors.
+The pooled script also runs this check before its standalone scenarios; use
+`python3 scripts/test-linux-pooled-boundary.py --preflight-only` for just the
+capability check. It neither needs the Rust fixture nor creates a namespace.
 
 The image uses the external public-API consumer, built and hashed from the
 candidate source. It runs the existing namespace replacement lane and a pooled

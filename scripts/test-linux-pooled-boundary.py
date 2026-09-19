@@ -15,11 +15,33 @@ HOST_IP, SLOT_IP, GUEST_IP = "198.19.0.1", "198.19.0.2", "10.0.0.2"
 PORT, CAPACITY = 40123, 4
 
 
-def run(*args):
+def run(*args, reject_stderr=False):
     result = subprocess.run(args, text=True, capture_output=True, timeout=10)
-    if result.returncode:
+    if result.returncode or (reject_stderr and result.stderr.strip()):
         raise RuntimeError(f"{args!r}: {result.stderr.strip()}")
     return result.stdout.strip()
+
+
+def preflight_socket_destroy():
+    """Prove destruction on a live, exclusively owned loopback TCP tuple."""
+    with socket.socket() as listener, socket.socket() as peer:
+        listener.settimeout(3)
+        peer.settimeout(3)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        peer.connect(listener.getsockname())
+        connection, _ = listener.accept()
+        with connection:
+            expression = ("src", "127.0.0.1", "sport", "=", f":{connection.getsockname()[1]}",
+                          "dst", "127.0.0.1", "dport", "=", f":{connection.getpeername()[1]}")
+            if not run("ss", "-Htan", *expression, reject_stderr=True):
+                raise RuntimeError("SOCK_DESTROY preflight could not observe its loopback TCP socket")
+            run("ss", "-Ktan", *expression, reject_stderr=True)
+            # Keep both handles alive: only the kernel operation can remove this tuple.
+            if run("ss", "-Htan", *expression, reject_stderr=True):
+                print("kernel lacks CONFIG_INET_DIAG_DESTROY; pooled lane cannot run here", file=sys.stderr)
+                raise SystemExit(78)
+    print("PREFLIGHT: loopback TCP socket destruction verified", flush=True)
 
 
 def client():
@@ -265,8 +287,11 @@ def main():
     assert sys.platform == "linux" and os.geteuid() == 0, "requires disposable privileged Linux"
     for binary in ("ip", "nft", "ss", "conntrack", "sysctl"):
         assert shutil.which(binary), f"missing {binary}"
+    assert sys.argv[1:] in ([], ["--preflight-only"], ["--omit", "sockets"], ["--omit", "conntrack"])
+    preflight_socket_destroy()
+    if sys.argv[1:] == ["--preflight-only"]:
+        return
     if sys.argv[1:]:
-        assert sys.argv[1:] in (["--omit", "sockets"], ["--omit", "conntrack"])
         scenario(sys.argv[2])
         return
     for omit, expected in [("sockets", "reset left host TCP sockets"),

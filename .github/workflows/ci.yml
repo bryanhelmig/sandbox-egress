@@ -22,4 +22,6 @@ jobs:
         with:
           components: clippy,rustfmt
       - uses: Swatinem/rust-cache@v2
-      - run: ./scripts/check.sh
+      - run: |
+          python3 scripts/test-pooled-preflight.py
+          ./scripts/check.sh

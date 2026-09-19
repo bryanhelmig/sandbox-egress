@@ -12,6 +12,7 @@ license/advisory check. Report suspected bypasses through [SECURITY.md](SECURITY
 | API, formatting, Clippy, ordinary tests, doctests, docs and package | `./scripts/check.sh` |
 | Hostile protocol/lifecycle behavior | `./scripts/test-conformance.sh` |
 | Public embedding API | `./scripts/build-host-fixture.sh` |
+| Pooled kernel preflight and silent-no-op controls | `python3 scripts/test-pooled-preflight.py` (also in CI and the host image build) |
 | Bounded RSS, descriptors and threads | `python3 scripts/certify-resources.py --require-clean --output NEW_FILE` |
 | Attach/close progress with competing traffic | `cargo test --locked --release --test management_load -- --ignored --nocapture` |
 | Linux destroy/recreate and pooled reset | Build/run `Dockerfile.host-boundary` privileged, with `--network=none` |
@@ -36,7 +37,10 @@ unresolved workload/evidence gap, not an established starvation bug. Preserve
 that failure until a demonstrated workload repair resolves it; do not accept a
 lucky retry or silently weaken the overlap assertion.
 
-The host fixture uses local controlled peers. Its pooled lane first proves
+The host image first proves socket destruction on a live loopback pair. Missing
+kernel support exits 78 before any scenario; it does not pass the certificate.
+Docker Desktop is not a supported runner; see the host guide for kernel requirements.
+The host fixture uses local controlled peers. Its pooled lane then proves
 that each omitted reset operation prevents reuse, then proves the complete
 sequence, unchanged slot identity, exact client-port reuse, full replacement
 capacity, policy replacement, and bystander continuity. It does not certify

@@ -8,7 +8,8 @@ RUN apk add --no-cache iproute2 nftables netcat-openbsd musl-dev python3 conntra
 WORKDIR /workspace
 COPY . .
 
-RUN fixture=$(./scripts/build-host-fixture.sh) \
+RUN python3 scripts/test-pooled-preflight.py \
+    && fixture=$(./scripts/build-host-fixture.sh) \
     && cp "$fixture" /usr/local/bin/linux_host_proxy \
     && sha256sum /usr/local/bin/linux_host_proxy > /usr/local/bin/linux_host_proxy.sha256
 
@@ -20,4 +21,4 @@ RUN artifacts=$(cargo test --locked --release --test management_load --no-run --
 
 ENV SANDBOX_EGRESS_HOST_FIXTURE=/usr/local/bin/linux_host_proxy
 
-CMD ["sh", "-c", "export SANDBOX_EGRESS_HOST_FIXTURE_SHA256=$(cut -d ' ' -f 1 /usr/local/bin/linux_host_proxy.sha256); ./scripts/test-linux-host-boundary.sh && exec timeout 90 python3 scripts/test-linux-pooled-boundary.py"]
+CMD ["sh", "-c", "python3 scripts/test-linux-pooled-boundary.py --preflight-only && export SANDBOX_EGRESS_HOST_FIXTURE_SHA256=$(cut -d ' ' -f 1 /usr/local/bin/linux_host_proxy.sha256) && ./scripts/test-linux-host-boundary.sh && exec timeout 90 python3 scripts/test-linux-pooled-boundary.py"]

@@ -3,6 +3,17 @@
 All notable changes will be documented here. The format follows Keep a
 Changelog and versions follow Semantic Versioning. Git history preserves prior design reviews and experiment records.
 
+## Unreleased
+
+### Fixed
+
+- Preflight actual TCP socket destruction before host scenarios, including the
+  documented Docker command. A silent `ss -K` no-op now reports missing
+  `CONFIG_INET_DIAG_DESTROY` and exits 78 instead of failing the wrong negative
+  control. Keep permission/tool failures distinct and add portable regressions.
+- Document Docker Desktop's unsupported LinuxKit kernel and require an
+  independently empty socket inventory after every host reset.
+
 ## 0.1.0-alpha.2 — 2026-09-19
 
 ### Integration recipe
