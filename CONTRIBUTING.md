@@ -19,6 +19,7 @@ license/advisory check. Report suspected bypasses through [SECURITY.md](SECURITY
 | Rust 1.88 compatibility and Linux conformance | Build/run `Dockerfile` |
 | Source complexity trend | `./scripts/measure-complexity.sh` |
 | Performance observations | `./scripts/bench.sh`, `./scripts/measure-throughput.sh 128 8 both` |
+| Kernel socket memory held by a stalled tunnel | `cargo test --locked --all-features --test socket_memory -- --ignored --nocapture` |
 
 The resource certificate has eight isolated lanes. Its defaults are four
 batches, 250 churn iterations per batch, 64 occupied connections, 16 concurrent
