@@ -503,7 +503,10 @@ is encrypted. `AllowOuterSni` is an explicit compatibility tradeoff: it checks
 the outer SNI but cannot make a claim about the inner name. The proxy does not
 terminate TLS and cannot enforce an application `Host` or `:authority` value
 inside the encrypted tunnel. Documentation and diagnostics must not imply
-otherwise.
+otherwise. The visible-SNI and ECH checks cover only the first ClientHello on a
+connection, so a second ClientHello sent later on the same connection is not
+inspected; that is accepted because recognizing one would require parsing the
+server's side of the handshake, and the destination is already policy-approved.
 
 ClientHello inspection happens after the CONNECT destination has resolved and
 the checked socket has connected. This preserves an accurate HTTP 502 on dial
