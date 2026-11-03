@@ -505,6 +505,10 @@ terminate TLS and cannot enforce an application `Host` or `:authority` value
 inside the encrypted tunnel. Documentation and diagnostics must not imply
 otherwise.
 
+The visible-SNI and ECH checks apply only to the first ClientHello in each
+CONNECT tunnel. The proxy then relays bytes in both directions without parsing
+TLS, including any later ClientHello on the same connection.
+
 ClientHello inspection happens after the CONNECT destination has resolved and
 the checked socket has connected. This preserves an accurate HTTP 502 on dial
 failure. A conventional proxy client waits for 200 before sending TLS; an
